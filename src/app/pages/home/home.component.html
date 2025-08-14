@@ -1,0 +1,72 @@
+<!-- Header -->
+<div class="d-flex align-items-center gap-3">
+  <ng-container *ngIf="perfil$ | async as perfil; else entrar">
+    <span>Olá, {{ perfil.nome }} ({{ perfil.papel }})</span>
+    <button class="btn btn-outline-danger btn-sm" (click)="auth.logout()">Sair</button>
+  </ng-container>
+  <ng-template #entrar>
+    <a style="display: none !important;" class="btn btn-success btn-sm" routerLink="/login">Entrar</a>
+  </ng-template>
+</div>
+
+<!-- Conteúdo -->
+<ng-container *ngIf="perfil$ | async as perfil; else loginCTA">
+  <div class="container-fluid bg-light vh-100 d-flex flex-column align-items-center justify-content-center">
+    <!-- Logo e título -->
+    <div class="text-center mb-4">
+      <img src="/assets/img/logo.png" alt="Logo Crenorte" />
+      <h2 class="text-success fw-bold mt-2">Bem-vindo ao Sistema CRENORTE</h2>
+    </div>
+
+    <!-- Módulos -->
+    <div class="row w-100 justify-content-center gap-4">
+      <!-- Listagem de Cadastros (admin, assessor, supervisor, coordenador) -->
+      <div class="col-md-2 col-10"
+           *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
+        <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+          <div class="fs-1">📋</div>
+          <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
+        </a>
+      </div>
+
+      <!-- Novo Cadastro (admin, assessor, supervisor, coordenador) -->
+      <div class="col-md-2 col-10"
+           *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
+        <a routerLink="/cadastro" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+          <div class="fs-1">📝</div>
+          <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
+        </a>
+      </div>
+
+      <!-- Módulo de Rotas (admin, operacional, supervisor, coordenador) -->
+      <div class="col-md-2 col-10"
+           *ngIf="perfil.papel === 'admin' || perfil.papel === 'operacional' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
+        <a routerLink="/rotas" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+          <div class="fs-1">🗺️</div>
+          <div class="mt-2 fw-bold text-dark">Módulo de Rotas</div>
+        </a>
+      </div>
+
+      <!-- Colaboradores (admin, rh) -->
+      <div class="col-md-2 col-10"
+           *ngIf="perfil.papel === 'admin' || perfil.papel === 'rh'">
+        <a routerLink="/colaboradores" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+          <div class="fs-1">👥</div>
+          <div class="mt-2 fw-bold text-dark">Colaboradores</div>
+        </a>
+      </div>
+    </div>
+  </div>
+</ng-container>
+
+<!-- CTA para login quando não autenticado -->
+<ng-template #loginCTA>
+  <div class="container-fluid bg-light vh-100 d-flex flex-column align-items-center justify-content-center">
+    <div class="text-center">
+      <img src="/assets/img/logo.png" alt="Logo Crenorte" />
+      <h2 class="text-success fw-bold mt-3">Bem-vindo ao Sistema CRENORTE</h2>
+      <p class="mt-2">Faça login para acessar o dashboard.</p>
+      <a class="btn btn-success" routerLink="/login">Entrar</a>
+    </div>
+  </div>
+</ng-template>

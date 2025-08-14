@@ -1,1 +1,72 @@
-/* You can add global styles to this file, and also import other style files */
+
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --cor-verde-principal: #008d45;
+  --cor-verde-claro: #8ac44b;
+  --cor-amarelo: #ffcc00;
+}
+
+html, body { height: 100%; }
+#map { height: calc(100vh - 140px); width: 100%; }
+
+body {
+  background-color: #f5f5f5;
+  font-family: 'Nunito', sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--cor-verde-principal);
+  font-weight: 600;
+}
+
+.btn-principal {
+  background-color: var(--cor-verde-principal);
+  color: white;
+  border: none;
+}
+
+.btn-principal:hover {
+  background-color: #006e37;
+  color: white;
+}
+
+.btn-secundario {
+  background-color: var(--cor-verde-claro);
+  color: white;
+  border: none;
+}
+
+.btn-secundario:hover {
+  background-color: #76ad3c;
+  color: white;
+}
+
+.btn-destaque {
+  background-color: var(--cor-amarelo);
+  color: #333;
+  border: none;
+}
+
+.btn-destaque:hover {
+  background-color: #e6b800;
+  color: #222;
+}
+
+.card-crenorte {
+  border: 2px solid var(--cor-verde-principal);
+  border-radius: 8px;
+  padding: 1.5rem;
+  background-color: white;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.label-crenorte {
+  color: var(--cor-verde-principal);
+  font-weight: 500;
+}
+
+.form-control:focus {
+  border-color: var(--cor-verde-principal);
+  box-shadow: 0 0 0 0.15rem rgba(0, 141, 69, 0.25);
+}

@@ -1,0 +1,237 @@
+<div class="container py-4">
+  <form (ngSubmit)="salvar()" #form="ngForm" class="container py-4 card-crenorte shadow-lg rounded">
+
+    <!-- IDENTIFICAÇÃO -->
+    <fieldset class="border p-3 mb-4 rounded">
+      <legend class="w-auto px-2 fw-bold text-success">Cadastro de Cliente</legend>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Nome Completo</label>
+          <input class="form-control" name="nomeCompleto" [(ngModel)]="cliente.nomeCompleto" required />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">CPF</label>
+          <input class="form-control"
+                 name="cpf"
+                 [(ngModel)]="cliente.cpf"
+                 required
+                 #cpfCtrl="ngModel"
+                 mask="000.000.000-00"
+                 (blur)="cpfValido = validarCPF(cliente.cpf)" />
+          <div *ngIf="cpfCtrl.invalid && cpfCtrl.touched" class="text-danger small">
+            CPF é obrigatório.
+          </div>
+          <div *ngIf="cpfCtrl.valid && cpfValido === false" class="text-danger small">
+            CPF inválido. Verifique.
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">RG</label>
+          <input class="form-control" name="rg" [(ngModel)]="cliente.rg" />
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-3">
+          <label class="form-label">Data de Nascimento</label>
+          <input type="date" class="form-control" name="dataNascimento" [(ngModel)]="cliente.dataNascimento" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Contato</label>
+          <input class="form-control"
+                 name="contato"
+                 [(ngModel)]="cliente.contato"
+                 mask="(00) 00000-0000"
+                 required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">E-mail</label>
+          <input type="email" class="form-control" name="email" [(ngModel)]="cliente.email" />
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Endereço</label>
+          <input class="form-control" name="endereco" [(ngModel)]="cliente.endereco" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Bairro</label>
+          <input class="form-control" name="bairro" [(ngModel)]="cliente.bairro" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Estado</label>
+          <select class="form-select"
+                  name="estado"
+                  [(ngModel)]="cliente.estado"
+                  (change)="atualizarMunicipios()"
+                  required>
+            <option value="" disabled selected>Selecione o estado</option>
+            <option *ngFor="let uf of estadosNorte" [value]="uf.sigla">{{ uf.nome }}</option>
+          </select>
+        </div>
+        <div class="col-md-3 mt-2">
+          <label class="form-label">Cidade</label>
+          <select class="form-select"
+                  name="cidade"
+                  [(ngModel)]="cliente.cidade"
+                  [disabled]="!municipios.length"
+                  required>
+            <option value="" disabled selected>Selecione a cidade</option>
+            <option *ngFor="let cidade of municipios" [value]="cidade">{{ cidade }}</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- EMPREENDIMENTO -->
+    <fieldset class="border p-3 mb-4 rounded">
+      <legend class="w-auto px-2 fw-bold text-success">Empreendimento</legend>
+
+      <div class="mb-3">
+        <label class="d-block">Você já começou a empreender?</label>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" [(ngModel)]="cliente.jaEmpreende" name="jaEmpreende" [value]="true" />
+          <label class="form-check-label">Sim</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" [(ngModel)]="cliente.jaEmpreende" name="jaEmpreende" [value]="false" />
+          <label class="form-check-label">Não</label>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Qual tipo de negócio você tem ou quer iniciar?</label>
+        <input class="form-control" name="tipoNegocio" [(ngModel)]="cliente.tipoNegocio" />
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Onde você vende hoje?</label>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.ondeVende" name="ondeVende" value="Na minha casa" /> Na minha casa
+        </div>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.ondeVende" name="ondeVende" value="Online" /> Online (WhatsApp, Instagram etc.)
+        </div>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.ondeVende" name="ondeVende" value="Na rua/feira" /> Na rua/feira
+        </div>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.ondeVende" name="ondeVende" value="Outro" /> Outro
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Ocupação atual</label>
+        <input class="form-control" name="ocupacaoAtual" [(ngModel)]="cliente.ocupacaoAtual" />
+      </div>
+    </fieldset>
+
+    <!-- RENDA E ORGANIZAÇÃO -->
+    <fieldset class="border p-3 mb-4 rounded">
+      <legend class="w-auto px-2 fw-bold text-success">Renda e Organização</legend>
+
+      <div class="mb-3">
+        <label>Tem outra fonte de renda além do seu negócio?</label>
+        <div class="form-check form-check-inline">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.outraRenda" name="outraRenda" [value]="true" /> Sim
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.outraRenda" name="outraRenda" [value]="false" /> Não
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Renda mensal aproximada (R$)</label>
+        <input type="text" class="form-control" [(ngModel)]="cliente.rendaMensal" name="rendaMensal" mask="separator.2" thousandSeparator="." decimalMarker="," />
+      </div>
+    </fieldset>
+
+    <!-- EMPRÉSTIMO -->
+    <fieldset class="border p-3 mb-4 rounded">
+      <legend class="w-auto px-2 fw-bold text-success">Empréstimo</legend>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Valor que gostaria de solicitar (R$)</label>
+          <input type="text" class="form-control" [(ngModel)]="cliente.valorSolicitado" name="valorSolicitado" mask="separator.2" thousandSeparator="." decimalMarker="," />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Gostaria de parcelar de:</label>
+          <input type="text" class="form-control" [(ngModel)]="cliente.valorParcela" name="valorParcela" mask="separator.2" thousandSeparator="." decimalMarker="," />
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Data da primeira parcela</label>
+        <input type="date" class="form-control" [(ngModel)]="cliente.dataPrimeiraParcela" name="dataPrimeiraParcela" />
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Para que usaria esse valor?</label>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.usoValor" name="usoValor" value="Investimento em negócio" /> Investimento em negócio
+        </div>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.usoValor" name="usoValor" value="Capital de giro" /> Capital de giro
+        </div>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.usoValor" name="usoValor" value="Compra de equipamentos" /> Compra de equipamentos
+        </div>
+        <div class="form-check">
+          <input type="radio" class="form-check-input" [(ngModel)]="cliente.usoValor" name="usoValor" value="Outro" /> Outro
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label>Já é cliente da CRENORTE?</label>
+        <div class="form-check form-check-inline">
+          <input type="radio" [(ngModel)]="cliente.clienteCrenorte" name="clienteCrenorte" [value]="true" /> Sim
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="radio" [(ngModel)]="cliente.clienteCrenorte" name="clienteCrenorte" [value]="false" /> Não
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label>Já possui algum empréstimo ativo?</label>
+        <div class="form-check form-check-inline">
+          <input type="radio" [(ngModel)]="cliente.emprestimoAtivo" name="emprestimoAtivo" [value]="true" /> Sim
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="radio" [(ngModel)]="cliente.emprestimoAtivo" name="emprestimoAtivo" [value]="false" /> Não
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Se sim, com qual instituição?</label>
+        <input class="form-control" name="instituicaoEmprestimo" [(ngModel)]="cliente.instituicaoEmprestimo" />
+      </div>
+    </fieldset>
+
+    <!-- FINALIZAÇÃO -->
+    <fieldset class="border p-3 mb-4 rounded">
+      <legend class="w-auto px-2 fw-bold text-success">Finalização</legend>
+
+      <div class="mb-3">
+        <label class="form-label">Data do preenchimento</label>
+        <input type="date" class="form-control" [(ngModel)]="cliente.dataPreenchimento" name="dataPreenchimento" />
+      </div>
+
+      <div class="form-check mb-4">
+        <input type="checkbox" class="form-check-input" [(ngModel)]="cliente.autorizacaoUsoDados" name="autorizacaoUsoDados" />
+        <label class="form-check-label">Autorizo o uso dos meus dados para fins de contato comercial</label>
+      </div>
+
+      <div class="d-flex justify-content-start gap-2">
+        <button type="submit" class="btn btn-success">Salvar</button>
+        <a routerLink="/listagem" class="btn btn-outline-primary">Consultar Registros</a>
+      </div>
+    </fieldset>
+  </form>
+
+  <a routerLink="/" class="btn btn-link mt-3">
+    <i class="fas fa-arrow-left me-1"></i> Voltar para Home
+  </a>
+</div>

@@ -1,0 +1,84 @@
+/* CARD DO FORMULÁRIO */
+.card-crenorte {
+  background: #ffffff;
+  border-left: 6px solid #006837;
+  padding: 30px;
+  border-radius: 12px;
+}
+
+/* LEGENDAS DOS FIELDSETS */
+legend {
+  font-size: 1.1rem;
+  color: #006837;
+  font-weight: bold;
+}
+
+/* BORDAS DOS FIELDSETS */
+fieldset {
+  border: 2px solid #dcdcdc;
+  background-color: #f8f9fa;
+}
+
+/* LABELS */
+label.form-label, label.form-check-label {
+  font-weight: 500;
+  color: #333;
+}
+
+/* INPUTS E SELECTS */
+input.form-control,
+select.form-select,
+textarea.form-control {
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  transition: border-color 0.3s;
+}
+
+input.form-control:focus,
+select.form-select:focus,
+textarea.form-control:focus {
+  border-color: #006837;
+  box-shadow: 0 0 0 0.15rem rgba(0, 104, 55, 0.2);
+}
+
+/* BOTÕES */
+.btn-success {
+  background-color: #006837;
+  border-color: #006837;
+  transition: 0.3s;
+}
+.btn-success:hover {
+  background-color: #004d2f;
+  border-color: #004d2f;
+}
+
+.btn-outline-primary {
+  color: #006837;
+  border-color: #006837;
+}
+.btn-outline-primary:hover {
+  background-color: #006837;
+  color: white;
+}
+
+/* TEXTO PEQUENO */
+.text-danger.small {
+  font-size: 0.875rem;
+  margin-top: 4px;
+}
+
+/* RESPONSIVO EM MOBILE */
+@media (max-width: 576px) {
+  .card-crenorte {
+    padding: 20px;
+  }
+
+  fieldset {
+    padding: 15px;
+  }
+
+  .btn {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+}
