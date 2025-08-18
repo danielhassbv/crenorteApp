@@ -1,21 +1,23 @@
-// src/app/guards/role.guard.ts
-import { CanActivateFn, Router } from '@angular/router';
+import { CanActivateFn, Router, ActivatedRouteSnapshot } from '@angular/router';
 import { inject } from '@angular/core';
 import { AuthService } from '../services/auth.service';
-import { ActivatedRouteSnapshot } from '@angular/router';
-import { map } from 'rxjs';
-import { Papel } from '../models/colaborador.model';
+import { firstValueFrom } from 'rxjs';
 
-export const roleGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
-  const roles = (route.data?.['roles'] ?? []) as Papel[];
+export const roleGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {
+  const rolesPermitidos = (route.data?.['roles'] as string[]) ?? [];
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  return auth.temPapel$(roles).pipe(
-    map(ok => {
-      if (ok) return true;
-      router.navigate(['/acesso-negado']);
-      return false;
-    })
-  );
+  // 1) Garante que há usuário logado (delegue ao authGuard se quiser, mas aqui é mais robusto)
+  const user = await firstValueFrom(auth.firebaseUser$);
+  if (!user) return router.parseUrl('/login');
+
+  // 2) Garante que o doc colaboradores/{uid} exista (bootstrap)
+  await auth.garantirPerfilMinimo();
+
+  // 3) Pega o papel atual e decide
+  const papel = await firstValueFrom(auth.papel$);
+  const autorizado = !!papel && rolesPermitidos.includes(papel);
+
+  return autorizado ? true : router.parseUrl('/acesso-negado');
 };
