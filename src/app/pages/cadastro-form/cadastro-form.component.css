@@ -1,84 +1,57 @@
-/* CARD DO FORMULÁRIO */
-.card-crenorte {
-  background: #ffffff;
-  border-left: 6px solid #006837;
-  padding: 30px;
-  border-radius: 12px;
+/* Header com logo fixa à direita e texto colado à esquerda */
+.form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* texto à esquerda, logo à direita */
+  margin-bottom: 20px;
+  padding: 0; /* sem espaçamento lateral extra */
 }
 
-/* LEGENDAS DOS FIELDSETS */
-legend {
-  font-size: 1.1rem;
-  color: #006837;
-  font-weight: bold;
+.title-box {
+  text-align: left;
 }
 
-/* BORDAS DOS FIELDSETS */
-fieldset {
-  border: 2px solid #dcdcdc;
-  background-color: #f8f9fa;
+.form-title {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #006e37;
 }
 
-/* LABELS */
-label.form-label, label.form-check-label {
-  font-weight: 500;
-  color: #333;
+.subtitle {
+  font-size: 1.6rem;
+  color: #555;
 }
 
-/* INPUTS E SELECTS */
-input.form-control,
-select.form-select,
-textarea.form-control {
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  transition: border-color 0.3s;
+.logo-box {
+  flex-shrink: 0; /* não deixa encolher */
 }
 
-input.form-control:focus,
-select.form-select:focus,
-textarea.form-control:focus {
-  border-color: #006837;
-  box-shadow: 0 0 0 0.15rem rgba(0, 104, 55, 0.2);
+.logo-img {
+  height: 70px; /* tamanho fixo */
+  width: auto;
+  display: block;
 }
-
-/* BOTÕES */
-.btn-success {
-  background-color: #006837;
-  border-color: #006837;
-  transition: 0.3s;
-}
-.btn-success:hover {
-  background-color: #004d2f;
-  border-color: #004d2f;
-}
-
-.btn-outline-primary {
-  color: #006837;
-  border-color: #006837;
-}
-.btn-outline-primary:hover {
-  background-color: #006837;
-  color: white;
-}
-
-/* TEXTO PEQUENO */
-.text-danger.small {
-  font-size: 0.875rem;
-  margin-top: 4px;
-}
-
-/* RESPONSIVO EM MOBILE */
 @media (max-width: 576px) {
-  .card-crenorte {
-    padding: 20px;
+  .form-header {
+    flex-direction: row;       /* continua lado a lado */
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;                  /* espaço menor entre logo e texto */
   }
 
-  fieldset {
-    padding: 15px;
+  .logo-img {
+    height: 50px;     
   }
 
-  .btn {
-    width: 100%;
-    margin-bottom: 10px;
+  .form-title {
+    font-size: 1.1rem;         /* título reduzido */
+  }
+
+  .subtitle {
+    font-size: 0.8rem;
   }
 }
+
+
+

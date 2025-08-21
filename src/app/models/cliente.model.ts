@@ -2,6 +2,8 @@ export interface Cliente {
   nomeCompleto: string;
   cpf: string;
   rg: string;
+  genero: string;
+  estadoCivil: string;
   dataNascimento: string;
   contato: string;
   email: string;
@@ -12,12 +14,13 @@ export interface Cliente {
   jaEmpreende: boolean;
   tipoNegocio: string;
   ondeVende: string;
+  faturamentoMensal?: string; 
+  tempoEmpreendimento?: string; 
   ocupacaoAtual: string;
   outraRenda: boolean;
   rendaMensal: string | number;
   valorSolicitado: string | number;
   parcelas: string;
-  dataPrimeiraParcela: string;
   usoValor: string;
   clienteCrenorte: boolean;
   emprestimoAtivo: boolean;
