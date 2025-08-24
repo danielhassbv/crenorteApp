@@ -1,10 +1,10 @@
-// src/app/firebase.config.ts
 import { getApp, getApps, initializeApp } from 'firebase/app';
+import { getStorage } from 'firebase/storage';
 import { getFirestore } from 'firebase/firestore';
 import { firebaseConfig } from '../environments/firebase.config';
 
-// Garante que só exista UM app (se já existir, apenas reutiliza)
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Expõe a mesma instância do Firestore para quem já importa { db } deste arquivo
+// NADA de App Check aqui
 export const db = getFirestore(app);
+export const storage = getStorage(app);

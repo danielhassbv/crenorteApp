@@ -3,8 +3,7 @@ img {
 }
 
 img[alt="Logo Crenorte"] {
-  width: 500px;
-  height: 500px;
-  margin-bottom: -100px;
+  width: auto;
+  height: 100px;
   margin-top: -200px;
 }

@@ -1,17 +1,33 @@
-import { Component, OnInit } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  AfterViewInit,
+  ElementRef,
+  ViewChild,
+  NgZone,
+  ChangeDetectionStrategy
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { Cliente } from '../../models/cliente.model';
+import { Cliente, FluxoCaixa } from '../../models/cliente.model';
 import { municipiosNorte } from '../../../shared/municipios-norte';
 import { NgxMaskDirective, provideNgxMask } from 'ngx-mask';
 
-// Firebase
+// Firestore
 import { db } from '../../firebase.config';
 import { doc, setDoc } from 'firebase/firestore';
 
+// Storage (usa a MESMA instância exportada em firebase.config.ts)
+import { FirebaseStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage as fbStorage } from '../../firebase.config';
+
 import emailjs, { EmailJSResponseStatus } from 'emailjs-com';
 
+declare const bootstrap: any;
+
+// Aux modal
+type MaskedNumber = string | null;
 
 @Component({
   selector: 'app-cadastro-form',
@@ -19,13 +35,14 @@ import emailjs, { EmailJSResponseStatus } from 'emailjs-com';
   imports: [CommonModule, FormsModule, RouterModule, NgxMaskDirective],
   templateUrl: './cadastro-form.component.html',
   styleUrls: ['./cadastro-form.component.css'],
-  providers: [provideNgxMask()]
+  providers: [provideNgxMask()],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
-
-export class CadastroFormComponent implements OnInit {
+export class CadastroFormComponent implements OnInit, AfterViewInit {
+  // --------- ESTADO PRINCIPAL ---------
   cliente: Cliente = this.novoCliente();
 
-  // ---- Campos auxiliares para selects de data ----
+  // ---- Datas ----
   dias: number[] = [];
   meses: string[] = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -37,9 +54,11 @@ export class CadastroFormComponent implements OnInit {
   mesSelecionado: number | null = null; // 1..12
   anoSelecionado: number | null = null;
 
-  // ---- Controle "Outro" (Tipo de Negócio e Onde Vende) ----
+  // ---- Controle "Outro" ----
   selecionouOutroTipoNegocio = false;
   selecionouOutroOndeVende = false;
+  selecionouOutroGenero = false;
+
   private opcoesTipoNegocioPadrao = new Set<string>([
     'Mercearia', 'Vendedor ambulante', 'Comércio de roupas', 'Cosméticos e perfumes', 'Bijuterias e acessórios',
     'Loja de variedades', 'Alimentos e bebidas', 'Materiais de construção', 'Papelaria e utilidades',
@@ -68,46 +87,181 @@ export class CadastroFormComponent implements OnInit {
 
   municipios: string[] = [];
 
-  ngOnInit(): void {
+  // ---- Empréstimo / Parcelas ----
+  parcelas: number[] = Array.from({ length: 12 }, (_, i) => i + 1);
+  jurosMes = 0.0274; // 2,74% a.m.
+  valorSolicitadoNumber = 0;
+  parcelasComValor: { n: number; label: string; valorParcela: number }[] = [];
+  resumoParcela = '';
 
-    // pega a data de hoje
+  // ---- Data de preenchimento ----
+  diaPre: number | '' = '';
+  mesPre: number | '' = '';
+  anoPre: number | '' = '';
+
+  // ---- Modal do Fluxo de Caixa ----
+  private fluxoModalRef: any | null = null;
+
+  fluxoForm = {
+    faturamentoMensalMasked: '' as MaskedNumber,
+    faturamentoMensal: 0,
+    fixos: {
+      aluguelMasked: '' as MaskedNumber,
+      salariosMasked: '' as MaskedNumber,
+      energiaEletricaMasked: '' as MaskedNumber,
+      aguaMasked: '' as MaskedNumber,
+      telefoneInternetMasked: '' as MaskedNumber,
+
+      aluguel: 0,
+      salarios: 0,
+      energiaEletrica: 0,
+      agua: 0,
+      telefoneInternet: 0,
+    },
+    variaveis: {
+      materiaPrimaMasked: '' as MaskedNumber,
+      insumosMasked: '' as MaskedNumber,
+      freteMasked: '' as MaskedNumber,
+      transporteMasked: '' as MaskedNumber,
+
+      materiaPrima: 0,
+      insumos: 0,
+      frete: 0,
+      transporte: 0,
+
+      outros: [] as Array<{ nome: string; valorMasked: MaskedNumber; valor: number }>,
+    },
+  };
+
+  // ================== ANEXOS & ASSINATURA ==================
+
+  /** Configs de performance */
+  private readonly MAX_QTD_POR_CATEGORIA = 5;
+  private readonly MAX_MB_POR_ARQUIVO = 10; // também validado nas regras do Storage
+  private readonly THUMB_PX = 200;          // miniatura
+  private readonly COMPRESS_MAX_DIM = 1600; // maior lado
+  private readonly COMPRESS_QUALITY = 0.8;  // JPEG quality
+
+  categoriasDocs = [
+    { key: 'docPessoa',          label: 'Foto do documento',        multiple: true },
+    { key: 'fotoPessoa',         label: 'Foto da pessoa',           multiple: true },
+    { key: 'selfieDocumento',    label: 'Pessoa com documento',     multiple: true },
+    { key: 'fotoEmpreendimento', label: 'Foto do empreendimento',   multiple: true },
+    { key: 'fotoProdutos',       label: 'Foto dos produtos',        multiple: true },
+    { key: 'fotoEquipamentos',   label: 'Foto dos equipamentos',    multiple: true },
+    { key: 'orcamento',          label: 'Orçamento (foto)',         multiple: true },
+    { key: 'planoNegocio',       label: 'Plano de negócio (foto)',  multiple: true },
+  ];
+  arquivosMap: Record<string, File[]> = {};
+  previewMap: Record<string, string[]> = {};
+
+  // Assinatura
+  @ViewChild('signatureCanvas') signatureCanvas!: ElementRef<HTMLCanvasElement>;
+  private sigCtx!: CanvasRenderingContext2D;
+  private desenhando = false;
+  private ultimoPonto: { x: number, y: number } | null = null;
+  signatureDataUrl: string | null = null;
+  signaturePreview: string | null = null;
+
+  uploadStatus = { ok: false, msg: '' };
+  private storage: FirebaseStorage = fbStorage;
+
+  // ---------- Ciclo de Vida ----------
+  constructor(private zone: NgZone) {}
+
+  ngOnInit(): void {
+    this.syncNacionalidadeBaseFromCliente();
+
+    // data atual -> "data do cadastro"
     const hoje = new Date();
     this.diaPre = hoje.getDate();
-    this.mesPre = hoje.getMonth() + 1; // meses em JS começam em 0
+    this.mesPre = hoje.getMonth() + 1;
     this.anoPre = hoje.getFullYear();
 
-    this.atualizarDataPreenchimento(); // já monta no formato ISO
+    this.atualizarDataPreenchimento();
     this.atualizarParcelasLabels();
-
-    // inicia dias com 31 por padrão
     this.atualizarDias();
 
-    // Se veio edição do storage, carrega
-    const clienteEditando = localStorage.getItem('clienteEditando');
-    if (clienteEditando) {
-      this.cliente = JSON.parse(clienteEditando);
-      localStorage.removeItem('clienteEditando');
-      this.atualizarMunicipios();
+    // Carrega edição se houver
+const clienteEditando = localStorage.getItem('clienteEditando');
+if (clienteEditando) {
+  try {
+    const edit = JSON.parse(clienteEditando);
 
-      // Preenche selects a partir de dataNascimento (YYYY-MM-DD)
-      if (this.cliente.dataNascimento) {
-        const [ano, mes, dia] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
-        if (ano && mes && dia) {
-          this.anoSelecionado = ano;
-          this.mesSelecionado = mes;
-          this.atualizarDias(); // recalcula nº de dias conforme mês/ano
-          this.diaSelecionado = Math.min(dia, this.dias[this.dias.length - 1]);
-        }
-      }
-      this.atualizarDataNascimento();
+    // 1) carrega o cliente
+    this.cliente = edit;
+
+    // 2) pré-visualizações vindas da listagem
+    //    (ajuste a chave 'fotoPessoa' se sua UI usa outra categoria para mostrar a thumb)
+    if (edit?._thumbUrl) {
+      this.previewMap['fotoPessoa'] = [edit._thumbUrl];
+    }
+    if (edit?._assinaturaUrl) {
+      this.signatureDataUrl = edit._assinaturaUrl; // mantém o dado pra re-upload se salvar
+      this.signaturePreview = edit._assinaturaUrl; // mostra a assinatura na UI
     }
 
-    // Estado inicial de "Outro" para tipoNegocio/ondeVende
-    this.selecionouOutroTipoNegocio = !!(this.cliente.tipoNegocio && !this.opcoesTipoNegocioPadrao.has(this.cliente.tipoNegocio));
-    this.selecionouOutroOndeVende = !!(this.cliente.ondeVende && !this.opcoesOndeVendePadrao.has(this.cliente.ondeVende));
+    // 3) municípios do estado
+    this.atualizarMunicipios();
+
+    // 4) restaura seleção de data de nascimento (dia/mes/ano)
+    if (this.cliente.dataNascimento) {
+      const [ano, mes, dia] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
+      if (ano && mes && dia) {
+        this.anoSelecionado = ano;
+        this.mesSelecionado = mes;
+        this.atualizarDias();
+        this.diaSelecionado = Math.min(dia, this.dias[this.dias.length - 1]);
+      }
+    }
+    this.atualizarDataNascimento();
+
+    // 5) se já havia fluxo de caixa, recalcula totais
+    if (this.cliente.fluxoCaixa) this.recalcular();
+
+    // 6) sincroniza valor solicitado (numérico) e labels de parcelas
+    this.valorSolicitadoNumber = this.parseMoedaBR(this.cliente.valorSolicitado || 0);
+    this.atualizarParcelasLabels();
+    this.atualizarResumo();
+
+  } catch (e) {
+    console.warn('Falha ao restaurar clienteEditando:', e);
+  } finally {
+    localStorage.removeItem('clienteEditando');
+  }
+}
+
+// status dos selects "Outro"
+this.selecionouOutroTipoNegocio =
+  !!(this.cliente.tipoNegocio && !this.opcoesTipoNegocioPadrao.has(this.cliente.tipoNegocio));
+this.selecionouOutroOndeVende =
+  !!(this.cliente.ondeVende && !this.opcoesOndeVendePadrao.has(this.cliente.ondeVende));
+
   }
 
-  // ---------- Data de Nascimento (selects) ----------
+  ngAfterViewInit(): void {
+    if (!this.signatureCanvas) return;
+    const canvas = this.signatureCanvas.nativeElement;
+    this.sigCtx = canvas.getContext('2d')!;
+    this.sigCtx.lineWidth = 2;
+    this.sigCtx.lineCap = 'round';
+    this.sigCtx.strokeStyle = '#111';
+
+    // Eventos fora da Zone para não causar CD a cada traço
+    this.zone.runOutsideAngular(() => {
+      canvas.addEventListener('mousedown', (e) => this.iniciarDesenho(e));
+      canvas.addEventListener('mousemove', (e) => this.continuarDesenho(e));
+      window.addEventListener('mouseup', () => this.pararDesenho());
+
+      canvas.addEventListener('touchstart', (e) => this.iniciarDesenho(e));
+      canvas.addEventListener('touchmove', (e) => this.continuarDesenho(e));
+      window.addEventListener('touchend', () => this.pararDesenho());
+    });
+
+    this.ajustarDPI();
+  }
+
+  // ---------- Datas ----------
   onChangeMesOuAno() {
     this.atualizarDias();
     if (this.diaSelecionado && !this.dias.includes(this.diaSelecionado)) {
@@ -150,17 +304,10 @@ export class CadastroFormComponent implements OnInit {
     return true;
   }
 
-  // Variável para controlar a visibilidade do campo "Outro"
-  selecionouOutroGenero: boolean = false;
-
-  /**
-   * Função que é chamada quando a seleção no campo de gênero muda.
-   * @param event O valor do item selecionado no dropdown.
-   */
+  // ---------- "Outro" lógicas ----------
   aoTrocarGenero(event: string) {
     if (event === 'Outro') {
       this.selecionouOutroGenero = true;
-      // Limpa o valor para que o usuário possa digitar
       this.cliente.genero = '';
     } else {
       this.selecionouOutroGenero = false;
@@ -168,24 +315,20 @@ export class CadastroFormComponent implements OnInit {
     }
   }
 
-  // -----------------------------------------------
-
-  // ---------- Lógica "Outro" para Tipo de Negócio ----------
   aoTrocarTipoNegocio(valor: string) {
     if (valor === 'Outro') {
       this.selecionouOutroTipoNegocio = true;
-      this.cliente.tipoNegocio = ''; // limpa para digitação
+      this.cliente.tipoNegocio = '';
     } else {
       this.selecionouOutroTipoNegocio = false;
       this.cliente.tipoNegocio = valor;
     }
   }
 
-  // ---------- Lógica "Outro" para Onde Vende ----------
   aoTrocarOndeVende(valor: string) {
     if (valor === 'Outro') {
       this.selecionouOutroOndeVende = true;
-      this.cliente.ondeVende = ''; // limpa para digitação
+      this.cliente.ondeVende = '';
     } else {
       this.selecionouOutroOndeVende = false;
       this.cliente.ondeVende = valor;
@@ -194,92 +337,76 @@ export class CadastroFormComponent implements OnInit {
 
   atualizarMunicipios() {
     const estado = this.cliente.estado ?? '';
-    this.municipios = estado
-      ? (municipiosNorte as any)[estado] || []
-      : [];
-
+    this.municipios = estado ? (municipiosNorte as any)[estado] || [] : [];
     if (!this.municipios.includes(this.cliente.cidade ?? '')) {
       this.cliente.cidade = '';
     }
   }
 
-private isEmailValido(v?: string): boolean {
-  return !!v && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-}
-
-private isDDDValido(ddd: string): boolean {
-  const n = Number(ddd);
-  return [
-    11,12,13,14,15,16,17,18,19,
-    21,22,24,27,28,
-    31,32,33,34,35,37,38,
-    41,42,43,44,45,46,47,48,49,
-    51,53,54,55,
-    61,62,63,64,65,66,67,68,69,
-    71,73,74,75,77,79,
-    81,82,83,84,85,86,87,88,89,
-    91,92,93,94,95,96,97,98,99
-  ].includes(n);
-}
-
-/** Converte BR -> E.164. Ex.: "91 98888-7777" => "5591988887777" */
-private toE164BR(raw: any): string | null {
-  let digits = String(raw ?? '').replace(/\D/g, '');
-
-  // remove DDI duplicado (ex.: 5591...)
-  if (digits.startsWith('55') && digits.length > 13) digits = digits.slice(2);
-
-  // precisa ter exatamente 11 dígitos (DDD2 + CELULAR9 começando com 9)
-  if (digits.length !== 11) return null;
-
-  const ddd = digits.slice(0, 2);
-  const assinante = digits.slice(2);
-
-  if (!this.isDDDValido(ddd)) return null;
-  if (!assinante.startsWith('9')) return null; // exige celular
-
-  return `55${ddd}${assinante}`;
-}
-
-private abrirWhatsAppE164(e164: string, nome?: string) {
-  const msg = encodeURIComponent(
-    `Olá${nome ? ' ' + nome : ''}, bem-vindo(a) à CRENORTE! Seu cadastro foi concluído com sucesso.`
-  );
-  const url = `https://wa.me/${e164}?text=${msg}`;
-  window.open(url, '_blank');
-}
-
-/** Envia e-mail via EmailJS (só se e-mail válido) */
-private async enviarEmailBemVindo(): Promise<void> {
-  if (!this.isEmailValido(this.cliente?.email)) return;
-
-  const templateParams = {
-    to_email: this.cliente.email,
-    to_name: this.cliente.nomeCompleto || 'Cliente',
-    from_name: 'CRENORTE',
-    reply_to: 'contato@crenorte.com.br',
-    subject: 'Bem-vindo(a) à CRENORTE',
-    message: `Olá ${this.cliente.nomeCompleto || ''}, seu cadastro foi concluído com sucesso.`
-  };
-
-  try {
-    const res = await emailjs.send(
-      'service_nsgoz87',
-      'template_7sabbwk',
-      templateParams,
-      'bWkGEOvHh11MNlZi9'
-    );
-    console.log('E-mail enviado!', res.status, res.text);
-  } catch (err) {
-    const e = err as EmailJSResponseStatus;
-    console.error('Erro ao enviar e-mail:', e?.status, e?.text);
-    // Dica: se 422, confira os nomes de variáveis no template do EmailJS
+  // ---------- Validações / Utilitários ----------
+  private isEmailValido(v?: string): boolean {
+    return !!v && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   }
-}
 
+  private isDDDValido(ddd: string): boolean {
+    const n = Number(ddd);
+    return [
+      11,12,13,14,15,16,17,18,19,
+      21,22,24,27,28,
+      31,32,33,34,35,37,38,
+      41,42,43,44,45,46,47,48,49,
+      51,53,54,55,
+      61,62,63,64,65,66,67,68,69,
+      71,73,74,75,77,79,
+      81,82,83,84,85,86,87,88,89,
+      91,92,93,94,95,96,97,98,99
+    ].includes(n);
+  }
 
+  private toE164BR(raw: any): string | null {
+    let digits = String(raw ?? '').replace(/\D/g, '');
+    if (digits.startsWith('55') && digits.length > 13) digits = digits.slice(2);
+    if (digits.length !== 11) return null;
+    const ddd = digits.slice(0, 2);
+    const assinante = digits.slice(2);
+    if (!this.isDDDValido(ddd)) return null;
+    if (!assinante.startsWith('9')) return null;
+    return `55${ddd}${assinante}`;
+  }
 
+  private abrirWhatsAppE164(e164: string, nome?: string) {
+    const msg = encodeURIComponent(
+      `Olá${nome ? ' ' + nome : ''}, bem-vindo(a) à CRENORTE! Seu cadastro foi concluído com sucesso.`
+    );
+    const url = `https://wa.me/${e164}?text=${msg}`;
+    window.open(url, '_blank');
+  }
 
+  private async enviarEmailBemVindo(): Promise<void> {
+    if (!this.isEmailValido(this.cliente?.email)) return;
+
+    const templateParams = {
+      to_email: this.cliente.email,
+      to_name: this.cliente.nomeCompleto || 'Cliente',
+      from_name: 'CRENORTE',
+      reply_to: 'contato@crenorte.com.br',
+      subject: 'Bem-vindo(a) à CRENORTE',
+      message: `Olá ${this.cliente.nomeCompleto || ''}, seu cadastro foi concluído com sucesso.`
+    };
+
+    try {
+      const res = await emailjs.send(
+        'service_nsgoz87',
+        'template_7sabbwk',
+        templateParams,
+        'bWkGEOvHh11MNlZi9'
+      );
+      console.log('E-mail enviado!', res.status, res.text);
+    } catch (err) {
+      const e = err as EmailJSResponseStatus;
+      console.error('Erro ao enviar e-mail:', e?.status, e?.text);
+    }
+  }
 
   converterMoedaParaNumero(valor: any): number {
     if (!valor) return 0;
@@ -292,7 +419,7 @@ private async enviarEmailBemVindo(): Promise<void> {
     if (/^(\d)\1{10}$/.test(cpf)) return false;
 
     let soma = 0;
-    let resto;
+    let resto: number;
 
     for (let i = 1; i <= 9; i++) soma += parseInt(cpf.substring(i - 1, i)) * (11 - i);
     resto = (soma * 10) % 11;
@@ -308,21 +435,28 @@ private async enviarEmailBemVindo(): Promise<void> {
     return true;
   }
 
-  // Renomeado para evitar conflito
+  onBlurCPF() {
+    const cpfLimpo = (this.cliente.cpf ?? '').replace(/\D/g, '');
+    this.cpfValido = this.validarCPF(cpfLimpo);
+  }
+
   limparFormularioCadastro() {
     this.cliente = this.novoCliente();
     this.municipios = [];
     this.cpfValido = null;
 
-    // reseta selects de data
     this.anoSelecionado = null;
     this.mesSelecionado = null;
     this.diaSelecionado = null;
     this.atualizarDias();
 
-    // reseta lógica "Outro"
     this.selecionouOutroTipoNegocio = false;
     this.selecionouOutroOndeVende = false;
+
+    // Limpa anexos e assinatura
+    this.arquivosMap = {};
+    this.previewMap = {};
+    this.limparAssinatura();
   }
 
   private novoCliente(): Cliente {
@@ -332,10 +466,17 @@ private async enviarEmailBemVindo(): Promise<void> {
       rg: '',
       genero: '',
       estadoCivil: '',
+      escolaridade: '',
+      corRaca: '',
+      nacionalidade: '',
+      religiao: '',
+      paisOrigem: '',
       dataNascimento: '',
       contato: '',
       email: '',
       endereco: '',
+      tipoResidencia: '',
+      cep: '',
       bairro: '',
       cidade: '',
       estado: '',
@@ -348,53 +489,36 @@ private async enviarEmailBemVindo(): Promise<void> {
       outraRenda: false,
       rendaMensal: '',
       valorSolicitado: '',
-      parcelas: '',
+      parcelas: null, // <<<<<<<<<<<<<< NUNCA undefined
       usoValor: '',
       clienteCrenorte: false,
       dataPreenchimento: '',
       autorizacaoUsoDados: false,
       valorParcela: '',
       emprestimoAtivo: false,
-      instituicaoEmprestimo: ''
+      instituicaoEmprestimo: '',
+      fluxoCaixa: null,
+      fluxoCaixaTotais: { receita: 0, custos: 0, lucro: 0 },
     };
   }
 
-  parcelas: number[] = Array.from({ length: 12 }, (_, i) => i + 1);
-
-
-  jurosMes = 0.0275; // 2,75% a.m.
-  valorSolicitadoNumber = 0;
-
-  // lista para popular o select com labels prontos
-  parcelasComValor: { n: number; label: string; valorParcela: number }[] = [];
-
-  resumoParcela = '';
-
-  // quando valor muda
+  // ---------- Empréstimo ----------
   onValorChange(raw: any) {
     this.valorSolicitadoNumber = this.parseMoedaBR(raw);
     this.atualizarParcelasLabels();
     this.atualizarResumo();
   }
 
-  // quando nº de parcelas muda
-  onParcelasChange(n: number) {
+  onParcelasChange(_n: number) {
     this.atualizarResumo();
   }
 
-  // gera a lista [ {n:1,label:"1x de R$..."} ... ]
   atualizarParcelasLabels() {
     this.parcelasComValor = this.parcelas.map(n => {
       const v = this.calcularParcela(this.valorSolicitadoNumber, n, this.jurosMes);
-      return {
-        n,
-        valorParcela: v,
-        label: `${n}x de ${this.formatBRL(v)}`
-      };
+      return { n, valorParcela: v, label: `${n}x de ${this.formatBRL(v)}` };
     });
   }
-
-
 
   atualizarResumo() {
     const n = Number(this.cliente?.parcelas || 0);
@@ -407,14 +531,12 @@ private async enviarEmailBemVindo(): Promise<void> {
     this.resumoParcela = `${n}x de ${this.formatBRL(pmt)} • Total: ${this.formatBRL(total)}`;
   }
 
-  // Fórmula PRICE
   calcularParcela(pv: number, n: number, i: number): number {
     if (!pv || !n || !i) return 0;
     const fator = i / (1 - Math.pow(1 + i, -n));
     return pv * fator;
   }
 
-  // Converte moeda pt-BR para number
   parseMoedaBR(v: any): number {
     if (typeof v === 'number') return v;
     if (!v) return 0;
@@ -423,16 +545,10 @@ private async enviarEmailBemVindo(): Promise<void> {
     return isNaN(num) ? 0 : num;
   }
 
-  // Formata number em R$ BRL
   formatBRL(v: number): string {
     if (!isFinite(v)) v = 0;
     return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
-
-  // variáveis EXCLUSIVAS desta data
-  diaPre: number | '' = '';
-  mesPre: number | '' = '';
-  anoPre: number | '' = '';
 
   atualizarDataPreenchimento() {
     const d = Number(this.diaPre);
@@ -446,11 +562,228 @@ private async enviarEmailBemVindo(): Promise<void> {
 
     const dd = String(d).padStart(2, '0');
     const mm = String(m).padStart(2, '0');
-    this.cliente.dataPreenchimento = `${a}-${mm}-${dd}`; // formato YYYY-MM-DD
+    this.cliente.dataPreenchimento = `${a}-${mm}-${dd}`;
   }
 
-  async salvar() {
-  // Sincroniza data de nascimento antes de validar
+  // ================== MINIATURAS & COMPRESSÃO ==================
+  private fileToImage(file: File): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  private async generateThumbnail(file: File, maxSize = this.THUMB_PX): Promise<string> {
+    const img = await this.fileToImage(file);
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(img.src);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  }
+
+  private async compressImage(file: File, maxDim = this.COMPRESS_MAX_DIM, quality = this.COMPRESS_QUALITY): Promise<Blob> {
+    const img = await this.fileToImage(file);
+    const { width, height } = img;
+    const scale = Math.min(1, maxDim / Math.max(width, height));
+    const targetW = Math.round(width * scale);
+    const targetH = Math.round(height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+    URL.revokeObjectURL(img.src);
+    return await new Promise<Blob>((resolve) =>
+      canvas.toBlob(b => resolve(b!), 'image/jpeg', quality)
+    );
+  }
+
+  /** Handler de arquivos otimizado */
+  async onFilesChange(key: string, evt: Event) {
+    const input = evt.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []).filter(f => f.type.startsWith('image/'));
+
+    // limite por categoria
+    const selecionados = files.slice(0, this.MAX_QTD_POR_CATEGORIA);
+
+    // valida tamanho
+    const muitoGrandes = selecionados.filter(f => f.size > this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
+    if (muitoGrandes.length) {
+      alert(`⚠️ Arquivo(s) acima de ${this.MAX_MB_POR_ARQUIVO}MB foram ignorados.`);
+    }
+    const validos = selecionados.filter(f => f.size <= this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
+
+    // mostra 1 thumb leve
+    this.previewMap[key] = [];
+    if (validos[0]) {
+      const thumb = await this.generateThumbnail(validos[0]);
+      this.previewMap[key] = [thumb];
+    }
+
+    // guarda os arquivos (originais) — a compressão acontece no upload
+    this.arquivosMap[key] = validos;
+  }
+
+  // ================== CANVAS ASSINATURA ==================
+  private ajustarDPI() {
+    const canvas = this.signatureCanvas?.nativeElement;
+    if (!canvas) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5); // cap para economizar memória
+    const w = canvas.width;
+    const h = canvas.height;
+    canvas.width = Math.floor(w * ratio);
+    canvas.height = Math.floor(h * ratio);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    this.sigCtx.scale(ratio, ratio);
+    this.sigCtx.lineWidth = 2;
+  }
+
+  private getPos(evt: MouseEvent | TouchEvent) {
+    const canvas = this.signatureCanvas.nativeElement;
+    const rect = canvas.getBoundingClientRect();
+    let clientX = 0, clientY = 0;
+
+    if (evt instanceof TouchEvent) {
+      const t = evt.touches[0] || evt.changedTouches[0];
+      clientX = t?.clientX ?? 0;
+      clientY = t?.clientY ?? 0;
+      evt.preventDefault();
+    } else {
+      clientX = (evt as MouseEvent).clientX;
+      clientY = (evt as MouseEvent).clientY;
+    }
+
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  private iniciarDesenho(evt: MouseEvent | TouchEvent) {
+    this.desenhando = true;
+    this.ultimoPonto = this.getPos(evt);
+  }
+
+  private continuarDesenho(evt: MouseEvent | TouchEvent) {
+    if (!this.desenhando || !this.ultimoPonto) return;
+    const atual = this.getPos(evt);
+    this.sigCtx.beginPath();
+    this.sigCtx.moveTo(this.ultimoPonto.x, this.ultimoPonto.y);
+    this.sigCtx.lineTo(atual.x, atual.y);
+    this.sigCtx.stroke();
+    this.ultimoPonto = atual;
+  }
+
+  private pararDesenho() {
+    this.desenhando = false;
+    this.ultimoPonto = null;
+  }
+
+  limparAssinatura() {
+    if (!this.signatureCanvas) return;
+    const canvas = this.signatureCanvas.nativeElement;
+    if (!this.sigCtx) return;
+    this.sigCtx.clearRect(0, 0, canvas.width, canvas.height);
+    this.signatureDataUrl = null;
+    this.signaturePreview = null;
+  }
+
+  salvarAssinatura() {
+    if (!this.signatureCanvas) return;
+    const canvas = this.signatureCanvas.nativeElement;
+    const dataUrl = canvas.toDataURL('image/png');
+    this.signatureDataUrl = dataUrl;
+    this.signaturePreview = dataUrl;
+  }
+
+  private dataURLtoBlob(dataUrl: string): Blob {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] ?? 'image/png';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8 = new Uint8Array(n);
+    while (n--) u8[n] = bstr.charCodeAt(n);
+    return new Blob([u8], { type: mime });
+  }
+
+  // ================== UPLOAD (com compressão) ==================
+  private async uploadArquivosGrupo(clienteId: string, key: string, files: File[]): Promise<string[]> {
+    const urls: string[] = [];
+    for (const f of files) {
+      const nameSafe = (f.name || 'img').replace(/[^\w.\-]/g, '_');
+      const path = `clientes/${clienteId}/${key}/${Date.now()}-${nameSafe}`;
+
+      // Comprime imagens antes do upload
+      const isImage = f.type.startsWith('image/');
+      const blob = isImage ? await this.compressImage(f, this.COMPRESS_MAX_DIM, this.COMPRESS_QUALITY) : f;
+
+      const storageRef = ref(this.storage, path);
+      await uploadBytes(storageRef, blob, { contentType: isImage ? 'image/jpeg' : f.type || 'application/octet-stream' });
+      const url = await getDownloadURL(storageRef);
+      urls.push(url);
+    }
+    return urls;
+  }
+
+  private async uploadTodosArquivos(clienteId: string): Promise<Record<string, string[]>> {
+    const result: Record<string, string[]> = {};
+    for (const cat of this.categoriasDocs) {
+      const files = this.arquivosMap[cat.key] ?? [];
+      if (files.length) {
+        result[cat.key] = await this.uploadArquivosGrupo(clienteId, cat.key, files);
+      }
+    }
+
+    // assinatura: envia como PNG se existir
+    if (this.signatureDataUrl) {
+      const blob = this.dataURLtoBlob(this.signatureDataUrl);
+      const path = `clientes/${clienteId}/assinatura/assinatura-${Date.now()}.png`;
+      const storageRef = ref(this.storage, path);
+      await uploadBytes(storageRef, blob, { contentType: 'image/png' });
+      const url = await getDownloadURL(storageRef);
+      result['assinatura'] = [url];
+    }
+
+    return result;
+  }
+
+  // ================== HELPERS PARA FIRESTORE ==================
+  private pruneUndefinedDeep<T>(obj: T): T {
+    if (Array.isArray(obj)) {
+      return obj.map((v) => this.pruneUndefinedDeep(v)).filter((v) => v !== undefined) as any;
+    }
+    if (obj !== null && typeof obj === 'object') {
+      const out: any = {};
+      for (const [k, v] of Object.entries(obj as any)) {
+        if (v === undefined) continue;
+        out[k] = this.pruneUndefinedDeep(v as any);
+      }
+      return out;
+    }
+    return obj;
+  }
+
+  private coerceCliente(c: Cliente) {
+    return {
+      ...c,
+      // Garanta tipo primitivo estável pros numéricos/moedas
+      rendaMensal: c.rendaMensal ?? '',
+      valorSolicitado: c.valorSolicitado ?? '',
+      valorParcela: c.valorParcela ?? '',
+      // parcelas como number ou null (nunca undefined)
+      parcelas: c.parcelas == null ? null : Number(c.parcelas),
+      fluxoCaixa: c.fluxoCaixa ?? null,
+      fluxoCaixaTotais: c.fluxoCaixaTotais ?? { receita: 0, custos: 0, lucro: 0 },
+    };
+  }
+
+  // ================== SALVAR (com anexos e assinatura) ==================
+ // ================== SALVAR (com anexos e assinatura) ==================
+async salvar() {
   this.atualizarDataNascimento();
 
   const cpfLimpo = (this.cliente.cpf ?? '').replace(/\D/g, '');
@@ -460,14 +793,12 @@ private async enviarEmailBemVindo(): Promise<void> {
     return;
   }
 
-  // Telefone: valida e já transforma para E.164 (exige CELULAR com DDD)
   const e164 = this.toE164BR(this.cliente?.contato);
   if (!e164) {
     alert('⚠️ Informe um CELULAR com DDD válido (ex.: 91 9XXXX-XXXX).');
     return;
   }
 
-  // Data de nascimento (se informada)
   if (this.cliente.dataNascimento) {
     const [a, m, d] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
     if (!this.isDataValida(a, m, d)) {
@@ -476,33 +807,379 @@ private async enviarEmailBemVindo(): Promise<void> {
     }
   }
 
-  // Conversões numéricas
-  const rendaMensal     = this.converterMoedaParaNumero(this.cliente.rendaMensal);
-  const valorSolicitado = this.converterMoedaParaNumero(this.cliente.valorSolicitado);
-  const valorParcela    = this.converterMoedaParaNumero(this.cliente.valorParcela);
+  // ======= Normalizações / formatações =======
+  const rendaMensal       = this.converterMoedaParaNumero(this.cliente.rendaMensal);
+  const valorSolicitado   = this.converterMoedaParaNumero(this.cliente.valorSolicitado);
+  const valorParcela      = this.converterMoedaParaNumero(this.cliente.valorParcela);
+
+  // Máscara de CPF
+  const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+
+  // Máscara de telefone (11 dígitos BR)
+  const telDigits = String(this.cliente?.contato ?? '').replace(/\D/g, '').slice(-11);
+  const contatoFormatado = telDigits.length === 11
+    ? telDigits.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
+    : this.cliente?.contato ?? '';
+
+  // Moeda formatada para exibir na listagem
+  const valorSolicitadoFormatado = this.formatBRN(valorSolicitado);
+
+  // Índice para busca: nome minúsculo sem acento
+  const nomeIndex = (this.cliente?.nomeCompleto || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 
   try {
-    // Persiste
-    await setDoc(doc(db, 'clientes', cpfLimpo), {
-      ...this.cliente,
+    this.uploadStatus = { ok: false, msg: 'Enviando anexos (otimizados)...' };
+    const anexosUrls = await this.uploadTodosArquivos(cpfLimpo);
+
+    this.uploadStatus = { ok: false, msg: 'Gravando cadastro...' };
+
+    // Coagir tipos e remover undefined
+    const coerced = this.coerceCliente(this.cliente);
+    const payload: any = this.pruneUndefinedDeep({
+      ...coerced,
+      // brutos normalizados
       cpf: cpfLimpo,
       rendaMensal,
       valorSolicitado,
-      valorParcela
+      valorParcela,
+      // mascarados p/ exibição
+      cpfFormatado,
+      contatoFormatado,
+      valorSolicitadoFormatado,
+      // índice de busca por nome (server-side)
+      nomeIndex,
+      // anexos/assinatura
+      anexos: anexosUrls,
+      // meta
+      criadoEm: new Date()
     });
 
-    // Dispara comunicações (não bloqueia o fluxo do usuário)
-    this.enviarEmailBemVindo();                // envia e-mail se e-mail válido
-    this.abrirWhatsAppE164(e164, this.cliente?.nomeCompleto); // abre conversa no WhatsApp
+    // Opcional: não gravar 'parcelas' se vazio
+    // if (payload.parcelas == null) delete payload.parcelas;
+
+    console.log('Payload Firestore:', payload);
+
+    await setDoc(doc(db, 'clientes', cpfLimpo), payload, { merge: true });
+
+    this.uploadStatus = { ok: true, msg: 'Cadastro salvo com anexos e assinatura!' };
+
+    // fire-and-forget
+    this.enviarEmailBemVindo();
+    this.abrirWhatsAppE164(e164, this.cliente?.nomeCompleto);
 
     alert('✅ Cliente salvo com sucesso!');
     this.limparFormularioCadastro();
 
   } catch (error) {
     console.error('Erro ao salvar cliente:', error);
+    this.uploadStatus = { ok: false, msg: '❌ Falha ao salvar anexos/assinatura.' };
     alert('❌ Falha ao salvar cliente.');
   }
 }
 
+  // ---------- Modal Fluxo de Caixa ----------
+  openFluxoModal() {
+    if (this.cliente.fluxoCaixa) {
+      const f = this.cliente.fluxoCaixa;
+      this.fluxoForm.faturamentoMensal = f.faturamentoMensal || 0;
+      this.fluxoForm.faturamentoMensalMasked = this.formatBRN(this.fluxoForm.faturamentoMensal);
 
+      this.fluxoForm.fixos.aluguel = f.fixos.aluguel || 0;
+      this.fluxoForm.fixos.salarios = f.fixos.salarios || 0;
+      this.fluxoForm.fixos.energiaEletrica = f.fixos.energiaEletrica || 0;
+      this.fluxoForm.fixos.agua = f.fixos.agua || 0;
+      this.fluxoForm.fixos.telefoneInternet = f.fixos.telefoneInternet || 0;
+
+      this.fluxoForm.variaveis.materiaPrima = f.variaveis.materiaPrima || 0;
+      this.fluxoForm.variaveis.insumos = f.variaveis.insumos || 0;
+      this.fluxoForm.variaveis.frete = f.variaveis.frete || 0;
+      this.fluxoForm.variaveis.transporte = f.variaveis.transporte || 0;
+
+      this.fluxoForm.variaveis.outros = (f.variaveis.outros || []).map(o => ({
+        nome: o.nome, valor: o.valor, valorMasked: this.formatBRN(o.valor)
+      }));
+    } else {
+      const faturamento = this.parseMoedaBR(this.cliente?.faturamentoMensal || 0);
+      this.fluxoForm.faturamentoMensal = faturamento;
+      this.fluxoForm.faturamentoMensalMasked = this.formatBRN(faturamento);
+
+      this.fluxoForm.fixos = {
+        aluguelMasked: '', salariosMasked: '', energiaEletricaMasked: '', aguaMasked: '', telefoneInternetMasked: '',
+        aluguel: 0, salarios: 0, energiaEletrica: 0, agua: 0, telefoneInternet: 0
+      };
+      this.fluxoForm.variaveis = {
+        materiaPrimaMasked: '', insumosMasked: '', freteMasked: '', transporteMasked: '',
+        materiaPrima: 0, insumos: 0, frete: 0, transporte: 0, outros: []
+      };
+    }
+
+    const el = document.getElementById('fluxoCaixaModal');
+    if (el) {
+      this.fluxoModalRef = new bootstrap.Modal(el, { backdrop: 'static' });
+      this.fluxoModalRef.show();
+    }
+  }
+
+  closeFluxoModal() {
+    if (this.fluxoModalRef) {
+      this.fluxoModalRef.hide();
+      this.fluxoModalRef = null;
+    }
+  }
+
+  addOutro() {
+    this.fluxoForm.variaveis.outros.push({ nome: '', valorMasked: '', valor: 0 });
+  }
+  removeOutro(i: number) {
+    this.fluxoForm.variaveis.outros.splice(i, 1);
+  }
+
+  syncOutroValor(i: number, masked: string) {
+    const val = this.parseBRN(masked);
+    this.fluxoForm.variaveis.outros[i].valor = val;
+  }
+
+  syncNumber(path: string, masked: string) {
+    const n = this.parseBRN(masked);
+    const set = (obj: any, p: string[], value: number): void => {
+      if (p.length === 1) { obj[p[0]] = value; return; }
+      set(obj[p[0]], p.slice(1), value);
+    };
+    set(this.fluxoForm, path.split('.'), n);
+  }
+
+  totalReceita(): number {
+    return this.fluxoForm.faturamentoMensal || 0;
+  }
+  totalCustos(): number {
+    const f = this.fluxoForm.fixos;
+    const v = this.fluxoForm.variaveis;
+    const somaFixos =
+      (f.aluguel || 0) + (f.salarios || 0) + (f.energiaEletrica || 0) + (f.agua || 0) + (f.telefoneInternet || 0);
+    const somaVariaveis =
+      (v.materiaPrima || 0) + (v.insumos || 0) + (v.frete || 0) + (v.transporte || 0) +
+      (v.outros || []).reduce((acc: number, o) => acc + (o.valor || 0), 0);
+    return somaFixos + somaVariaveis;
+  }
+  totalLucro(): number {
+    return this.totalReceita() - this.totalCustos();
+  }
+
+  saveFluxo() {
+    const fluxo: FluxoCaixa = {
+      faturamentoMensal: this.fluxoForm.faturamentoMensal || 0,
+      fixos: {
+        aluguel: this.fluxoForm.fixos.aluguel || 0,
+        salarios: this.fluxoForm.fixos.salarios || 0,
+        energiaEletrica: this.fluxoForm.fixos.energiaEletrica || 0,
+        agua: this.fluxoForm.fixos.agua || 0,
+        telefoneInternet: this.fluxoForm.fixos.telefoneInternet || 0,
+      },
+      variaveis: {
+        materiaPrima: this.fluxoForm.variaveis.materiaPrima || 0,
+        insumos: this.fluxoForm.variaveis.insumos || 0,
+        frete: this.fluxoForm.variaveis.frete || 0,
+        transporte: this.fluxoForm.variaveis.transporte || 0,
+        outros: (this.fluxoForm.variaveis.outros || []).map(o => ({ nome: o.nome || 'Outro', valor: o.valor || 0 })),
+      },
+    };
+
+    this.cliente.fluxoCaixa = fluxo;
+    this.recalcular();
+
+    if (!this.cliente.faturamentoMensal || this.cliente.faturamentoMensal === '') {
+      this.cliente.faturamentoMensal = this.formatBRN(fluxo.faturamentoMensal);
+    }
+
+    this.closeFluxoModal();
+  }
+
+  addOutroResumo() {
+    if (!this.cliente.fluxoCaixa) return;
+    this.cliente.fluxoCaixa.variaveis.outros.push({ nome: '', valor: 0 });
+    this.recalcular();
+  }
+  removeOutroResumo(i: number) {
+    if (!this.cliente.fluxoCaixa) return;
+    this.cliente.fluxoCaixa.variaveis.outros.splice(i, 1);
+    this.recalcular();
+  }
+
+  // ====== Parcela Sugerida ======
+  private approxEqual(a: number, b: number, eps = 0.01): boolean {
+    return Math.abs(a - b) <= eps;
+  }
+
+  private getOutrasRendasNumber(): number {
+    if (!this.cliente?.outraRenda) return 0;
+    return this.converterMoedaParaNumero(this.cliente.rendaMensal);
+  }
+
+  computeParcelaSugerida() {
+    const lucro = this.cliente?.fluxoCaixaTotais?.lucro || 0;
+    const outras = this.getOutrasRendasNumber();
+    const base = Math.max(0, lucro + outras);
+
+    if (base <= 0) return { valor: 0, fator: 0, base: 0 };
+
+    const metadeLucro = 0.5 * lucro;
+
+    let fator = 0.3;
+    if (this.approxEqual(outras, metadeLucro)) {
+      fator = 0.4;
+    } else if (outras >= lucro) {
+      fator = 0.5;
+    }
+
+    const valor = base * fator;
+    return { valor, fator, base };
+  }
+
+  getParcelaSugeridaTexto(): string {
+    const { valor } = this.computeParcelaSugerida();
+    if (valor <= 0) return 'Parcela sugerida: —';
+    return `Parcela sugerida: ${this.formatBRL(valor)}`;
+  }
+
+  // ===== Utilitários de moeda BR =====
+  parseBRN(masked: string | null | undefined): number {
+    if (!masked) return 0;
+    const s = String(masked).replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+
+  formatBRN(n: number): string {
+    try {
+      return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    } catch {
+      return `R$ ${n.toFixed(2)}`;
+    }
+  }
+
+  recalcular() {
+    if (!this.cliente.fluxoCaixa) {
+      this.cliente.fluxoCaixaTotais = { receita: 0, custos: 0, lucro: 0 };
+      return;
+    }
+    const f = this.cliente.fluxoCaixa;
+
+    const receita = +(f.faturamentoMensal || 0);
+    const custosFixos =
+      +(f.fixos.aluguel || 0) +
+      +(f.fixos.salarios || 0) +
+      +(f.fixos.energiaEletrica || 0) +
+      +(f.fixos.agua || 0) +
+      +(f.fixos.telefoneInternet || 0);
+
+    const custosVar =
+      +(f.variaveis.materiaPrima || 0) +
+      +(f.variaveis.insumos || 0) +
+      +(f.variaveis.frete || 0) +
+      +(f.variaveis.transporte || 0) +
+      (f.variaveis.outros || []).reduce((acc: number, o) => acc + +(o.valor || 0), 0);
+
+    const custos = custosFixos + custosVar;
+    const lucro = receita - custos;
+
+    this.cliente.fluxoCaixaTotais = { receita, custos, lucro };
+  }
+
+  getParcelaEscolhidaNumber(): number {
+    const n = Number(this.cliente?.parcelas || 0);
+    if (!n || !this.valorSolicitadoNumber) return 0;
+    return this.calcularParcela(this.valorSolicitadoNumber, n, this.jurosMes);
+  }
+
+  isParcelaAcimaSugerida(): boolean {
+    const escolhida = this.getParcelaEscolhidaNumber();
+    const { valor: sugerida } = this.computeParcelaSugerida();
+    const eps = 0.01;
+    if (!escolhida || !sugerida) return false;
+    return escolhida > sugerida + eps;
+  }
+
+  getComparacaoParcelaTexto(): string {
+    const escolhida = this.getParcelaEscolhidaNumber();
+    const { valor: sugerida } = this.computeParcelaSugerida();
+    if (!escolhida || !sugerida) return '';
+    const diff = escolhida - sugerida;
+    const limite10 = sugerida * 1.10;
+    if (diff > 0) {
+      if (escolhida <= limite10) return 'Parcela dentro do limite admitido';
+      return `Acima da sugerida em ${this.formatBRL(diff)}.`;
+    } else if (diff < 0) {
+      return `Abaixo da sugerida em ${this.formatBRL(Math.abs(diff))}.`;
+    }
+    return 'Igual à sugerida.';
+  }
+
+  getComparacaoParcelaClasse(): string {
+    const escolhida = this.getParcelaEscolhidaNumber();
+    const { valor: sugerida } = this.computeParcelaSugerida();
+    if (!escolhida || !sugerida) return 'text-muted';
+    if (escolhida <= sugerida) return 'text-dark';
+    if (escolhida <= sugerida * 1.10) return 'text-dark';
+    return 'text-dark';
+  }
+
+  getParcelaEscolhidaClasse(): string {
+    const escolhida = this.getParcelaEscolhidaNumber();
+    const { valor: sugerida } = this.computeParcelaSugerida();
+    if (!escolhida || !sugerida) return 'bg-secondary-subtle text-dark border';
+    if (escolhida <= sugerida) return 'bg-success-subtle text-dark border';
+    if (escolhida <= sugerida * 1.10) return 'bg-warning-subtle text-dark border';
+    return 'bg-danger-subtle text-dark border';
+  }
+
+  // ---- Nacionalidade ----
+  nacionalidadeBase: string = '';
+  listaPaises: string[] = [
+    "Afeganistão","África do Sul","Albânia","Alemanha","Andorra","Angola","Antígua e Barbuda","Arábia Saudita","Argélia","Argentina",
+    "Armênia","Austrália","Áustria","Azerbaijão","Bahamas","Bangladesh","Barbados","Barein","Bélgica","Belize",
+    "Benim","Bielorrússia","Bolívia","Bósnia e Herzegovina","Botsuana","Brasil","Brunei","Bulgária","Burquina Faso","Burundi",
+    "Butão","Cabo Verde","Camarões","Camboja","Canadá","Catar","Cazaquistão","Chade","Chile","China",
+    "Chipre","Colômbia","Comores","Congo","Coreia do Norte","Coreia do Sul","Costa do Marfim","Costa Rica","Croácia","Cuba",
+    "Dinamarca","Djibuti","Dominica","Egito","El Salvador","Emirados Árabes Unidos","Equador","Eritreia","Eslováquia","Eslovênia",
+    "Espanha","Estado da Palestina","Estados Unidos","Estônia","Eswatini","Etiópia","Fiji","Filipinas","Finlândia","França",
+    "Gabão","Gâmbia","Gana","Geórgia","Granada","Grécia","Guatemala","Guiana","Guiné","Guiné Equatorial",
+    "Guiné-Bissau","Haiti","Holanda","Honduras","Hungria","Iêmen","Ilhas Marshall","Ilhas Salomão","Índia","Indonésia",
+    "Irã","Iraque","Irlanda","Islândia","Israel","Itália","Jamaica","Japão","Jordânia","Kiribati",
+    "Kosovo","Kuwait","Laos","Lesoto","Letônia","Líbano","Libéria","Líbia","Liechtenstein","Lituânia",
+    "Luxemburgo","Macedônia do Norte","Madagascar","Malásia","Malawi","Maldivas","Mali","Malta","Marrocos","Maurícia",
+    "Mauritânia","México","Micronésia","Moçambique","Moldávia","Mônaco","Mongólia","Montenegro","Myanmar","Namíbia",
+    "Nauru","Nepal","Nicarágua","Níger","Nigéria","Noruega","Nova Zelândia","Omã","País de Gales","Países Baixos",
+    "Paquistão","Panamá","Papua-Nova Guiné","Paraguai","Peru","Polônia","Portugal","Quênia","Quirguistão","Reino Unido",
+    "República Centro-Africana","República Checa","República Democrática do Congo","República Dominicana","Romênia","Ruanda","Rússia","Samoa","San Marino","Santa Lúcia",
+    "São Cristóvão e Névis","São Tomé e Príncipe","São Vicente e Granadinas","Seicheles","Senegal","Serra Leoa","Sérvia","Singapura","Síria","Somália",
+    "Sri Lanka","Sudão","Sudão do Sul","Suécia","Suíça","Suriname","Tailândia","Taiwan","Tajiquistão","Tanzânia",
+    "Timor-Leste","Togo","Tonga","Trinidad e Tobago","Tunísia","Turcomenistão","Turquia","Tuvalu","Ucrânia","Uganda",
+    "Uruguai","Uzbequistão","Vanuatu","Vaticano","Venezuela","Vietnã","Zâmbia","Zimbábue"
+  ];
+
+  private syncNacionalidadeBaseFromCliente() {
+    const val = this.cliente?.nacionalidade || '';
+    if (!val) { this.nacionalidadeBase = ''; return; }
+    if (val === 'Brasileiro Nato' || val === 'Brasileiro Naturalizado' || val === 'Prefere não declarar') {
+      this.nacionalidadeBase = val;
+    } else if (this.listaPaises.includes(val)) {
+      this.nacionalidadeBase = 'Estrangeiro';
+    } else {
+      this.nacionalidadeBase = '';
+    }
+  }
+
+  onNacionalidadeBaseChange(base: string) {
+    this.nacionalidadeBase = base;
+    if (base === 'Brasileiro Nato' || base === 'Brasileiro Naturalizado' || base === 'Prefere não declarar') {
+      this.cliente.nacionalidade = base;
+    } else if (base === 'Estrangeiro') {
+      this.cliente.nacionalidade = '';
+    } else {
+      this.cliente.nacionalidade = '';
+    }
+  }
 }
