@@ -6,11 +6,12 @@ import { Observable } from 'rxjs';
 
 import { AuthService } from '../../services/auth.service';
 import { Colaborador } from '../../models/colaborador.model';
+import { HeaderComponent } from '../shared/header/header.component';
 
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, HeaderComponent],
   templateUrl: './home.component.html',
   styleUrls: ['./home.component.css'],
 })

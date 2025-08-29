@@ -7,3 +7,24 @@ img[alt="Logo Crenorte"] {
   height: 100px;
   margin-top: -200px;
 }
+
+/* Cards dos módulos */
+.card {
+  transition: all 0.25s ease;
+  border-radius: 16px;
+}
+
+/* Efeito hover */
+.card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 10px 28px rgba(0, 110, 55, 0.15);
+  border-color: rgba(0, 110, 55, 0.25);
+}
+
+/* Ícone suavemente destacado */
+.card:hover i {
+  color: #006e37;          /* verde do tema */
+  transform: scale(1.1);
+  transition: all 0.25s ease;
+}
+

@@ -99,12 +99,15 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   mesPre: number | '' = '';
   anoPre: number | '' = '';
 
-  // ---- Modal do Fluxo de Caixa ----
+  // ---- Modais ----
   private fluxoModalRef: any | null = null;
+  private anexosModalRef: any | null = null;
 
+  // ---- Form do Fluxo de Caixa ----
   fluxoForm = {
-    faturamentoMensalMasked: '' as MaskedNumber,
-    faturamentoMensal: 0,
+    faturamentoMensalMasked: '' as MaskedNumber, // (não usado após ajuste; mantido p/ compat)
+    faturamentoMensalView: '' as string,        // string que o usuário digita/visualiza
+    faturamentoMensal: 0,                       // número real usado nos cálculos
     fixos: {
       aluguelMasked: '' as MaskedNumber,
       salariosMasked: '' as MaskedNumber,
@@ -143,14 +146,14 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   private readonly COMPRESS_QUALITY = 0.8;  // JPEG quality
 
   categoriasDocs = [
-    { key: 'docPessoa',          label: 'Foto do documento',        multiple: true },
-    { key: 'fotoPessoa',         label: 'Foto da pessoa',           multiple: true },
-    { key: 'selfieDocumento',    label: 'Pessoa com documento',     multiple: true },
-    { key: 'fotoEmpreendimento', label: 'Foto do empreendimento',   multiple: true },
-    { key: 'fotoProdutos',       label: 'Foto dos produtos',        multiple: true },
-    { key: 'fotoEquipamentos',   label: 'Foto dos equipamentos',    multiple: true },
-    { key: 'orcamento',          label: 'Orçamento (foto)',         multiple: true },
-    { key: 'planoNegocio',       label: 'Plano de negócio (foto)',  multiple: true },
+    { key: 'docPessoa', label: 'Foto do documento', multiple: true },
+    { key: 'fotoPessoa', label: 'Foto do cliente', multiple: true },
+    { key: 'selfieDocumento', label: 'Cliente com documento', multiple: true },
+    { key: 'fotoEmpreendimento', label: 'Foto do empreendimento', multiple: true },
+    { key: 'fotoProdutos', label: 'Foto dos produtos', multiple: true },
+    { key: 'fotoEquipamentos', label: 'Foto dos equipamentos', multiple: true },
+    { key: 'orcamento', label: 'Orçamento (foto)', multiple: true },
+    { key: 'planoNegocio', label: 'Plano de negócio (foto)', multiple: true },
   ];
   arquivosMap: Record<string, File[]> = {};
   previewMap: Record<string, string[]> = {};
@@ -167,9 +170,16 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   private storage: FirebaseStorage = fbStorage;
 
   // ---------- Ciclo de Vida ----------
-  constructor(private zone: NgZone) {}
+  constructor(private zone: NgZone) { }
 
   ngOnInit(): void {
+
+    const nInit = this.parseBRN(String(this.cliente?.faturamentoMensal ?? ''));
+    this.faturamento = isNaN(nInit) ? 0 : nInit;
+    // Prepara o input em formato "dígitos" para o ngx-mask (separator.0)
+    this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : ''
+
+
     this.syncNacionalidadeBaseFromCliente();
 
     // data atual -> "data do cadastro"
@@ -183,60 +193,58 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     this.atualizarDias();
 
     // Carrega edição se houver
-const clienteEditando = localStorage.getItem('clienteEditando');
-if (clienteEditando) {
-  try {
-    const edit = JSON.parse(clienteEditando);
+    const clienteEditando = localStorage.getItem('clienteEditando');
+    if (clienteEditando) {
+      try {
+        const edit = JSON.parse(clienteEditando);
 
-    // 1) carrega o cliente
-    this.cliente = edit;
+        // 1) carrega o cliente
+        this.cliente = edit;
 
-    // 2) pré-visualizações vindas da listagem
-    //    (ajuste a chave 'fotoPessoa' se sua UI usa outra categoria para mostrar a thumb)
-    if (edit?._thumbUrl) {
-      this.previewMap['fotoPessoa'] = [edit._thumbUrl];
-    }
-    if (edit?._assinaturaUrl) {
-      this.signatureDataUrl = edit._assinaturaUrl; // mantém o dado pra re-upload se salvar
-      this.signaturePreview = edit._assinaturaUrl; // mostra a assinatura na UI
-    }
+        // 2) pré-visualizações vindas da listagem
+        if (edit?._thumbUrl) {
+          this.previewMap['fotoPessoa'] = [edit._thumbUrl];
+        }
+        if (edit?._assinaturaUrl) {
+          this.signatureDataUrl = edit._assinaturaUrl;
+          this.signaturePreview = edit._assinaturaUrl;
+        }
 
-    // 3) municípios do estado
-    this.atualizarMunicipios();
+        // 3) municípios do estado
+        this.atualizarMunicipios();
 
-    // 4) restaura seleção de data de nascimento (dia/mes/ano)
-    if (this.cliente.dataNascimento) {
-      const [ano, mes, dia] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
-      if (ano && mes && dia) {
-        this.anoSelecionado = ano;
-        this.mesSelecionado = mes;
-        this.atualizarDias();
-        this.diaSelecionado = Math.min(dia, this.dias[this.dias.length - 1]);
+        // 4) restaura seleção de data de nascimento (dia/mes/ano)
+        if (this.cliente.dataNascimento) {
+          const [ano, mes, dia] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
+          if (ano && mes && dia) {
+            this.anoSelecionado = ano;
+            this.mesSelecionado = mes;
+            this.atualizarDias();
+            this.diaSelecionado = Math.min(dia, this.dias[this.dias.length - 1]);
+          }
+        }
+        this.atualizarDataNascimento();
+
+        // 5) se já havia fluxo de caixa, recalcula totais
+        if (this.cliente.fluxoCaixa) this.recalcular();
+
+        // 6) sincroniza valor solicitado (numérico) e labels de parcelas
+        this.valorSolicitadoNumber = this.parseMoedaBR(this.cliente.valorSolicitado || 0);
+        this.atualizarParcelasLabels();
+        this.atualizarResumo();
+
+      } catch (e) {
+        console.warn('Falha ao restaurar clienteEditando:', e);
+      } finally {
+        localStorage.removeItem('clienteEditando');
       }
     }
-    this.atualizarDataNascimento();
 
-    // 5) se já havia fluxo de caixa, recalcula totais
-    if (this.cliente.fluxoCaixa) this.recalcular();
-
-    // 6) sincroniza valor solicitado (numérico) e labels de parcelas
-    this.valorSolicitadoNumber = this.parseMoedaBR(this.cliente.valorSolicitado || 0);
-    this.atualizarParcelasLabels();
-    this.atualizarResumo();
-
-  } catch (e) {
-    console.warn('Falha ao restaurar clienteEditando:', e);
-  } finally {
-    localStorage.removeItem('clienteEditando');
-  }
-}
-
-// status dos selects "Outro"
-this.selecionouOutroTipoNegocio =
-  !!(this.cliente.tipoNegocio && !this.opcoesTipoNegocioPadrao.has(this.cliente.tipoNegocio));
-this.selecionouOutroOndeVende =
-  !!(this.cliente.ondeVende && !this.opcoesOndeVendePadrao.has(this.cliente.ondeVende));
-
+    // status dos selects "Outro"
+    this.selecionouOutroTipoNegocio =
+      !!(this.cliente.tipoNegocio && !this.opcoesTipoNegocioPadrao.has(this.cliente.tipoNegocio));
+    this.selecionouOutroOndeVende =
+      !!(this.cliente.ondeVende && !this.opcoesOndeVendePadrao.has(this.cliente.ondeVende));
   }
 
   ngAfterViewInit(): void {
@@ -351,15 +359,15 @@ this.selecionouOutroOndeVende =
   private isDDDValido(ddd: string): boolean {
     const n = Number(ddd);
     return [
-      11,12,13,14,15,16,17,18,19,
-      21,22,24,27,28,
-      31,32,33,34,35,37,38,
-      41,42,43,44,45,46,47,48,49,
-      51,53,54,55,
-      61,62,63,64,65,66,67,68,69,
-      71,73,74,75,77,79,
-      81,82,83,84,85,86,87,88,89,
-      91,92,93,94,95,96,97,98,99
+      11, 12, 13, 14, 15, 16, 17, 18, 19,
+      21, 22, 24, 27, 28,
+      31, 32, 33, 34, 35, 37, 38,
+      41, 42, 43, 44, 45, 46, 47, 48, 49,
+      51, 53, 54, 55,
+      61, 62, 63, 64, 65, 66, 67, 68, 69,
+      71, 73, 74, 75, 77, 79,
+      81, 82, 83, 84, 85, 86, 87, 88, 89,
+      91, 92, 93, 94, 95, 96, 97, 98, 99
     ].includes(n);
   }
 
@@ -489,7 +497,7 @@ this.selecionouOutroOndeVende =
       outraRenda: false,
       rendaMensal: '',
       valorSolicitado: '',
-      parcelas: null, // <<<<<<<<<<<<<< NUNCA undefined
+      parcelas: null, // NUNCA undefined
       usoValor: '',
       clienteCrenorte: false,
       dataPreenchimento: '',
@@ -770,11 +778,9 @@ this.selecionouOutroOndeVende =
   private coerceCliente(c: Cliente) {
     return {
       ...c,
-      // Garanta tipo primitivo estável pros numéricos/moedas
       rendaMensal: c.rendaMensal ?? '',
       valorSolicitado: c.valorSolicitado ?? '',
       valorParcela: c.valorParcela ?? '',
-      // parcelas como number ou null (nunca undefined)
       parcelas: c.parcelas == null ? null : Number(c.parcelas),
       fluxoCaixa: c.fluxoCaixa ?? null,
       fluxoCaixaTotais: c.fluxoCaixaTotais ?? { receita: 0, custos: 0, lucro: 0 },
@@ -782,130 +788,129 @@ this.selecionouOutroOndeVende =
   }
 
   // ================== SALVAR (com anexos e assinatura) ==================
- // ================== SALVAR (com anexos e assinatura) ==================
-async salvar() {
-  this.atualizarDataNascimento();
+  async salvar() {
+    this.atualizarDataNascimento();
 
-  const cpfLimpo = (this.cliente.cpf ?? '').replace(/\D/g, '');
+    const cpfLimpo = (this.cliente.cpf ?? '').replace(/\D/g, '');
 
-  if (!this.validarCPF(cpfLimpo)) {
-    alert('⚠️ CPF inválido. Corrija antes de salvar.');
-    return;
-  }
-
-  const e164 = this.toE164BR(this.cliente?.contato);
-  if (!e164) {
-    alert('⚠️ Informe um CELULAR com DDD válido (ex.: 91 9XXXX-XXXX).');
-    return;
-  }
-
-  if (this.cliente.dataNascimento) {
-    const [a, m, d] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
-    if (!this.isDataValida(a, m, d)) {
-      alert('⚠️ Data de nascimento inválida.');
+    if (!this.validarCPF(cpfLimpo)) {
+      alert('⚠️ CPF inválido. Corrija antes de salvar.');
       return;
     }
+
+    const e164 = this.toE164BR(this.cliente?.contato);
+    if (!e164) {
+      alert('⚠️ Informe um CELULAR com DDD válido (ex.: 91 9XXXX-XXXX).');
+      return;
+    }
+
+    if (this.cliente.dataNascimento) {
+      const [a, m, d] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
+      if (!this.isDataValida(a, m, d)) {
+        alert('⚠️ Data de nascimento inválida.');
+        return;
+      }
+    }
+
+    // ======= Normalizações =======
+    const rendaMensal = this.converterMoedaParaNumero(this.cliente.rendaMensal);
+    const valorSolicitado = this.converterMoedaParaNumero(this.cliente.valorSolicitado);
+    const valorParcela = this.converterMoedaParaNumero(this.cliente.valorParcela);
+
+    // Máscara de CPF
+    const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+
+    // Máscara de telefone (11 dígitos BR)
+    const telDigits = String(this.cliente?.contato ?? '').replace(/\D/g, '').slice(-11);
+    const contatoFormatado = telDigits.length === 11
+      ? telDigits.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
+      : this.cliente?.contato ?? '';
+
+    // Moeda formatada para exibir na listagem
+    const valorSolicitadoFormatado = this.formatBRN(valorSolicitado);
+
+    // Índice para busca: nome minúsculo sem acento
+    const nomeIndex = (this.cliente?.nomeCompleto || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    try {
+      this.uploadStatus = { ok: false, msg: 'Enviando anexos (otimizados)...' };
+      const anexosUrls = await this.uploadTodosArquivos(cpfLimpo);
+
+      this.uploadStatus = { ok: false, msg: 'Gravando cadastro...' };
+
+      // Coagir tipos e remover undefined
+      const coerced = this.coerceCliente(this.cliente);
+      const payload: any = this.pruneUndefinedDeep({
+        ...coerced,
+        cpf: cpfLimpo,
+        rendaMensal,
+        valorSolicitado,
+        valorParcela,
+        cpfFormatado,
+        contatoFormatado,
+        valorSolicitadoFormatado,
+        nomeIndex,
+        anexos: anexosUrls,
+        criadoEm: new Date()
+      });
+
+      await setDoc(doc(db, 'clientes', cpfLimpo), payload, { merge: true });
+
+      this.uploadStatus = { ok: true, msg: 'Cadastro salvo com anexos e assinatura!' };
+
+      // fire-and-forget
+      this.enviarEmailBemVindo();
+      this.abrirWhatsAppE164(e164, this.cliente?.nomeCompleto);
+
+      alert('✅ Cliente salvo com sucesso!');
+      this.limparFormularioCadastro();
+
+    } catch (error) {
+      console.error('Erro ao salvar cliente:', error);
+      this.uploadStatus = { ok: false, msg: '❌ Falha ao salvar anexos/assinatura.' };
+      alert('❌ Falha ao salvar cliente.');
+    }
   }
-
-  // ======= Normalizações / formatações =======
-  const rendaMensal       = this.converterMoedaParaNumero(this.cliente.rendaMensal);
-  const valorSolicitado   = this.converterMoedaParaNumero(this.cliente.valorSolicitado);
-  const valorParcela      = this.converterMoedaParaNumero(this.cliente.valorParcela);
-
-  // Máscara de CPF
-  const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-
-  // Máscara de telefone (11 dígitos BR)
-  const telDigits = String(this.cliente?.contato ?? '').replace(/\D/g, '').slice(-11);
-  const contatoFormatado = telDigits.length === 11
-    ? telDigits.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
-    : this.cliente?.contato ?? '';
-
-  // Moeda formatada para exibir na listagem
-  const valorSolicitadoFormatado = this.formatBRN(valorSolicitado);
-
-  // Índice para busca: nome minúsculo sem acento
-  const nomeIndex = (this.cliente?.nomeCompleto || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-
-  try {
-    this.uploadStatus = { ok: false, msg: 'Enviando anexos (otimizados)...' };
-    const anexosUrls = await this.uploadTodosArquivos(cpfLimpo);
-
-    this.uploadStatus = { ok: false, msg: 'Gravando cadastro...' };
-
-    // Coagir tipos e remover undefined
-    const coerced = this.coerceCliente(this.cliente);
-    const payload: any = this.pruneUndefinedDeep({
-      ...coerced,
-      // brutos normalizados
-      cpf: cpfLimpo,
-      rendaMensal,
-      valorSolicitado,
-      valorParcela,
-      // mascarados p/ exibição
-      cpfFormatado,
-      contatoFormatado,
-      valorSolicitadoFormatado,
-      // índice de busca por nome (server-side)
-      nomeIndex,
-      // anexos/assinatura
-      anexos: anexosUrls,
-      // meta
-      criadoEm: new Date()
-    });
-
-    // Opcional: não gravar 'parcelas' se vazio
-    // if (payload.parcelas == null) delete payload.parcelas;
-
-    console.log('Payload Firestore:', payload);
-
-    await setDoc(doc(db, 'clientes', cpfLimpo), payload, { merge: true });
-
-    this.uploadStatus = { ok: true, msg: 'Cadastro salvo com anexos e assinatura!' };
-
-    // fire-and-forget
-    this.enviarEmailBemVindo();
-    this.abrirWhatsAppE164(e164, this.cliente?.nomeCompleto);
-
-    alert('✅ Cliente salvo com sucesso!');
-    this.limparFormularioCadastro();
-
-  } catch (error) {
-    console.error('Erro ao salvar cliente:', error);
-    this.uploadStatus = { ok: false, msg: '❌ Falha ao salvar anexos/assinatura.' };
-    alert('❌ Falha ao salvar cliente.');
-  }
-}
 
   // ---------- Modal Fluxo de Caixa ----------
   openFluxoModal() {
     if (this.cliente.fluxoCaixa) {
       const f = this.cliente.fluxoCaixa;
-      this.fluxoForm.faturamentoMensal = f.faturamentoMensal || 0;
-      this.fluxoForm.faturamentoMensalMasked = this.formatBRN(this.fluxoForm.faturamentoMensal);
 
+      // Base numérica do fluxo salvo
+      this.faturamento = f.faturamentoMensal || 0;
+
+      // Prepara o input (somente dígitos) para o ngx-mask (separator.0)
+      this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : '';
+
+      // Preenche numéricos do modal
+      this.fluxoForm.faturamentoMensal = this.faturamento;
+
+      // Fixos
       this.fluxoForm.fixos.aluguel = f.fixos.aluguel || 0;
       this.fluxoForm.fixos.salarios = f.fixos.salarios || 0;
       this.fluxoForm.fixos.energiaEletrica = f.fixos.energiaEletrica || 0;
       this.fluxoForm.fixos.agua = f.fixos.agua || 0;
       this.fluxoForm.fixos.telefoneInternet = f.fixos.telefoneInternet || 0;
 
+      // Variáveis
       this.fluxoForm.variaveis.materiaPrima = f.variaveis.materiaPrima || 0;
       this.fluxoForm.variaveis.insumos = f.variaveis.insumos || 0;
       this.fluxoForm.variaveis.frete = f.variaveis.frete || 0;
       this.fluxoForm.variaveis.transporte = f.variaveis.transporte || 0;
-
       this.fluxoForm.variaveis.outros = (f.variaveis.outros || []).map(o => ({
-        nome: o.nome, valor: o.valor, valorMasked: this.formatBRN(o.valor)
+        nome: o.nome, valor: o.valor || 0, valorMasked: this.formatBRN(o.valor || 0)
       }));
-    } else {
-      const faturamento = this.parseMoedaBR(this.cliente?.faturamentoMensal || 0);
-      this.fluxoForm.faturamentoMensal = faturamento;
-      this.fluxoForm.faturamentoMensalMasked = this.formatBRN(faturamento);
 
+    } else {
+      // Sem fluxo salvo:
+      // Se houver algo no cadastro, já foi convertido no ngOnInit (this.faturamento)
+      this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : '';
+
+      // Zera padrões na primeira abertura
       this.fluxoForm.fixos = {
         aluguelMasked: '', salariosMasked: '', energiaEletricaMasked: '', aguaMasked: '', telefoneInternetMasked: '',
         aluguel: 0, salarios: 0, energiaEletrica: 0, agua: 0, telefoneInternet: 0
@@ -914,8 +919,13 @@ async salvar() {
         materiaPrimaMasked: '', insumosMasked: '', freteMasked: '', transporteMasked: '',
         materiaPrima: 0, insumos: 0, frete: 0, transporte: 0, outros: []
       };
+      this.fluxoForm.faturamentoMensal = this.faturamento;
     }
 
+    // Totais do modal
+    this.recalcular();
+
+    // Abre o modal
     const el = document.getElementById('fluxoCaixaModal');
     if (el) {
       this.fluxoModalRef = new bootstrap.Modal(el, { backdrop: 'static' });
@@ -923,11 +933,66 @@ async salvar() {
     }
   }
 
+  // --------- Faturamento (base única + máscara) ---------
+
+  // Número usado nos cálculos
+  faturamento: number = 0;
+
+  // Valor do input (APENAS dígitos). O ngx-mask vai mostrar "R$ 10.000", mas
+  // como usamos [dropSpecialCharacters]="true", o model aqui vira "10000".
+  faturamentoInput: string = '';
+
+  /** Converte string BR ("10.000,00" | "10.000" | "10000") em número confiável */
+  parseMoneyBR(masked: any): number {
+    if (masked === null || masked === undefined) return 0;
+    let s = String(masked).trim();
+    if (!s) return 0;
+    // mantém apenas dígitos, ponto e vírgula
+    s = s.replace(/[^\d.,-]/g, '');
+    if (s.includes(',')) {
+      // vírgula = decimal; ponto = milhar
+      s = s.replace(/\./g, '').replace(',', '.');
+      const n = parseFloat(s);
+      return isNaN(n) ? 0 : n;
+    } else {
+      // sem vírgula -> trate pontos como milhar
+      s = s.replace(/\./g, '');
+      const n = parseFloat(s);
+      return isNaN(n) ? 0 : n;
+    }
+  }
+
+  onFaturamentoChange(digits: string) {
+    // digits chega SEM separadores (ex.: "10000")
+    const n = Number(digits || 0);
+    this.faturamento = n;
+
+    // se o modal estiver aberto, mantém a base de cálculo atualizada
+    this.fluxoForm.faturamentoMensal = n;
+
+    // mantém o campo do cadastro compatível com o seu fluxo de salvar (string mascarada)
+    this.cliente.faturamentoMensal = this.formatBRN(n);
+  }
+
+
   closeFluxoModal() {
     if (this.fluxoModalRef) {
       this.fluxoModalRef.hide();
       this.fluxoModalRef = null;
     }
+  }
+
+  // Entrada do faturamento mensal (sem ngx-mask, parse/format manual confiável)
+  onFaturamentoInput(view: string) {
+    // aceita "10000", "10.000", "10.000,00" etc.
+    const num = this.parseBRN(view);
+    this.fluxoForm.faturamentoMensal = num;
+    this.fluxoForm.faturamentoMensalView = view; // mantém o que o usuário digitou até blur
+  }
+
+  onFaturamentoBlur() {
+    // normaliza visual sempre no blur
+    this.fluxoForm.faturamentoMensalView = this.formatBRN(this.fluxoForm.faturamentoMensal || 0);
   }
 
   addOutro() {
@@ -967,10 +1032,9 @@ async salvar() {
   totalLucro(): number {
     return this.totalReceita() - this.totalCustos();
   }
-
   saveFluxo() {
     const fluxo: FluxoCaixa = {
-      faturamentoMensal: this.fluxoForm.faturamentoMensal || 0,
+      faturamentoMensal: this.faturamento || 0,
       fixos: {
         aluguel: this.fluxoForm.fixos.aluguel || 0,
         salarios: this.fluxoForm.fixos.salarios || 0,
@@ -990,12 +1054,13 @@ async salvar() {
     this.cliente.fluxoCaixa = fluxo;
     this.recalcular();
 
-    if (!this.cliente.faturamentoMensal || this.cliente.faturamentoMensal === '') {
-      this.cliente.faturamentoMensal = this.formatBRN(fluxo.faturamentoMensal);
-    }
+    // mantém o cadastro exibindo o valor com moeda (para seu salvar() atual)
+    this.cliente.faturamentoMensal = this.formatBRN(this.faturamento);
 
     this.closeFluxoModal();
   }
+
+
 
   addOutroResumo() {
     if (!this.cliente.fluxoCaixa) return;
@@ -1013,29 +1078,26 @@ async salvar() {
     return Math.abs(a - b) <= eps;
   }
 
+  // Use sempre a renda mensal informada (independente de "outraRenda")
   private getOutrasRendasNumber(): number {
-    if (!this.cliente?.outraRenda) return 0;
-    return this.converterMoedaParaNumero(this.cliente.rendaMensal);
+    const v = this.converterMoedaParaNumero(this.cliente?.rendaMensal);
+    return Number.isFinite(v) && v > 0 ? v : 0;
   }
 
   computeParcelaSugerida() {
+    // lucro do fluxo de caixa e outras rendas declaradas
     const lucro = this.cliente?.fluxoCaixaTotais?.lucro || 0;
     const outras = this.getOutrasRendasNumber();
-    const base = Math.max(0, lucro + outras);
 
-    if (base <= 0) return { valor: 0, fator: 0, base: 0 };
+    // Base: se houver lucro, usa (lucro + outras); senão, só outras rendas
+    const base = lucro > 0 ? (lucro + outras) : outras;
 
-    const metadeLucro = 0.5 * lucro;
+    if (base <= 0) return { valor: 0, fator: 0.30, base: 0 };
 
-    let fator = 0.3;
-    if (this.approxEqual(outras, metadeLucro)) {
-      fator = 0.4;
-    } else if (outras >= lucro) {
-      fator = 0.5;
-    }
+    // Parcela sugerida = 30% da base
+    const valor = base * 0.30;
 
-    const valor = base * fator;
-    return { valor, fator, base };
+    return { valor, fator: 0.30, base };
   }
 
   getParcelaSugeridaTexto(): string {
@@ -1047,7 +1109,17 @@ async salvar() {
   // ===== Utilitários de moeda BR =====
   parseBRN(masked: string | null | undefined): number {
     if (!masked) return 0;
-    const s = String(masked).replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+
+    // remove qualquer caractere que não seja dígito ou vírgula
+    let s = String(masked).replace(/[^\d,]/g, "");
+
+    // garante que só a última vírgula vira ponto decimal
+    const partes = s.split(",");
+    if (partes.length > 1) {
+      const decimais = partes.pop();
+      s = partes.join("") + "." + decimais;
+    }
+
     const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   }
@@ -1056,7 +1128,7 @@ async salvar() {
     try {
       return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     } catch {
-      return `R$ ${n.toFixed(2)}`;
+      return `R$ ${(+n || 0).toFixed(2)}`;
     }
   }
 
@@ -1138,26 +1210,26 @@ async salvar() {
   // ---- Nacionalidade ----
   nacionalidadeBase: string = '';
   listaPaises: string[] = [
-    "Afeganistão","África do Sul","Albânia","Alemanha","Andorra","Angola","Antígua e Barbuda","Arábia Saudita","Argélia","Argentina",
-    "Armênia","Austrália","Áustria","Azerbaijão","Bahamas","Bangladesh","Barbados","Barein","Bélgica","Belize",
-    "Benim","Bielorrússia","Bolívia","Bósnia e Herzegovina","Botsuana","Brasil","Brunei","Bulgária","Burquina Faso","Burundi",
-    "Butão","Cabo Verde","Camarões","Camboja","Canadá","Catar","Cazaquistão","Chade","Chile","China",
-    "Chipre","Colômbia","Comores","Congo","Coreia do Norte","Coreia do Sul","Costa do Marfim","Costa Rica","Croácia","Cuba",
-    "Dinamarca","Djibuti","Dominica","Egito","El Salvador","Emirados Árabes Unidos","Equador","Eritreia","Eslováquia","Eslovênia",
-    "Espanha","Estado da Palestina","Estados Unidos","Estônia","Eswatini","Etiópia","Fiji","Filipinas","Finlândia","França",
-    "Gabão","Gâmbia","Gana","Geórgia","Granada","Grécia","Guatemala","Guiana","Guiné","Guiné Equatorial",
-    "Guiné-Bissau","Haiti","Holanda","Honduras","Hungria","Iêmen","Ilhas Marshall","Ilhas Salomão","Índia","Indonésia",
-    "Irã","Iraque","Irlanda","Islândia","Israel","Itália","Jamaica","Japão","Jordânia","Kiribati",
-    "Kosovo","Kuwait","Laos","Lesoto","Letônia","Líbano","Libéria","Líbia","Liechtenstein","Lituânia",
-    "Luxemburgo","Macedônia do Norte","Madagascar","Malásia","Malawi","Maldivas","Mali","Malta","Marrocos","Maurícia",
-    "Mauritânia","México","Micronésia","Moçambique","Moldávia","Mônaco","Mongólia","Montenegro","Myanmar","Namíbia",
-    "Nauru","Nepal","Nicarágua","Níger","Nigéria","Noruega","Nova Zelândia","Omã","País de Gales","Países Baixos",
-    "Paquistão","Panamá","Papua-Nova Guiné","Paraguai","Peru","Polônia","Portugal","Quênia","Quirguistão","Reino Unido",
-    "República Centro-Africana","República Checa","República Democrática do Congo","República Dominicana","Romênia","Ruanda","Rússia","Samoa","San Marino","Santa Lúcia",
-    "São Cristóvão e Névis","São Tomé e Príncipe","São Vicente e Granadinas","Seicheles","Senegal","Serra Leoa","Sérvia","Singapura","Síria","Somália",
-    "Sri Lanka","Sudão","Sudão do Sul","Suécia","Suíça","Suriname","Tailândia","Taiwan","Tajiquistão","Tanzânia",
-    "Timor-Leste","Togo","Tonga","Trinidad e Tobago","Tunísia","Turcomenistão","Turquia","Tuvalu","Ucrânia","Uganda",
-    "Uruguai","Uzbequistão","Vanuatu","Vaticano","Venezuela","Vietnã","Zâmbia","Zimbábue"
+    "Afeganistão", "África do Sul", "Albânia", "Alemanha", "Andorra", "Angola", "Antígua e Barbuda", "Arábia Saudita", "Argélia", "Argentina",
+    "Armênia", "Austrália", "Áustria", "Azerbaijão", "Bahamas", "Bangladesh", "Barbados", "Barein", "Bélgica", "Belize",
+    "Benim", "Bielorrússia", "Bolívia", "Bósnia e Herzegovina", "Botsuana", "Brasil", "Brunei", "Bulgária", "Burquina Faso", "Burundi",
+    "Butão", "Cabo Verde", "Camarões", "Camboja", "Canadá", "Catar", "Cazaquistão", "Chade", "Chile", "China",
+    "Chipre", "Colômbia", "Comores", "Congo", "Coreia do Norte", "Coreia do Sul", "Costa do Marfim", "Costa Rica", "Croácia", "Cuba",
+    "Dinamarca", "Djibuti", "Dominica", "Egito", "El Salvador", "Emirados Árabes Unidos", "Equador", "Eritreia", "Eslováquia", "Eslovênia",
+    "Espanha", "Estado da Palestina", "Estados Unidos", "Estônia", "Eswatini", "Etiópia", "Fiji", "Filipinas", "Finlândia", "França",
+    "Gabão", "Gâmbia", "Gana", "Geórgia", "Granada", "Grécia", "Guatemala", "Guiana", "Guiné", "Guiné Equatorial",
+    "Guiné-Bissau", "Haiti", "Holanda", "Honduras", "Hungria", "Iêmen", "Ilhas Marshall", "Ilhas Salomão", "Índia", "Indonésia",
+    "Irã", "Iraque", "Irlanda", "Islândia", "Israel", "Itália", "Jamaica", "Japão", "Jordânia", "Kiribati",
+    "Kosovo", "Kuwait", "Laos", "Lesoto", "Letônia", "Líbano", "Libéria", "Líbia", "Liechtenstein", "Lituânia",
+    "Luxemburgo", "Macedônia do Norte", "Madagascar", "Malásia", "Malawi", "Maldivas", "Mali", "Malta", "Marrocos", "Maurícia",
+    "Mauritânia", "México", "Micronésia", "Moçambique", "Moldávia", "Mônaco", "Mongólia", "Montenegro", "Myanmar", "Namíbia",
+    "Nauru", "Nepal", "Nicarágua", "Níger", "Nigéria", "Noruega", "Nova Zelândia", "Omã", "País de Gales", "Países Baixos",
+    "Paquistão", "Panamá", "Papua-Nova Guiné", "Paraguai", "Peru", "Polônia", "Portugal", "Quênia", "Quirguistão", "Reino Unido",
+    "República Centro-Africana", "República Checa", "República Democrática do Congo", "República Dominicana", "Romênia", "Ruanda", "Rússia", "Samoa", "San Marino", "Santa Lúcia",
+    "São Cristóvão e Névis", "São Tomé e Príncipe", "São Vicente e Granadinas", "Seicheles", "Senegal", "Serra Leoa", "Sérvia", "Singapura", "Síria", "Somália",
+    "Sri Lanka", "Sudão", "Sudão do Sul", "Suécia", "Suíça", "Suriname", "Tailândia", "Taiwan", "Tajiquistão", "Tanzânia",
+    "Timor-Leste", "Togo", "Tonga", "Trinidad e Tobago", "Tunísia", "Turcomenistão", "Turquia", "Tuvalu", "Ucrânia", "Uganda",
+    "Uruguai", "Uzbequistão", "Vanuatu", "Vaticano", "Venezuela", "Vietnã", "Zâmbia", "Zimbábue"
   ];
 
   private syncNacionalidadeBaseFromCliente() {
@@ -1180,6 +1252,21 @@ async salvar() {
       this.cliente.nacionalidade = '';
     } else {
       this.cliente.nacionalidade = '';
+    }
+  }
+
+  // ---------- Modal Anexos ----------
+  openAnexosModal() {
+    const el = document.getElementById('anexosModal');
+    if (el) {
+      this.anexosModalRef = new bootstrap.Modal(el, { backdrop: 'static' });
+      this.anexosModalRef.show();
+    }
+  }
+  closeAnexosModal() {
+    if (this.anexosModalRef) {
+      this.anexosModalRef.hide();
+      this.anexosModalRef = null;
     }
   }
 }

@@ -1,6 +1,37 @@
 
 @import "leaflet/dist/leaflet.css";
 
+/* Altura do header e z-index alto para não ficar atrás de nada */
+:root {
+  --app-header-h: 64px; /* desktop padrão */
+}
+
+/* Header fixo com leve blur e contraste sutil */
+.app-header {
+  z-index: 1040; /* acima de offcanvas e conteúdos comuns */
+  backdrop-filter: saturate(160%) blur(6px);
+  background: rgba(255, 255, 255, .92);
+  -webkit-backdrop-filter: saturate(160%) blur(6px);
+  border-bottom: 1px solid rgba(0,0,0,.06);
+}
+
+
+/* Mobile: geralmente o header fica um pouco mais alto por conta da quebra/empilhamento */
+@media (max-width: 576px) {
+  :root { --app-header-h: 72px; }
+  .user-box { gap: .5rem; }
+  .app-header .container-fluid { padding-left: .75rem; padding-right: .75rem; }
+}
+
+/* Se você optou pelo espaçador no HTML (em vez do padding-top no body), use: */
+/*
+.app-header-spacer { height: calc(var(--app-header-h) + 12px); }
+@media (max-width: 576px) {
+  .app-header-spacer { height: calc(72px + 12px); }
+}
+*/
+
+
 :root {
   --cor-verde-principal: #008d45;
   --cor-verde-claro: #8ac44b;

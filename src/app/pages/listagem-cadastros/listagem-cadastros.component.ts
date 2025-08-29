@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../firebase.config';
 import { Cliente } from '../../models/cliente.model';
+import { HeaderComponent } from '../shared/header/header.component';
 
 type ClienteList = (Cliente & {
   id: string;
@@ -28,7 +29,7 @@ type ClienteList = (Cliente & {
 @Component({
   selector: 'app-listagem-cadastros',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, HeaderComponent],
   styleUrls: ['./listagem-cadastros.component.css'],
   templateUrl: './listagem-cadastros.component.html',
 })

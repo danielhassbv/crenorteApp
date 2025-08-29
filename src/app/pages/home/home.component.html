@@ -1,13 +1,6 @@
-<!-- Header -->
-<div class="d-flex align-items-center gap-3">
-  <ng-container *ngIf="perfil$ | async as perfil; else entrar">
-    <span>Olá, {{ perfil.nome }} ({{ perfil.papel }})</span>
-    <button class="btn btn-outline-danger btn-sm" (click)="auth.logout()">Sair</button>
-  </ng-container>
-  <ng-template #entrar>
-    <a style="display: none !important;" class="btn btn-success btn-sm" routerLink="/login">Entrar</a>
-  </ng-template>
-</div>
+<!-- OPCIONAL: se você NÃO puder ajustar o CSS global, use um espaçador logo após o header -->
+<!-- <div class="app-header-spacer"></div> -->
+<app-header></app-header>
 
 <!-- Conteúdo -->
 <ng-container *ngIf="perfil$ | async as perfil; else loginCTA">
@@ -22,36 +15,35 @@
     <div class="row w-100 justify-content-center gap-4">
       <!-- Listagem de Cadastros (admin, assessor, supervisor, coordenador) -->
       <div class="col-md-2 col-10"
-           *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
+        *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
         <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1">📋</div>
+          <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
           <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
         </a>
       </div>
 
       <!-- Novo Cadastro (admin, assessor, supervisor, coordenador) -->
       <div class="col-md-2 col-10"
-           *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
+        *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
         <a routerLink="/cadastro" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1">📝</div>
+          <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
           <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
         </a>
       </div>
 
       <!-- Módulo de Rotas (admin, operacional, supervisor, coordenador) -->
       <div class="col-md-2 col-10"
-           *ngIf="perfil.papel === 'admin' || perfil.papel === 'operacional' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
+        *ngIf="perfil.papel === 'admin' || perfil.papel === 'operacional' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
         <a routerLink="/rotas" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1">🗺️</div>
+          <div class="fs-1 text-success"><i class="bi bi-map"></i></div>
           <div class="mt-2 fw-bold text-dark">Módulo de Rotas</div>
         </a>
       </div>
 
       <!-- Colaboradores (admin, rh) -->
-      <div class="col-md-2 col-10"
-           *ngIf="perfil.papel === 'admin' || perfil.papel === 'rh'">
+      <div class="col-md-2 col-10" *ngIf="perfil.papel === 'admin' || perfil.papel === 'rh'">
         <a routerLink="/colaboradores" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1">👥</div>
+          <div class="fs-1 text-success"><i class="bi bi-people-fill"></i></div>
           <div class="mt-2 fw-bold text-dark">Colaboradores</div>
         </a>
       </div>
