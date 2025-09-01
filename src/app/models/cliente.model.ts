@@ -117,3 +117,5 @@ export interface Cliente {
   // Metadados opcionais
   criadoEm?: Date | string;          // definido no TS ao salvar
 }
+
+

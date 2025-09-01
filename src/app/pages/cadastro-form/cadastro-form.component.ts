@@ -570,8 +570,10 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
 
     const dd = String(d).padStart(2, '0');
     const mm = String(m).padStart(2, '0');
-    this.cliente.dataPreenchimento = `${a}-${mm}-${dd}`;
+    // Salva direto em DD/MM/YYYY (não sofre com fuso)
+    this.cliente.dataPreenchimento = `${dd}/${mm}/${a}`;
   }
+
 
   // ================== MINIATURAS & COMPRESSÃO ==================
   private fileToImage(file: File): Promise<HTMLImageElement> {

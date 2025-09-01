@@ -14,6 +14,8 @@ import { RotasService } from '../../services/rotas.service';
 import { GeocodingService } from '../../services/geocoding.service';
 import { Rota } from '../../models/rota.model';
 
+import { HeaderComponent } from '../../pages/shared/header/header.component';
+
 type BairroAgg = {
   bairro: string;
   municipio: string;

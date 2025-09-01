@@ -7,20 +7,16 @@
   <div class="container-fluid bg-light vh-100 d-flex flex-column align-items-center justify-content-center">
     <!-- Logo e título -->
     <div class="text-center mb-4">
+      <br>
+      <br>
+      <br>
+      <br>
       <img src="../../../assets/img/logo2-crenorte.png" alt="Logo Crenorte" />
       <h2 class="text-success fw-bold mt-2">Bem-vindo ao Sistema CRENORTE</h2>
     </div>
 
     <!-- Módulos -->
     <div class="row w-100 justify-content-center gap-4">
-      <!-- Listagem de Cadastros (admin, assessor, supervisor, coordenador) -->
-      <div class="col-md-2 col-10"
-        *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
-        <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
-          <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
-        </a>
-      </div>
 
       <!-- Novo Cadastro (admin, assessor, supervisor, coordenador) -->
       <div class="col-md-2 col-10"
@@ -30,6 +26,17 @@
           <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
         </a>
       </div>
+
+
+      <!-- Listagem de Cadastros (admin, assessor, supervisor, coordenador) -->
+      <div class="col-md-2 col-10"
+        *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
+        <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+          <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
+          <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
+        </a>
+      </div>
+
 
       <!-- Módulo de Rotas (admin, operacional, supervisor, coordenador) -->
       <div class="col-md-2 col-10"

@@ -162,21 +162,6 @@
 }
 .crn-money{ color: var(--crn-green); font-weight:900; }
 
-/* Botões */
-.btn-outline-success{
-  --bs-btn-color: var(--crn-green);
-  --bs-btn-border-color: var(--crn-green);
-  --bs-btn-hover-bg: var(--crn-green);
-  --bs-btn-hover-border-color: var(--crn-green);
-  --bs-btn-hover-color: #fff;
-  border-radius:12px; font-weight:800;
-}
-.btn-success{
-  background: var(--crn-green); border-color: var(--crn-green);
-  border-radius:12px; font-weight:800;
-  box-shadow: 0 10px 24px rgba(0,110,55,.18);
-}
-.btn-success:hover{ filter:brightness(1.05); }
 
 /* Paginação */
 .pagination .page-link{
@@ -310,23 +295,28 @@
   .crn-kpi { padding: 12px; }
   .crn-kpi__value { font-size: 1.4rem; }
 }
-
+/* mobile: título pode quebrar em várias linhas sem empurrar botões */
 @media (max-width: 767.98px) {
-  /* Cards confortáveis no mobile */
-  .mobile-card { padding: 12px; border-radius: 18px; }
-  .mobile-card h6 { margin: 0; }
-
-  /* Reduz levemente tipografia em áreas densas */
-  .crn-kpi__label { font-size: .8rem; }
-  .crn-kpi__value { font-size: 1.35rem; }
-
-  /* Paginação mais “tocável” e com quebra */
-  .pagination { gap: .25rem; }
-  .pagination .page-link {
-    padding: .35rem .6rem;
-    font-size: .9rem;
+  .mobile-card .title-wrap {
+    margin-right: 0;          /* garante largura total */
+    line-height: 1.25;
+    /* opcional: limitar a 2 linhas
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    */
+  }
+  .mobile-card .action-row {
+    margin-top: .5rem;        /* afasta das infos */
+  }
+  .mobile-card .no-photo {
+    width: 56px; height: 56px;
+    background: #f8f9fa; color: #adb5bd;
+    font-weight: 700;
   }
 }
+
 
 @media (max-width: 360px) {
   .mobile-card h6 { max-width: 160px; }

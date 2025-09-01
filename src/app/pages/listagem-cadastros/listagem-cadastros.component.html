@@ -1,14 +1,14 @@
 <app-header></app-header>
-
-<div class="container py-5 mt-2">
+<br>
+<div class="container py-5 mt-5">
   <!-- Título + Ações -->
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-<h3 class="mb-0 fw-bold text-success">
-  <i  class="bi bi-card-list me-2"></i>Todos os Cadastros
-</h3>
+    <h3 class="mb-0 fw-bold text-success">
+      <i class="bi bi-card-list me-2"></i>Todos os Cadastros
+    </h3>
     <br>
     <br>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 mb-3">
       <button class="btn btn-outline-success" (click)="exportarExcel()">
         <i class="fas fa-file-excel me-2"></i> Exportar Excel
       </button>
@@ -18,7 +18,7 @@
       <input #fileInput type="file" hidden accept=".xlsx, .xls, .csv" (change)="importarDoExcel($event)" />
     </div>
   </div>
-  <br>
+
   <!-- KPIs -->
   <div class="crn-kpi row g-3 mb-3">
     <div class="col-6 col-md-3">
@@ -30,13 +30,13 @@
     <div class="col-6 col-md-3">
       <div class="crn-kpi__card">
         <div class="crn-kpi__label">Registros carregados</div>
-        <div class="crn-kpi__value">{{ clientes.length || 0 }}</div>
+        <div class="crn-kpi__value">{{ clientesAll.length || 0 }}</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="crn-kpi__card">
         <div class="crn-kpi__label">Após filtros</div>
-        <div class="crn-kpi__value">{{ clientesPaginados.length || 0 }}</div>
+        <div class="crn-kpi__value">{{ clientesFiltrados.length || 0 }}</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
@@ -61,59 +61,59 @@
         <div class="col-md-4">
           <label class="form-label">Buscar por nome</label>
           <div class="input-group">
-            <input type="text" class="form-control" placeholder="Digite o nome do cliente" [(ngModel)]="filtro.nome"
-              (ngModelChange)="onFiltroNomeChange($event)" />
-            <button class="btn btn-success" (click)="buscarClientes()">
+            <input
+              type="text"
+              class="form-control"
+              placeholder="Digite o nome do cliente"
+              [(ngModel)]="filtro.nome"
+              (ngModelChange)="onFiltroNomeChange($event)"
+            />
+            <button class="btn btn-success" (click)="aplicarFiltrosLocais(true)">
               <i class="fas fa-search"></i>
             </button>
           </div>
         </div>
 
-        <div class="col-md-3">
-          <label class="form-label">Cidade</label>
-          <input type="text" class="form-control" placeholder="Ex.: Marituba" [(ngModel)]="filtro.cidade"
-            (input)="aplicarFiltrosLocais()">
-        </div>
-
-        <div class="col-md-2">
-          <label class="form-label">Empreende?</label>
-          <select class="form-select" [(ngModel)]="filtro.empreende" (change)="aplicarFiltrosLocais()">
-            <option value="">Todos</option>
-            <option value="Sim">Sim</option>
-            <option value="Não">Não</option>
-          </select>
-        </div>
-
-        <div class="col-md-2">
-          <label class="form-label">Cliente Crenorte?</label>
-          <select class="form-select" [(ngModel)]="filtro.crenorte" (change)="aplicarFiltrosLocais()">
-            <option value="">Todos</option>
-            <option value="Sim">Sim</option>
-            <option value="Não">Não</option>
-          </select>
-        </div>
       </div>
     </div>
-  </div><!-- Tabela (md e acima) -->
+  </div>
+
+  <!-- Tabela (md e acima) -->
   <div class="table-responsive shadow-sm rounded-4 border d-none d-md-block">
     <table class="table table-hover align-middle mb-0">
       <thead class="sticky-top" style="z-index:1;background:#eaf6ef">
         <tr class="text-success">
           <th style="width:72px">Foto</th>
-          <th>Nome</th>
-          <th class="d-none d-lg-table-cell">CPF</th>
-          <th>Valor Solicitado</th>
-          <th class="d-none d-lg-table-cell">Cidade</th>
-          <th class="d-none d-xl-table-cell">Preenchido em</th>
-          <th style="width:120px">Ações</th>
+          <th (click)="ordenarPor('nomeCompleto')" style="cursor:pointer;">
+            <div class="d-inline-flex align-items-center gap-2">
+              <span>Nome</span>
+              <i *ngIf="sortField==='nomeCompleto' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
+              <i *ngIf="sortField==='nomeCompleto' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
+            </div>
+          </th>
+          <th style="width:160px">CPF</th>
+          <th style="width:160px">Telefone</th>
+          <th (click)="ordenarPor('dataPreenchimento')" style="cursor:pointer; width:180px;">
+            <div class="d-inline-flex align-items-center gap-2">
+              <span>Preenchido em</span>
+              <i *ngIf="sortField==='dataPreenchimento' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
+              <i *ngIf="sortField==='dataPreenchimento' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
+            </div>
+          </th>
+          <th style="width:170px">Ações</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let c of clientesPaginados; trackBy: trackById">
           <td class="text-center">
             <ng-container *ngIf="c._thumbUrl; else semImg">
-              <img [src]="c._thumbUrl" alt="Foto" class="rounded-3 border"
-                style="width:48px;height:48px;object-fit:cover;cursor:pointer" (click)="openPreview(c)" />
+              <img
+                [src]="c._thumbUrl"
+                alt="Foto"
+                class="rounded-3 border"
+                style="width:48px;height:48px;object-fit:cover;cursor:pointer"
+                (click)="openPreview(c)"
+              />
             </ng-container>
             <ng-template #semImg>
               <span class="badge text-bg-secondary">Sem imagem</span>
@@ -121,90 +121,108 @@
           </td>
 
           <td class="fw-semibold text-success-emphasis text-truncate" style="max-width: 320px;">
-            {{ c.nomeCompleto }}
+            {{ displayName(c.nomeCompleto) }}
           </td>
 
-          <td class="d-none d-lg-table-cell" style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+          <td style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
             {{ maskCPF(c.cpf) }}
           </td>
 
-          <td class="fw-semibold text-success">
-            {{ toBRL(c.valorSolicitado) }}
-          </td>
+          <td>{{ maskPhone(getPhone(c)) }}</td>
 
-          <td class="d-none d-lg-table-cell">{{ c.cidade }}</td>
-          <td class="d-none d-xl-table-cell">{{ c.dataPreenchimento }}</td>
+          <td>{{ toBRDate(c.dataPreenchimento) }}</td>
 
-          <td>
-            <button class="btn btn-sm btn-outline-success w-100" (click)="editarCliente(c.cpf || c.id)">
-              <i class="fas fa-edit me-1"></i> Editar
-            </button>
+          <td class="text-nowrap">
+            <div class="btn-group">
+              <button class="btn btn-sm btn-outline-success" (click)="editarCliente(c.cpf || c.id)">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" (click)="removerCliente(c.id)">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
           </td>
         </tr>
 
         <tr *ngIf="!carregando && clientesPaginados.length === 0">
-          <td colspan="7" class="text-center text-muted py-4">Nenhum cadastro encontrado</td>
+          <td colspan="6" class="text-center text-muted py-4">Nenhum cadastro encontrado</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <!-- Lista Mobile (sm e abaixo) -->
-  <div class="d-block d-md-none">
-    <div *ngFor="let c of clientesPaginados; trackBy: trackById"
-      class="mobile-card shadow-sm border rounded-4 p-3 mb-2">
-      <div class="d-flex align-items-start gap-3">
-        <!-- Foto -->
-        <div class="flex-shrink-0">
-          <ng-container *ngIf="c._thumbUrl; else semImgMobile">
-            <img [src]="c._thumbUrl" alt="Foto" class="rounded-3 border"
-              style="width:56px;height:56px;object-fit:cover;cursor:pointer" (click)="openPreview(c)" />
-          </ng-container>
-          <ng-template #semImgMobile>
-            <div class="no-photo rounded-3 d-flex align-items-center justify-content-center">—</div>
-          </ng-template>
+ <!-- Lista Mobile (sm e abaixo) -->
+<div class="d-block d-md-none">
+  <div
+    *ngFor="let c of clientesPaginados; trackBy: trackById"
+    class="mobile-card shadow-sm border rounded-4 p-3 mb-2"
+  >
+    <div class="d-flex align-items-start gap-3">
+      <!-- Foto -->
+      <div class="flex-shrink-0">
+        <ng-container *ngIf="c._thumbUrl; else semImgMobile">
+          <img
+            [src]="c._thumbUrl"
+            alt="Foto"
+            class="rounded-3 border"
+            style="width:56px;height:56px;object-fit:cover;cursor:pointer"
+            (click)="openPreview(c)"
+          />
+        </ng-container>
+        <ng-template #semImgMobile>
+          <div class="no-photo rounded-3 d-flex align-items-center justify-content-center">—</div>
+        </ng-template>
+      </div>
+
+      <!-- Conteúdo -->
+      <div class="flex-grow-1 d-flex flex-column">
+        <!-- Título ocupa a linha inteira -->
+        <h6 class="mb-1 fw-bold text-success-emphasis title-wrap">
+          {{ displayName(c.nomeCompleto) }}
+        </h6>
+
+        <!-- Infos -->
+        <div class="small text-muted mt-1 lh-sm">
+          <div class="text-truncate">
+            <i class="fa-solid fa-id-card-clip me-1"></i> {{ maskCPF(c.cpf) }}
+          </div>
+          <div class="text-truncate" *ngIf="getPhone(c)">
+            <i class="fa-solid fa-phone me-1"></i> {{ maskPhone(getPhone(c)) }}
+          </div>
+          <div class="text-truncate" *ngIf="c.dataPreenchimento">
+            <i class="fa-regular fa-calendar me-1"></i> {{ toBRDate(c.dataPreenchimento) }}
+          </div>
         </div>
 
-        <!-- Conteúdo -->
-        <div class="flex-grow-1">
-          <!-- dentro de .mobile-card, troque este bloco do cabeçalho -->
-          <div class="d-flex justify-content-between align-items-start header-row">
-            <h6 class="mb-0 fw-bold text-success-emphasis title-truncate">{{ c.nomeCompleto }}</h6>
-            <span class="badge bg-light text-success fw-semibold value-badge">{{ toBRL(c.valorSolicitado) }}</span>
-          </div>
-
-          <div class="small text-muted mt-1 lh-sm">
-            <div class="text-truncate"><i class="fa-solid fa-id-card-clip me-1"></i> {{ maskCPF(c.cpf) }}</div>
-            <div class="text-truncate" *ngIf="c.cidade"><i class="fa-solid fa-location-dot me-1"></i> {{ c.cidade }}
-            </div>
-            <div class="text-truncate" *ngIf="c.dataPreenchimento"><i class="fa-regular fa-calendar me-1"></i> {{
-              c.dataPreenchimento }}</div>
-          </div>
-
-          <div class="mt-2">
-            <button class="btn btn-outline-success btn-sm w-100" (click)="editarCliente(c.cpf || c.id)">
-              <i class="fas fa-edit me-1"></i> Editar
-            </button>
-          </div>
+        <!-- Ações sempre na ÚLTIMA linha -->
+        <div class="d-flex justify-content-end gap-2 mt-2 action-row">
+          <button class="btn btn-outline-success btn-sm" (click)="editarCliente(c.cpf || c.id)">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn btn-outline-danger btn-sm" (click)="removerCliente(c.id)">
+            <i class="fas fa-trash"></i>
+          </button>
         </div>
       </div>
     </div>
-
-    <!-- Estado vazio -->
-    <div *ngIf="!carregando && clientesPaginados.length === 0" class="text-center text-muted py-4">
-      Nenhum cadastro encontrado
-    </div>
   </div>
 
-  <!-- Paginação (apenas quando não há busca por nome) -->
-  <nav class="mt-4" *ngIf="!carregando && !filtro.nome && totalPaginas > 1">
+  <!-- Estado vazio -->
+  <div *ngIf="!carregando && clientesPaginados.length === 0" class="text-center text-muted py-4">
+    Nenhum cadastro encontrado
+  </div>
+</div>
+
+
+  <!-- Paginação -->
+  <nav class="mt-4" *ngIf="!carregando && totalPaginas > 1">
     <ul class="pagination justify-content-center flex-wrap gap-1">
       <li class="page-item" [class.disabled]="paginaAtual === 1">
         <button class="page-link" (click)="irParaPagina(paginaAtual - 1)">Anterior</button>
       </li>
 
       <li class="page-item" *ngFor="let p of pages()" [class.active]="paginaAtual === p">
-        <button class="page-link">{{ p }}</button>
+        <button class="page-link" (click)="irParaPagina(p)">{{ p }}</button>
       </li>
 
       <li class="page-item" [class.disabled]="paginaAtual === totalPaginas">
@@ -214,8 +232,14 @@
   </nav>
 
   <!-- Modal de Pré-visualização -->
-  <div class="modal fade" tabindex="-1" [class.show]="preview.open"
-    [ngStyle]="{ display: preview.open ? 'block' : 'none' }" aria-modal="true" role="dialog">
+  <div
+    class="modal fade"
+    tabindex="-1"
+    [class.show]="preview.open"
+    [ngStyle]="{ display: preview.open ? 'block' : 'none' }"
+    aria-modal="true"
+    role="dialog"
+  >
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content shadow-lg rounded-4">
         <div class="modal-header">
