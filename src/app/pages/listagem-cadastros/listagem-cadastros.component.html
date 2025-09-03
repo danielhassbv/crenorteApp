@@ -6,16 +6,39 @@
     <h3 class="mb-0 fw-bold text-success">
       <i class="bi bi-card-list me-2"></i>Todos os Cadastros
     </h3>
-    <br>
-    <br>
-    <div class="d-flex gap-2 mb-3">
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
       <button class="btn btn-outline-success" (click)="exportarExcel()">
         <i class="fas fa-file-excel me-2"></i> Exportar Excel
       </button>
+
+      <!-- NOVO: seletor de data + export genérico -->
+      <div class="input-group" style="min-width: 280px;">
+        <span class="input-group-text"><i class="fa-regular fa-calendar"></i></span>
+        <input
+          type="date"
+          class="form-control"
+          [(ngModel)]="dataExportDia"
+          aria-label="Data para exportar nomes do dia"
+        />
+        <button class="btn btn-success"
+                [disabled]="!dataExportDia"
+                (click)="exportarContatosENomesDoDia()">
+          <i class="fa-solid fa-file-export me-2"></i>
+          Exportar: Nomes do dia
+        </button>
+      </div>
+
       <button class="btn btn-outline-secondary" (click)="fileInput.click()">
         <i class="fas fa-upload me-2"></i> Importar Planilha
       </button>
       <input #fileInput type="file" hidden accept=".xlsx, .xls, .csv" (change)="importarDoExcel($event)" />
+
+      <!-- Botão MIGRAR STATUS 
+      <button class="btn btn-outline-warning" (click)="migrarStatus()" [disabled]="carregando || migrando">
+        <i class="fas fa-exchange-alt me-2"></i>
+        {{ migrando ? 'Migrando...' : 'Migrar status' }}
+      </button> -->
     </div>
   </div>
 
@@ -100,6 +123,7 @@
               <i *ngIf="sortField==='dataPreenchimento' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
             </div>
           </th>
+          <th style="width:140px">Status</th>
           <th style="width:170px">Ações</th>
         </tr>
       </thead>
@@ -132,6 +156,12 @@
 
           <td>{{ toBRDate(c.dataPreenchimento) }}</td>
 
+          <td>
+            <span class="badge px-3 py-2" [ngClass]="statusClass(c.status)">
+              {{ statusLabel(c.status) }}
+            </span>
+          </td>
+
           <td class="text-nowrap">
             <div class="btn-group">
               <button class="btn btn-sm btn-outline-success" (click)="editarCliente(c.cpf || c.id)">
@@ -145,74 +175,72 @@
         </tr>
 
         <tr *ngIf="!carregando && clientesPaginados.length === 0">
-          <td colspan="6" class="text-center text-muted py-4">Nenhum cadastro encontrado</td>
+          <td colspan="7" class="text-center text-muted py-4">Nenhum cadastro encontrado</td>
         </tr>
       </tbody>
     </table>
   </div>
 
- <!-- Lista Mobile (sm e abaixo) -->
-<div class="d-block d-md-none">
-  <div
-    *ngFor="let c of clientesPaginados; trackBy: trackById"
-    class="mobile-card shadow-sm border rounded-4 p-3 mb-2"
-  >
-    <div class="d-flex align-items-start gap-3">
-      <!-- Foto -->
-      <div class="flex-shrink-0">
-        <ng-container *ngIf="c._thumbUrl; else semImgMobile">
-          <img
-            [src]="c._thumbUrl"
-            alt="Foto"
-            class="rounded-3 border"
-            style="width:56px;height:56px;object-fit:cover;cursor:pointer"
-            (click)="openPreview(c)"
-          />
-        </ng-container>
-        <ng-template #semImgMobile>
-          <div class="no-photo rounded-3 d-flex align-items-center justify-content-center">—</div>
-        </ng-template>
-      </div>
-
-      <!-- Conteúdo -->
-      <div class="flex-grow-1 d-flex flex-column">
-        <!-- Título ocupa a linha inteira -->
-        <h6 class="mb-1 fw-bold text-success-emphasis title-wrap">
-          {{ displayName(c.nomeCompleto) }}
-        </h6>
-
-        <!-- Infos -->
-        <div class="small text-muted mt-1 lh-sm">
-          <div class="text-truncate">
-            <i class="fa-solid fa-id-card-clip me-1"></i> {{ maskCPF(c.cpf) }}
-          </div>
-          <div class="text-truncate" *ngIf="getPhone(c)">
-            <i class="fa-solid fa-phone me-1"></i> {{ maskPhone(getPhone(c)) }}
-          </div>
-          <div class="text-truncate" *ngIf="c.dataPreenchimento">
-            <i class="fa-regular fa-calendar me-1"></i> {{ toBRDate(c.dataPreenchimento) }}
-          </div>
+  <!-- Lista Mobile (sm e abaixo) -->
+  <div class="d-block d-md-none">
+    <div
+      *ngFor="let c of clientesPaginados; trackBy: trackById"
+      class="mobile-card shadow-sm border rounded-4 p-3 mb-2"
+    >
+      <div class="d-flex align-items-start gap-3">
+        <div class="flex-shrink-0">
+          <ng-container *ngIf="c._thumbUrl; else semImgMobile">
+            <img
+              [src]="c._thumbUrl"
+              alt="Foto"
+              class="rounded-3 border"
+              style="width:56px;height:56px;object-fit:cover;cursor:pointer"
+              (click)="openPreview(c)"
+            />
+          </ng-container>
+          <ng-template #semImgMobile>
+            <div class="no-photo rounded-3 d-flex align-items-center justify-content-center">—</div>
+          </ng-template>
         </div>
 
-        <!-- Ações sempre na ÚLTIMA linha -->
-        <div class="d-flex justify-content-end gap-2 mt-2 action-row">
-          <button class="btn btn-outline-success btn-sm" (click)="editarCliente(c.cpf || c.id)">
-            <i class="fas fa-edit"></i>
-          </button>
-          <button class="btn btn-outline-danger btn-sm" (click)="removerCliente(c.id)">
-            <i class="fas fa-trash"></i>
-          </button>
+        <div class="flex-grow-1 d-flex flex-column">
+          <div class="header-row mb-1">
+            <h6 class="mb-0 fw-bold text-success-emphasis title-truncate">
+              {{ displayName(c.nomeCompleto) }}
+            </h6>
+            <span class="badge value-badge px-3 py-2" [ngClass]="statusClass(c.status)">
+              {{ statusLabel(c.status) }}
+            </span>
+          </div>
+
+          <div class="small text-muted mt-1 lh-sm">
+            <div class="text-truncate">
+              <i class="fa-solid fa-id-card-clip me-1"></i> {{ maskCPF(c.cpf) }}
+            </div>
+            <div class="text-truncate" *ngIf="getPhone(c)">
+              <i class="fa-solid fa-phone me-1"></i> {{ maskPhone(getPhone(c)) }}
+            </div>
+            <div class="text-truncate" *ngIf="c.dataPreenchimento">
+              <i class="fa-regular fa-calendar me-1"></i> {{ toBRDate(c.dataPreenchimento) }}
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 mt-2 action-row">
+            <button class="btn btn-outline-success btn-sm" (click)="editarCliente(c.cpf || c.id)">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-outline-danger btn-sm" (click)="removerCliente(c.id)">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Estado vazio -->
-  <div *ngIf="!carregando && clientesPaginados.length === 0" class="text-center text-muted py-4">
-    Nenhum cadastro encontrado
+    <div *ngIf="!carregando && clientesPaginados.length === 0" class="text-center text-muted py-4">
+      Nenhum cadastro encontrado
+    </div>
   </div>
-</div>
-
 
   <!-- Paginação -->
   <nav class="mt-4" *ngIf="!carregando && totalPaginas > 1">

@@ -116,6 +116,20 @@ export interface Cliente {
 
   // Metadados opcionais
   criadoEm?: Date | string;          // definido no TS ao salvar
+
+  
+  status?: StatusCadastro;                // novo
+  statusHistory?: StatusEvent[];          // novo
 }
 
+export type StatusCadastro = 'em_analise' | 'aprovado' | 'reprovado';
+
+export interface StatusEvent {
+  at: Date;                 // quando mudou
+  byUid: string;            // quem mudou
+  byNome?: string;
+  from?: StatusCadastro;
+  to: StatusCadastro;
+  note?: string;            // observação quando reprovado ou ajuste
+}
 

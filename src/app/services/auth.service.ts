@@ -38,14 +38,14 @@ export class AuthService {
 
   /**
    * Perfil do colaborador no Firestore (colaboradores/{uid}).
-   * docData pode emitir `undefined` se o doc não existir — normalizamos para `null`.
+   * Normaliza para null quando não existir doc.
    */
   perfil$: Observable<Colaborador | null> = this.firebaseUser$.pipe(
-    switchMap(u => {
+    switchMap((u) => {
       if (!u?.uid) return of<Colaborador | null>(null);
       const ref = doc(this.db, 'colaboradores', u.uid) as DocumentReference<Colaborador>;
       return (docData(ref) as Observable<Colaborador | undefined>).pipe(
-        map(d => d ?? null)
+        map((d) => d ?? null)
       );
     })
   );
@@ -55,9 +55,10 @@ export class AuthService {
     map((p) => p?.papel ?? null)
   );
 
-  /** Login por e-mail/senha */
+  /** Login por e-mail/senha + bootstrap do perfil */
   async login(email: string, senha: string): Promise<void> {
     await signInWithEmailAndPassword(this.auth, email, senha);
+    await this.garantirPerfilMinimo(); // <- garante colaboradores/{uid}
   }
 
   /** Logout */
@@ -98,12 +99,13 @@ export class AuthService {
    * um dos papéis informados.
    */
   temPapel$(roles: Papel[]): Observable<boolean> {
-    return this.papel$.pipe(map(p => !!p && roles.includes(p)));
+    return this.papel$.pipe(map((p) => !!p && roles.includes(p)));
   }
 
   /**
-   * Garante que o documento mínimo exista em `colaboradores/{uid}` para o usuário atual.
-   * Útil após login de contas antigas ou importadas.
+   * Cria o documento mínimo em `colaboradores/{uid}` se ainda não existir.
+   * - Não altera papel/status quando já existirem (evita quebra nas regras).
+   * - Papel padrão no bootstrap: 'assessor' (ajuste se necessário).
    */
   async garantirPerfilMinimo(): Promise<void> {
     const u = this.auth.currentUser;
@@ -111,15 +113,23 @@ export class AuthService {
 
     const ref = doc(this.db, 'colaboradores', u.uid) as DocumentReference<Colaborador>;
     const snap = await getDoc(ref);
+
     if (!snap.exists()) {
-      await setDoc(ref, {
+      const base: Colaborador = {
         uid: u.uid,
-        nome: u.displayName ?? 'Sem Nome',
+        nome: u.displayName ?? u.email ?? 'Usuário',
         email: u.email ?? '',
-        papel: 'assessor',
+        papel: 'assessor',  // <- papel padrão para contas novas
         status: 'ativo',
+        cpf: null,
+        photoURL: u.photoURL ?? null,
         criadoEm: Date.now(),
-      } as Colaborador);
+      };
+      // Cria o doc (permitido pelas regras: create próprio)
+      await setDoc(ref, base);
     }
+    // Se já existir, não escreve nada aqui para não tocar em papel/status.
   }
+
+  
 }

@@ -1,0 +1,104 @@
+<div class="container py-4 pre-cadastros-view">
+  <!-- Cabeçalho -->
+  <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="crn-kicker"></div>
+      <h4 class="mb-0 fw-bold text-crn-dark">Meus Pré-cadastros</h4>
+    </div>
+
+    <a routerLink="/pre-cadastro/novo" class="btn btn-crn-primary">
+      <i class="bi bi-plus-lg me-1"></i> Novo
+    </a>
+  </div>
+
+  <div *ngIf="loading()" class="alert alert-light border-0 shadow-sm d-flex align-items-center gap-2">
+    <span class="spinner-border spinner-border-sm"></span>
+    Carregando…
+  </div>
+
+  <!-- Card com a tabela -->
+  <div class="card shadow-sm border-0" *ngIf="!loading()">
+    <div class="card-body p-0">
+      <!-- Tabela desktop -->
+      <div class="table-responsive d-none d-md-block">
+        <table class="table mb-0 table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Nome</th>
+              <th>CPF</th>
+              <th>Telefone</th>
+              <th>E-mail</th>
+              <th>Endereço</th>
+              <th class="text-nowrap">Criado em</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let i of itens()">
+              <td class="text-truncate" style="max-width: 260px;">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="avatar-inicial">
+                    {{ (i.nomeCompleto || '?').charAt(0) | uppercase }}
+                  </div>
+                  <div>
+                    <div class="fw-semibold">{{ i.nomeCompleto || '—' }}</div>
+                    <div class="small text-muted">Pré-cadastro</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="badge text-bg-light fw-medium">{{ i.cpf }}</span></td>
+              <td class="text-nowrap"><i class="bi bi-telephone text-crn"></i> {{ i.telefone }}</td>
+              <td class="text-truncate" style="max-width: 220px;">
+                <i class="bi bi-envelope text-muted"></i> {{ i.email }}
+              </td>
+              <td class="text-truncate" style="max-width: 280px;">{{ i.endereco }}</td>
+              <td class="text-nowrap">
+                {{ i.createdAt?.toDate ? (i.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : '' }}
+              </td>
+            </tr>
+            <tr *ngIf="!itens()?.length">
+              <td colspan="6" class="text-center text-muted py-4">Nenhum registro ainda.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Versão mobile: cards -->
+      <div class="d-block d-md-none p-2">
+        <ng-container *ngIf="itens()?.length; else vazioMobile">
+          <div class="crn-card row g-0" *ngFor="let i of itens()">
+            <div class="col-auto p-3">
+              <div class="avatar-inicial avatar-lg">
+                {{ (i.nomeCompleto || '?').charAt(0) | uppercase }}
+              </div>
+            </div>
+            <div class="col p-3">
+              <div class="fw-semibold text-crn-dark">{{ i.nomeCompleto || '—' }}</div>
+              <div class="small text-muted">
+                {{ i.createdAt?.toDate ? (i.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : '' }}
+              </div>
+
+              <div class="mt-2 small">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-person-badge text-crn"></i> {{ i.cpf }}
+                </div>
+                <div class="d-flex align-items-center gap-2 mt-1">
+                  <i class="bi bi-telephone text-crn"></i> {{ i.telefone }}
+                </div>
+                <div class="d-flex align-items-center gap-2 mt-1 text-break">
+                  <i class="bi bi-envelope text-crn"></i> {{ i.email }}
+                </div>
+                <div class="d-flex align-items-start gap-2 mt-1 text-break">
+                  <i class="bi bi-geo-alt text-crn"></i> {{ i.endereco }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </ng-container>
+
+        <ng-template #vazioMobile>
+          <div class="text-center text-muted py-4">Nenhum registro ainda.</div>
+        </ng-template>
+      </div>
+    </div>
+  </div>
+</div>

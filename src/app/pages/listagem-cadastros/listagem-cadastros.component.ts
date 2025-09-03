@@ -17,6 +17,7 @@ import {
   DocumentData,
   QuerySnapshot,
   deleteDoc,
+  updateDoc,
   doc,
 } from 'firebase/firestore';
 
@@ -28,6 +29,7 @@ type ClienteList = Cliente & {
   id: string;
   _thumbUrl?: string | null;
   _assinaturaUrl?: string | null;
+  status?: 'em_analise' | 'aprovado' | 'reprovado';
 };
 
 type SortDir = 'asc' | 'desc';
@@ -40,19 +42,31 @@ type SortDir = 'asc' | 'desc';
   templateUrl: './listagem-cadastros.component.html',
 })
 export class ListagemCadastrosComponent implements OnInit {
+  // helpers de status (cores e labels)
+  statusLabel(s?: string) {
+    return s === 'aprovado' ? 'Aprovado'
+         : s === 'reprovado' ? 'Reprovado'
+         : 'Em Análise';
+  }
+  statusClass(s?: string) {
+    return s === 'aprovado' ? 'bg-success-subtle text-success border'
+         : s === 'reprovado' ? 'bg-danger-subtle text-danger border'
+         : 'bg-warning-subtle text-warning border'; // em_analise ou indefinido
+  }
+
   // dados em memória
   clientesAll: ClienteList[] = [];
   clientesFiltrados: ClienteList[] = [];
   clientesPaginados: ClienteList[] = [];
 
-  // filtros (mantidos os seus campos existentes)
+  // filtros
   filtro: {
     nome: string;
     cidade: string;
     empreende: '' | 'Sim' | 'Não';
     crenorte: '' | 'Sim' | 'Não';
-    dataDe?: string; // yyyy-mm-dd (se quiser reativar datas)
-    dataAte?: string; // yyyy-mm-dd
+    dataDe?: string;
+    dataAte?: string;
   } = { nome: '', cidade: '', empreende: '', crenorte: '', dataDe: '', dataAte: '' };
 
   // paginação local
@@ -67,6 +81,7 @@ export class ListagemCadastrosComponent implements OnInit {
 
   // ui
   carregando = false;
+  migrando = false;
   erroCarregar = '';
 
   // preview
@@ -77,12 +92,14 @@ export class ListagemCadastrosComponent implements OnInit {
     assinaturaUrl: null as string | null,
   };
 
+  // ===== NOVO: data escolhida para exportar "nomes do dia" =====
+  dataExportDia: string = ''; // formato yyyy-mm-dd do input[type="date"]
+
   async ngOnInit(): Promise<void> {
     await this.carregarTodos();
   }
 
   // ====================== FORMATADORES ======================
-  /** Nome sempre em "Primeira Maiúscula" com exceções PT-BR (de/do/da/das/dos/e) */
   public displayName(raw?: string): string {
     const s = (raw || '').trim();
     if (!s) return '';
@@ -92,7 +109,7 @@ export class ListagemCadastrosComponent implements OnInit {
     const keepLower = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'du', 'del', 'della']);
     return parts
       .map((p, i) => {
-        if (i > 0 && keepLower.has(p)) return p; // preposições minúsculas (exceto 1ª palavra)
+        if (i > 0 && keepLower.has(p)) return p;
         return p.charAt(0).toUpperCase() + p.slice(1);
       })
       .join(' ');
@@ -104,7 +121,6 @@ export class ListagemCadastrosComponent implements OnInit {
     return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   }
 
-  /** Formata números BR: (XX) XXXXX-XXXX / (XX) XXXX-XXXX / ou o que der pra mascarar */
   public maskPhone(input?: string): string {
     const d = (input || '').replace(/\D/g, '');
     if (!d) return '—';
@@ -114,12 +130,10 @@ export class ListagemCadastrosComponent implements OnInit {
     return d;
   }
 
-  /** Helper para usar no template (evita `(c as any)` no HTML) */
   public getPhone(c: any): string {
     return (c?.contato ?? c?.telefone ?? '') as string;
   }
 
-  /** dataPreenchimento -> Date: aceita Firestore TS, ISO, YYYY-MM-DD, DD/MM/YYYY */
   private asDate(input: any): Date | null {
     if (!input) return null;
 
@@ -135,9 +149,7 @@ export class ListagemCadastrosComponent implements OnInit {
       const s = input.trim();
       const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
       if (m) {
-        const dd = +m[1],
-          mm = +m[2],
-          yyyy = +m[3];
+        const dd = +m[1], mm = +m[2], yyyy = +m[3];
         const d = new Date(yyyy, mm - 1, dd);
         if (!isNaN(d.getTime())) return d;
       }
@@ -148,7 +160,6 @@ export class ListagemCadastrosComponent implements OnInit {
     return null;
   }
 
-  /** DD/MM/YYYY */
   public toBRDate(value: any): string {
     const d = this.asDate(value);
     if (!d) return '—';
@@ -199,7 +210,7 @@ export class ListagemCadastrosComponent implements OnInit {
       const countSnap = await getCountFromServer(query(collection(db, 'clientes')));
       this.totalEstimado = (countSnap.data() as any).count || 0;
 
-      const pageSize = 500; // lotes
+      const pageSize = 500;
       let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
 
       while (true) {
@@ -221,15 +232,19 @@ export class ListagemCadastrosComponent implements OnInit {
         const chunk: ClienteList[] = snap.docs.map((d) => {
           const dados = d.data() as any;
           const { thumb, assinatura } = this.extractThumbAndAssinatura(dados);
-          return { id: d.id, ...dados, _thumbUrl: thumb, _assinaturaUrl: assinatura } as ClienteList;
+          return {
+            id: d.id,
+            ...dados,
+            _thumbUrl: thumb,
+            _assinaturaUrl: assinatura
+          } as ClienteList;
         });
 
         this.clientesAll.push(...chunk);
         lastDoc = snap.docs[snap.docs.length - 1];
-        if (snap.size < pageSize) break; // terminou
+        if (snap.size < pageSize) break;
       }
 
-      // primeira aplicação (ordenando por data desc por padrão)
       this.aplicarFiltrosLocais(true);
     } catch (e) {
       console.error(e);
@@ -274,7 +289,6 @@ export class ListagemCadastrosComponent implements OnInit {
 
     let arr = [...this.clientesAll];
 
-    // busca por nome usando nome exibido (normalizado)
     if (nl) arr = arr.filter((c) => this.normalize(this.displayName(c.nomeCompleto)).includes(nl));
     if (cidade) arr = arr.filter((c) => this.normalize((c as any).cidade || '').includes(cidade));
 
@@ -287,7 +301,6 @@ export class ListagemCadastrosComponent implements OnInit {
       arr = arr.filter((c) => !!(c as any).clienteCrenorte === want);
     }
 
-    // (opcional) filtro de datas — mantido caso reative
     if (this.filtro.dataDe || this.filtro.dataAte) {
       const start = this.filtro.dataDe ? new Date(this.filtro.dataDe + 'T00:00:00') : null;
       const end = this.filtro.dataAte ? new Date(this.filtro.dataAte + 'T23:59:59.999') : null;
@@ -300,7 +313,6 @@ export class ListagemCadastrosComponent implements OnInit {
       });
     }
 
-    // ordena conforme cabeçalho selecionado (usa nome exibido para consistência)
     this.clientesFiltrados = this.ordenarArray(arr, this.sortField, this.sortDir);
 
     if (resetPagina) this.paginaAtual = 1;
@@ -363,7 +375,6 @@ export class ListagemCadastrosComponent implements OnInit {
     const cliente = this.clientesAll.find((c) => ((c as any).cpf ?? c.id) === cpfOuId || c.id === cpfOuId);
     if (!cliente) return;
     const { _thumbUrl, _assinaturaUrl, ...rest } = cliente as any;
-    // salva já com nome normalizado para a tela de edição, sem alterar o banco
     localStorage.setItem(
       'clienteEditando',
       JSON.stringify({
@@ -384,7 +395,7 @@ export class ListagemCadastrosComponent implements OnInit {
     try {
       await deleteDoc(doc(db, 'clientes', id));
       this.clientesAll = this.clientesAll.filter((c) => c.id !== id);
-      this.aplicarFiltrosLocais(); // mantém ordenação/página
+      this.aplicarFiltrosLocais();
     } catch (e) {
       console.error(e);
       alert('Falha ao remover o cadastro.');
@@ -408,7 +419,7 @@ export class ListagemCadastrosComponent implements OnInit {
       try {
         for (const linha of dados) {
           await addDoc(collection(db, 'clientes'), {
-            nomeCompleto: this.displayName(linha['Nome'] || ''), // normaliza o nome já na importação
+            nomeCompleto: this.displayName(linha['Nome'] || ''),
             cpf: (linha['CPF'] || '').toString(),
             contato: (linha['Contato'] || linha['Telefone'] || '').toString(),
             cidade: linha['Cidade'] || '',
@@ -416,6 +427,15 @@ export class ListagemCadastrosComponent implements OnInit {
             dataPreenchimento: linha['Data Preenchimento']
               ? new Date(linha['Data Preenchimento']).toISOString()
               : new Date().toISOString(),
+            status: 'em_analise',
+            statusHistory: [{
+              at: new Date(),
+              byUid: 'import',
+              byNome: 'Importação',
+              from: undefined,
+              to: 'em_analise',
+              note: 'Status inicial via importação.'
+            }]
           });
         }
         await this.carregarTodos();
@@ -434,6 +454,7 @@ export class ListagemCadastrosComponent implements OnInit {
       CPF: c.cpf || '',
       Telefone: this.maskPhone(this.getPhone(c)),
       'Data Preenchimento': this.toBRDate((c as any).dataPreenchimento),
+      Status: this.statusLabel(c.status)
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
@@ -442,5 +463,143 @@ export class ListagemCadastrosComponent implements OnInit {
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
     saveAs(blob, 'clientes-crenorte.xlsx');
+  }
+
+  /** ===================== NOVO: Exportar contatos (únicos) + nomes do dia escolhido ===================== */
+
+  private isSameDay(value: any, year: number, month1to12: number, day: number): boolean {
+    const d = this.asDate(value);
+    if (!d) return false;
+    return (
+      d.getFullYear() === year &&
+      d.getMonth() === month1to12 - 1 &&
+      d.getDate() === day
+    );
+  }
+
+  private labelFromISODate(isoDateYYYYMMDD: string): string {
+    // recebe "2025-07-16" e devolve "16-07-2025" (para nomes de aba/arquivo)
+    if (!isoDateYYYYMMDD) return '';
+    const [yyyy, mm, dd] = isoDateYYYYMMDD.split('-');
+    return `${dd}-${mm}-${yyyy}`;
+  }
+
+  exportarContatosENomesDoDia() {
+    if (!this.dataExportDia) {
+      alert('Selecione uma data para exportar os nomes do dia.');
+      return;
+    }
+
+    // Parse do input yyyy-mm-dd
+    const [yearStr, monthStr, dayStr] = this.dataExportDia.split('-');
+    const year = Number(yearStr);
+    const month1to12 = Number(monthStr);
+    const day = Number(dayStr);
+
+    // --- Contatos únicos (de TODOS os cadastros) ---
+    const seen = new Set<string>();
+    const contatosUnicos = this.clientesAll.reduce<any[]>((acc, c) => {
+      const phoneRaw = (this.getPhone(c) || '').toString();
+      const phoneKey = phoneRaw.replace(/\D/g, '');
+      const cpfKey = (c.cpf || '').toString().replace(/\D/g, '');
+      const key = phoneKey || cpfKey || c.id;
+      if (!key || seen.has(key)) return acc;
+      seen.add(key);
+      acc.push({
+        Nome: this.displayName(c.nomeCompleto) || '',
+        Telefone: this.maskPhone(this.getPhone(c)),
+        CPF: this.maskCPF(c.cpf),
+        Cidade: (c as any).cidade || '',
+        'Data Preenchimento': this.toBRDate((c as any).dataPreenchimento),
+        Status: this.statusLabel(c.status)
+      });
+      return acc;
+    }, []);
+
+    // --- Nomes SOMENTE do dia selecionado ---
+    const nomesDoDia = this.clientesAll
+      .filter((c) => this.isSameDay((c as any).dataPreenchimento, year, month1to12, day))
+      .map((c) => ({
+        Nome: this.displayName(c.nomeCompleto) || '',
+        CPF: this.maskCPF(c.cpf),
+        Telefone: this.maskPhone(this.getPhone(c)),
+        Cidade: (c as any).cidade || '',
+        'Data Preenchimento': this.toBRDate((c as any).dataPreenchimento),
+        Status: this.statusLabel(c.status)
+      }));
+
+    // Monta workbook com 2 abas
+    const wb = XLSX.utils.book_new();
+
+    const wsContatos = XLSX.utils.json_to_sheet(contatosUnicos);
+    XLSX.utils.book_append_sheet(wb, wsContatos, 'Contatos (Únicos)');
+
+    const labelDia = this.labelFromISODate(this.dataExportDia); // ex.: "16-07-2025"
+    const wsNomesDia = XLSX.utils.json_to_sheet(nomesDoDia);
+    XLSX.utils.book_append_sheet(wb, wsNomesDia, `Nomes ${labelDia}`);
+
+    // Gera arquivo
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([buf], { type: 'application/octet-stream' });
+    saveAs(blob, `contatos_e_nomes_${labelDia}.xlsx`);
+  }
+
+  // ====================== MIGRAÇÃO DE STATUS ======================
+  async migrarStatus() {
+    const ok = confirm(
+      'Isso vai definir status "Em Análise" para cadastros que ainda não têm status, e registrar no histórico.\nDeseja continuar?'
+    );
+    if (!ok) return;
+
+    this.migrando = true;
+    try {
+      const pendentes = this.clientesAll.filter(c => !c.status);
+
+      const sanitize = (obj: Record<string, any>) => {
+        const out: any = {};
+        Object.keys(obj).forEach(k => {
+          const v = (obj as any)[k];
+          if (v !== undefined) out[k] = v;
+        });
+        return out;
+      };
+
+      const chunkSize = 50;
+      for (let i = 0; i < pendentes.length; i += chunkSize) {
+        const slice = pendentes.slice(i, i + chunkSize);
+
+        await Promise.all(slice.map(async (c) => {
+          const ref = doc(db, 'clientes', c.id);
+
+          const currentHistory = Array.isArray((c as any).statusHistory)
+            ? [...(c as any).statusHistory]
+            : [];
+
+          const newEvent = sanitize({
+            at: new Date(),
+            byUid: 'system',
+            byNome: 'Backfill',
+            to: 'em_analise' as const,
+            note: 'Backfill de status inicial.'
+          });
+
+          const nextHistory = [...currentHistory, newEvent];
+
+          await updateDoc(ref, sanitize({
+            status: 'em_analise',
+            statusHistory: nextHistory,
+            atualizadoEm: new Date(),
+          }));
+        }));
+      }
+
+      await this.carregarTodos();
+      alert('✅ Migração concluída!');
+    } catch (e) {
+      console.error(e);
+      alert('❌ Erro na migração de status. Veja o console.');
+    } finally {
+      this.migrando = false;
+    }
   }
 }

@@ -8,23 +8,32 @@ img[alt="Logo Crenorte"] {
   margin-top: -200px;
 }
 
-/* Cards dos módulos */
+:host {
+  --crn-green: #006e37;
+  --crn-green-ink: #064d2b;
+  --crn-border: #e7edf0;
+}
+
+/* badge do perfil */
+.crn-badge-live {
+  background: #e6f4ec;
+  color: var(--crn-green);
+  border: 1px solid #cfe6d9;
+  border-radius: 999px;
+  font-weight: 800;
+  padding: .35rem .7rem;
+}
+
+/* cards de módulo */
 .card {
-  transition: all 0.25s ease;
+  border: 1px solid var(--crn-border);
   border-radius: 16px;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
 
-/* Efeito hover */
 .card:hover {
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 10px 28px rgba(0, 110, 55, 0.15);
-  border-color: rgba(0, 110, 55, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0,0,0,.08);
 }
 
-/* Ícone suavemente destacado */
-.card:hover i {
-  color: #006e37;          /* verde do tema */
-  transform: scale(1.1);
-  transition: all 0.25s ease;
-}
-
+.min-vh-100 { min-height: 100vh; }

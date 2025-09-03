@@ -14,6 +14,11 @@
   --shadow-lg: 0 16px 40px rgba(0,0,0,.14);
 }
 
+/* (opcional) deixar o status um pouco mais estreito/largo */
+.crn-table thead th:nth-child(6),
+.crn-table tbody td:nth-child(6){ width: 140px; } /* já está 14% no seu CSS; aqui forçamos 140px */
+
+
 /* -------- Página / Header ---------- */
 .crn-page { background: #f7f9fb; }
 

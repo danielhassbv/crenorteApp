@@ -1,0 +1,135 @@
+<div class="container-fluid py-4">
+  <form #f="ngForm" (ngSubmit)="salvar(f)" class="container py-4 card-crenorte shadow-lg rounded precadastro">
+    <!-- HEADER -->
+    <div class="form-header d-flex justify-content-between align-items-center mb-3">
+      <div class="title-box px-2">
+        <h2 class="form-title mb-0">Novo Pré-cadastro</h2>
+        <small class="subtitle">Microcrédito Produtivo Orientado</small>
+      </div>
+      <div class="logo-box">
+        <img src="../../../assets/img/logo2-crenorte.png" alt="Logo CRENORTE" class="logo-img" />
+      </div>
+    </div>
+
+    <div class="card shadow-soft">
+      <div class="card-body">
+        <div class="row g-3 g-md-4">
+          <div class="col-12 col-md-6">
+            <label class="form-label">Nome Completo</label>
+            <input class="form-control" name="nomeCompleto" [(ngModel)]="model.nomeCompleto" required autocomplete="name" />
+          </div>
+
+          <div class="col-12 col-md-3">
+            <label class="form-label">CPF</label>
+            <input class="form-control" name="cpf" [(ngModel)]="model.cpf" required placeholder="000.000.000-00" inputmode="numeric" />
+          </div>
+
+          <div class="col-12 col-md-3">
+            <label class="form-label">Telefone (WhatsApp)</label>
+            <input class="form-control" name="telefone" [(ngModel)]="model.telefone" required placeholder="(91) 9XXXX-XXXX" inputmode="tel" autocomplete="tel" />
+          </div>
+
+          <div class="col-12 col-md-8">
+            <label class="form-label">Endereço</label>
+            <input class="form-control" name="endereco" [(ngModel)]="model.endereco" required autocomplete="street-address" />
+          </div>
+
+          <div class="col-12 col-md-4">
+            <label class="form-label">E-mail</label>
+            <input type="email" class="form-control" name="email" [(ngModel)]="model.email" required autocomplete="email" />
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-4 sticky-actions-md">
+          <button class="btn btn-crn-success" [disabled]="loading()">Salvar</button>
+          <a class="btn btn-outline-secondary" routerLink="/pre-cadastro/minha-lista">Minha Lista</a>
+        </div>
+
+        <div *ngIf="msg()" class="alert alert-info mt-3">{{ msg() }}</div>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Modal: Avaliação do Atendimento (Cliente) -->
+<div class="modal fade" #feedbackModal tabindex="-1" aria-labelledby="feedbackLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 id="feedbackLabel" class="modal-title">Avaliação do Atendimento</h5>
+        <button type="button" class="btn-close" (click)="fecharFeedbackModal()"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="text-muted mb-3">
+          Esta etapa é para o <strong>cliente</strong> avaliar o atendimento do assessor.
+          Por favor, entregue este aparelho ao cliente para responder.
+        </p>
+
+        <div class="row g-3">
+          <!-- Nota atendimento -->
+          <div class="col-md-4">
+            <label class="form-label">Atendimento geral</label>
+            <div class="stars">
+              <button type="button" *ngFor="let s of stars"
+                      (click)="setStar('notaAtendimento', s)"
+                      [class.active]="feedback.notaAtendimento >= s">★</button>
+            </div>
+          </div>
+
+          <!-- Cordialidade -->
+          <div class="col-md-4">
+            <label class="form-label">Cordialidade</label>
+            <div class="stars">
+              <button type="button" *ngFor="let s of stars"
+                      (click)="setStar('cordialidade', s)"
+                      [class.active]="feedback.cordialidade >= s">★</button>
+            </div>
+          </div>
+
+          <!-- Clareza -->
+          <div class="col-md-4">
+            <label class="form-label">Clareza das informações</label>
+            <div class="stars">
+              <button type="button" *ngFor="let s of stars"
+                      (click)="setStar('clareza', s)"
+                      [class.active]="feedback.clareza >= s">★</button>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label d-block">Recebeu todas as informações direitinho?</label>
+            <div class="btn-group w-100">
+              <input class="btn-check" type="radio" id="infSim" name="infComp" [(ngModel)]="feedback.recebeuInformacoesCompletas" [value]="true">
+              <label class="btn btn-outline-success" for="infSim">Sim</label>
+              <input class="btn-check" type="radio" id="infNao" name="infComp" [(ngModel)]="feedback.recebeuInformacoesCompletas" [value]="false">
+              <label class="btn btn-outline-danger" for="infNao">Não</label>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label d-block">Recomendaria este atendimento?</label>
+            <div class="btn-group w-100">
+              <input class="btn-check" type="radio" id="recSim" name="recomendaria" [(ngModel)]="feedback.recomendaria" [value]="true">
+              <label class="btn btn-outline-success" for="recSim">Sim</label>
+              <input class="btn-check" type="radio" id="recNao" name="recomendaria" [(ngModel)]="feedback.recomendaria" [value]="false">
+              <label class="btn btn-outline-danger" for="recNao">Não</label>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Comentário (opcional)</label>
+            <textarea class="form-control" rows="3" [(ngModel)]="feedback.comentarios"
+                      name="comentariosCliente"
+                      placeholder="Conte como foi o atendimento, o que pode melhorar..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" type="button" (click)="fecharFeedbackModal()">Pular</button>
+        <button class="btn btn-success" type="button" (click)="salvarFeedbackCliente()">Enviar avaliação</button>
+      </div>
+    </div>
+  </div>
+</div>

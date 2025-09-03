@@ -10,9 +10,11 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { Cliente, FluxoCaixa } from '../../models/cliente.model';
+import { Cliente, FluxoCaixa, StatusCadastro, StatusEvent } from '../../models/cliente.model';
 import { municipiosNorte } from '../../../shared/municipios-norte';
 import { NgxMaskDirective, provideNgxMask } from 'ngx-mask';
+
+import { ActivatedRoute } from '@angular/router';
 
 // Firestore
 import { db } from '../../firebase.config';
@@ -26,7 +28,6 @@ import emailjs, { EmailJSResponseStatus } from 'emailjs-com';
 
 declare const bootstrap: any;
 
-// Aux modal
 type MaskedNumber = string | null;
 
 @Component({
@@ -105,9 +106,9 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
 
   // ---- Form do Fluxo de Caixa ----
   fluxoForm = {
-    faturamentoMensalMasked: '' as MaskedNumber, // (não usado após ajuste; mantido p/ compat)
-    faturamentoMensalView: '' as string,        // string que o usuário digita/visualiza
-    faturamentoMensal: 0,                       // número real usado nos cálculos
+    faturamentoMensalMasked: '' as MaskedNumber,
+    faturamentoMensalView: '' as string,
+    faturamentoMensal: 0,
     fixos: {
       aluguelMasked: '' as MaskedNumber,
       salariosMasked: '' as MaskedNumber,
@@ -137,13 +138,11 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   };
 
   // ================== ANEXOS & ASSINATURA ==================
-
-  /** Configs de performance */
   private readonly MAX_QTD_POR_CATEGORIA = 5;
-  private readonly MAX_MB_POR_ARQUIVO = 10; // também validado nas regras do Storage
-  private readonly THUMB_PX = 200;          // miniatura
-  private readonly COMPRESS_MAX_DIM = 1600; // maior lado
-  private readonly COMPRESS_QUALITY = 0.8;  // JPEG quality
+  private readonly MAX_MB_POR_ARQUIVO = 10;
+  private readonly THUMB_PX = 200;
+  private readonly COMPRESS_MAX_DIM = 1600;
+  private readonly COMPRESS_QUALITY = 0.8;
 
   categoriasDocs = [
     { key: 'docPessoa', label: 'Foto do documento', multiple: true },
@@ -170,19 +169,38 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   private storage: FirebaseStorage = fbStorage;
 
   // ---------- Ciclo de Vida ----------
-  constructor(private zone: NgZone) { }
+  constructor(private zone: NgZone, private route: ActivatedRoute) { }
+
+  private onlyDigits(v?: string): string {
+    return (v ?? '').replace(/\D/g, '');
+  }
 
   ngOnInit(): void {
+    // Pré-preenchimento por querystring
+    this.route.queryParams.subscribe(params => {
+      const nome = params['nome'] ?? '';
+      const cpf = this.onlyDigits(params['cpf'] ?? '');
+      const contato = this.onlyDigits(params['contato'] ?? '');
+      const email = params['email'] ?? '';
+      const endereco = params['endereco'] ?? '';
+      const preId = params['preCadastroId'] ?? '';
+
+      if (nome) this.cliente.nomeCompleto = nome;
+      if (cpf) this.cliente.cpf = cpf;
+      if (contato) this.cliente.contato = contato;
+      if (email) this.cliente.email = email;
+      if (endereco) this.cliente.endereco = endereco;
+      (this.cliente as any).preCadastroId = preId;
+
+      if (cpf) this.cpfValido = this.validarCPF(cpf);
+    });
 
     const nInit = this.parseBRN(String(this.cliente?.faturamentoMensal ?? ''));
     this.faturamento = isNaN(nInit) ? 0 : nInit;
-    // Prepara o input em formato "dígitos" para o ngx-mask (separator.0)
-    this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : ''
-
+    this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : '';
 
     this.syncNacionalidadeBaseFromCliente();
 
-    // data atual -> "data do cadastro"
     const hoje = new Date();
     this.diaPre = hoje.getDate();
     this.mesPre = hoje.getMonth() + 1;
@@ -192,30 +210,19 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     this.atualizarParcelasLabels();
     this.atualizarDias();
 
-    // Carrega edição se houver
     const clienteEditando = localStorage.getItem('clienteEditando');
     if (clienteEditando) {
       try {
         const edit = JSON.parse(clienteEditando);
-
-        // 1) carrega o cliente
         this.cliente = edit;
-
-        // 2) pré-visualizações vindas da listagem
-        if (edit?._thumbUrl) {
-          this.previewMap['fotoPessoa'] = [edit._thumbUrl];
-        }
+        if (edit?._thumbUrl) this.previewMap['fotoPessoa'] = [edit._thumbUrl];
         if (edit?._assinaturaUrl) {
           this.signatureDataUrl = edit._assinaturaUrl;
           this.signaturePreview = edit._assinaturaUrl;
         }
-
-        // 3) municípios do estado
         this.atualizarMunicipios();
-
-        // 4) restaura seleção de data de nascimento (dia/mes/ano)
         if (this.cliente.dataNascimento) {
-          const [ano, mes, dia] = this.cliente.dataNascimento.split('-').map(v => parseInt(v, 10));
+          const [ano, mes, dia] = this.cliente.dataNascimento.split('-').map((v: string) => parseInt(v, 10));
           if (ano && mes && dia) {
             this.anoSelecionado = ano;
             this.mesSelecionado = mes;
@@ -224,23 +231,16 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
           }
         }
         this.atualizarDataNascimento();
-
-        // 5) se já havia fluxo de caixa, recalcula totais
         if (this.cliente.fluxoCaixa) this.recalcular();
-
-        // 6) sincroniza valor solicitado (numérico) e labels de parcelas
         this.valorSolicitadoNumber = this.parseMoedaBR(this.cliente.valorSolicitado || 0);
         this.atualizarParcelasLabels();
         this.atualizarResumo();
-
-      } catch (e) {
-        console.warn('Falha ao restaurar clienteEditando:', e);
-      } finally {
+      } catch { /* ignore */ }
+      finally {
         localStorage.removeItem('clienteEditando');
       }
     }
 
-    // status dos selects "Outro"
     this.selecionouOutroTipoNegocio =
       !!(this.cliente.tipoNegocio && !this.opcoesTipoNegocioPadrao.has(this.cliente.tipoNegocio));
     this.selecionouOutroOndeVende =
@@ -255,7 +255,6 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     this.sigCtx.lineCap = 'round';
     this.sigCtx.strokeStyle = '#111';
 
-    // Eventos fora da Zone para não causar CD a cada traço
     this.zone.runOutsideAngular(() => {
       canvas.addEventListener('mousedown', (e) => this.iniciarDesenho(e));
       canvas.addEventListener('mousemove', (e) => this.continuarDesenho(e));
@@ -461,7 +460,6 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     this.selecionouOutroTipoNegocio = false;
     this.selecionouOutroOndeVende = false;
 
-    // Limpa anexos e assinatura
     this.arquivosMap = {};
     this.previewMap = {};
     this.limparAssinatura();
@@ -497,7 +495,7 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
       outraRenda: false,
       rendaMensal: '',
       valorSolicitado: '',
-      parcelas: null, // NUNCA undefined
+      parcelas: null,
       usoValor: '',
       clienteCrenorte: false,
       dataPreenchimento: '',
@@ -570,10 +568,8 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
 
     const dd = String(d).padStart(2, '0');
     const mm = String(m).padStart(2, '0');
-    // Salva direto em DD/MM/YYYY (não sofre com fuso)
     this.cliente.dataPreenchimento = `${dd}/${mm}/${a}`;
   }
-
 
   // ================== MINIATURAS & COMPRESSÃO ==================
   private fileToImage(file: File): Promise<HTMLImageElement> {
@@ -614,29 +610,23 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     );
   }
 
-  /** Handler de arquivos otimizado */
   async onFilesChange(key: string, evt: Event) {
     const input = evt.target as HTMLInputElement;
     const files = Array.from(input.files ?? []).filter(f => f.type.startsWith('image/'));
-
-    // limite por categoria
     const selecionados = files.slice(0, this.MAX_QTD_POR_CATEGORIA);
 
-    // valida tamanho
     const muitoGrandes = selecionados.filter(f => f.size > this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
     if (muitoGrandes.length) {
       alert(`⚠️ Arquivo(s) acima de ${this.MAX_MB_POR_ARQUIVO}MB foram ignorados.`);
     }
     const validos = selecionados.filter(f => f.size <= this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
 
-    // mostra 1 thumb leve
     this.previewMap[key] = [];
     if (validos[0]) {
       const thumb = await this.generateThumbnail(validos[0]);
       this.previewMap[key] = [thumb];
     }
 
-    // guarda os arquivos (originais) — a compressão acontece no upload
     this.arquivosMap[key] = validos;
   }
 
@@ -644,7 +634,7 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   private ajustarDPI() {
     const canvas = this.signatureCanvas?.nativeElement;
     if (!canvas) return;
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.5); // cap para economizar memória
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
     const w = canvas.width;
     const h = canvas.height;
     canvas.width = Math.floor(w * ratio);
@@ -727,7 +717,6 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
       const nameSafe = (f.name || 'img').replace(/[^\w.\-]/g, '_');
       const path = `clientes/${clienteId}/${key}/${Date.now()}-${nameSafe}`;
 
-      // Comprime imagens antes do upload
       const isImage = f.type.startsWith('image/');
       const blob = isImage ? await this.compressImage(f, this.COMPRESS_MAX_DIM, this.COMPRESS_QUALITY) : f;
 
@@ -748,7 +737,6 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
       }
     }
 
-    // assinatura: envia como PNG se existir
     if (this.signatureDataUrl) {
       const blob = this.dataURLtoBlob(this.signatureDataUrl);
       const path = `clientes/${clienteId}/assinatura/assinatura-${Date.now()}.png`;
@@ -789,7 +777,7 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     };
   }
 
-  // ================== SALVAR (com anexos e assinatura) ==================
+  // ================== SALVAR (com anexos, assinatura e STATUS) ==================
   async salvar() {
     this.atualizarDataNascimento();
 
@@ -819,29 +807,33 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     const valorSolicitado = this.converterMoedaParaNumero(this.cliente.valorSolicitado);
     const valorParcela = this.converterMoedaParaNumero(this.cliente.valorParcela);
 
-    // Máscara de CPF
     const cpfFormatado = cpfLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
 
-    // Máscara de telefone (11 dígitos BR)
     const telDigits = String(this.cliente?.contato ?? '').replace(/\D/g, '').slice(-11);
     const contatoFormatado = telDigits.length === 11
       ? telDigits.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
       : this.cliente?.contato ?? '';
 
-    // Moeda formatada para exibir na listagem
     const valorSolicitadoFormatado = this.formatBRN(valorSolicitado);
 
-    // Índice para busca: nome minúsculo sem acento
     const nomeIndex = (this.cliente?.nomeCompleto || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
     try {
       this.uploadStatus = { ok: false, msg: 'Enviando anexos (otimizados)...' };
       const anexosUrls = await this.uploadTodosArquivos(cpfLimpo);
 
       this.uploadStatus = { ok: false, msg: 'Gravando cadastro...' };
+
+      // ---------- Status inicial + histórico ----------
+      const statusInicial: StatusEvent = {
+        at: new Date(),
+        byUid: 'system',          // se tiver Auth, troque por this.auth.currentUser?.uid
+        byNome: 'Assessor',       // ou o nome do colaborador logado
+        from: undefined,
+        to: 'em_analise',
+        note: 'Cadastro criado e enviado para análise.',
+      };
 
       // Coagir tipos e remover undefined
       const coerced = this.coerceCliente(this.cliente);
@@ -856,9 +848,13 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
         valorSolicitadoFormatado,
         nomeIndex,
         anexos: anexosUrls,
+        // >>>>>>> campos de status <<<<<<<<
+        status: 'em_analise' as StatusCadastro,
+        statusHistory: [statusInicial],
         criadoEm: new Date()
       });
 
+      // >>>>>>> AQUI grava no Firestore <<<<<<<<
       await setDoc(doc(db, 'clientes', cpfLimpo), payload, { merge: true });
 
       this.uploadStatus = { ok: true, msg: 'Cadastro salvo com anexos e assinatura!' };
@@ -881,24 +877,16 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   openFluxoModal() {
     if (this.cliente.fluxoCaixa) {
       const f = this.cliente.fluxoCaixa;
-
-      // Base numérica do fluxo salvo
       this.faturamento = f.faturamentoMensal || 0;
-
-      // Prepara o input (somente dígitos) para o ngx-mask (separator.0)
       this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : '';
-
-      // Preenche numéricos do modal
       this.fluxoForm.faturamentoMensal = this.faturamento;
 
-      // Fixos
       this.fluxoForm.fixos.aluguel = f.fixos.aluguel || 0;
       this.fluxoForm.fixos.salarios = f.fixos.salarios || 0;
       this.fluxoForm.fixos.energiaEletrica = f.fixos.energiaEletrica || 0;
       this.fluxoForm.fixos.agua = f.fixos.agua || 0;
       this.fluxoForm.fixos.telefoneInternet = f.fixos.telefoneInternet || 0;
 
-      // Variáveis
       this.fluxoForm.variaveis.materiaPrima = f.variaveis.materiaPrima || 0;
       this.fluxoForm.variaveis.insumos = f.variaveis.insumos || 0;
       this.fluxoForm.variaveis.frete = f.variaveis.frete || 0;
@@ -908,11 +896,7 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
       }));
 
     } else {
-      // Sem fluxo salvo:
-      // Se houver algo no cadastro, já foi convertido no ngOnInit (this.faturamento)
       this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : '';
-
-      // Zera padrões na primeira abertura
       this.fluxoForm.fixos = {
         aluguelMasked: '', salariosMasked: '', energiaEletricaMasked: '', aguaMasked: '', telefoneInternetMasked: '',
         aluguel: 0, salarios: 0, energiaEletrica: 0, agua: 0, telefoneInternet: 0
@@ -924,10 +908,8 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
       this.fluxoForm.faturamentoMensal = this.faturamento;
     }
 
-    // Totais do modal
     this.recalcular();
 
-    // Abre o modal
     const el = document.getElementById('fluxoCaixaModal');
     if (el) {
       this.fluxoModalRef = new bootstrap.Modal(el, { backdrop: 'static' });
@@ -935,29 +917,20 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     }
   }
 
-  // --------- Faturamento (base única + máscara) ---------
-
-  // Número usado nos cálculos
+  // --------- Faturamento ---------
   faturamento: number = 0;
-
-  // Valor do input (APENAS dígitos). O ngx-mask vai mostrar "R$ 10.000", mas
-  // como usamos [dropSpecialCharacters]="true", o model aqui vira "10000".
   faturamentoInput: string = '';
 
-  /** Converte string BR ("10.000,00" | "10.000" | "10000") em número confiável */
   parseMoneyBR(masked: any): number {
     if (masked === null || masked === undefined) return 0;
     let s = String(masked).trim();
     if (!s) return 0;
-    // mantém apenas dígitos, ponto e vírgula
     s = s.replace(/[^\d.,-]/g, '');
     if (s.includes(',')) {
-      // vírgula = decimal; ponto = milhar
       s = s.replace(/\./g, '').replace(',', '.');
       const n = parseFloat(s);
       return isNaN(n) ? 0 : n;
     } else {
-      // sem vírgula -> trate pontos como milhar
       s = s.replace(/\./g, '');
       const n = parseFloat(s);
       return isNaN(n) ? 0 : n;
@@ -965,17 +938,11 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   }
 
   onFaturamentoChange(digits: string) {
-    // digits chega SEM separadores (ex.: "10000")
     const n = Number(digits || 0);
     this.faturamento = n;
-
-    // se o modal estiver aberto, mantém a base de cálculo atualizada
     this.fluxoForm.faturamentoMensal = n;
-
-    // mantém o campo do cadastro compatível com o seu fluxo de salvar (string mascarada)
     this.cliente.faturamentoMensal = this.formatBRN(n);
   }
-
 
   closeFluxoModal() {
     if (this.fluxoModalRef) {
@@ -984,16 +951,13 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     }
   }
 
-  // Entrada do faturamento mensal (sem ngx-mask, parse/format manual confiável)
   onFaturamentoInput(view: string) {
-    // aceita "10000", "10.000", "10.000,00" etc.
     const num = this.parseBRN(view);
     this.fluxoForm.faturamentoMensal = num;
-    this.fluxoForm.faturamentoMensalView = view; // mantém o que o usuário digitou até blur
+    this.fluxoForm.faturamentoMensalView = view;
   }
 
   onFaturamentoBlur() {
-    // normaliza visual sempre no blur
     this.fluxoForm.faturamentoMensalView = this.formatBRN(this.fluxoForm.faturamentoMensal || 0);
   }
 
@@ -1055,14 +1019,9 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
 
     this.cliente.fluxoCaixa = fluxo;
     this.recalcular();
-
-    // mantém o cadastro exibindo o valor com moeda (para seu salvar() atual)
     this.cliente.faturamentoMensal = this.formatBRN(this.faturamento);
-
     this.closeFluxoModal();
   }
-
-
 
   addOutroResumo() {
     if (!this.cliente.fluxoCaixa) return;
@@ -1080,25 +1039,17 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     return Math.abs(a - b) <= eps;
   }
 
-  // Use sempre a renda mensal informada (independente de "outraRenda")
   private getOutrasRendasNumber(): number {
     const v = this.converterMoedaParaNumero(this.cliente?.rendaMensal);
     return Number.isFinite(v) && v > 0 ? v : 0;
   }
 
   computeParcelaSugerida() {
-    // lucro do fluxo de caixa e outras rendas declaradas
     const lucro = this.cliente?.fluxoCaixaTotais?.lucro || 0;
     const outras = this.getOutrasRendasNumber();
-
-    // Base: se houver lucro, usa (lucro + outras); senão, só outras rendas
     const base = lucro > 0 ? (lucro + outras) : outras;
-
     if (base <= 0) return { valor: 0, fator: 0.30, base: 0 };
-
-    // Parcela sugerida = 30% da base
     const valor = base * 0.30;
-
     return { valor, fator: 0.30, base };
   }
 
@@ -1111,17 +1062,12 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   // ===== Utilitários de moeda BR =====
   parseBRN(masked: string | null | undefined): number {
     if (!masked) return 0;
-
-    // remove qualquer caractere que não seja dígito ou vírgula
     let s = String(masked).replace(/[^\d,]/g, "");
-
-    // garante que só a última vírgula vira ponto decimal
     const partes = s.split(",");
     if (partes.length > 1) {
       const decimais = partes.pop();
       s = partes.join("") + "." + decimais;
     }
-
     const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   }

@@ -1,0 +1,173 @@
+/* ==========================
+   Paleta e variáveis CRENORTE
+   ========================== */
+:root {
+  --crn-green: #008d45;
+  --crn-green-light: #19a65b;
+  --crn-green-bg: rgba(0, 141, 69, 0.08);
+  --crn-dark: #123426;
+  --crn-gray: #6c757d;
+  --crn-border: #e9ecef;
+  --crn-radius: 14px;
+  --crn-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  --crn-shadow-hover: 0 6px 18px rgba(0,0,0,0.1);
+}
+/* ==========================
+   Botão primário CRENORTE
+   ========================== */
+.btn-crn-primary {
+  background-color: var(--crn-green, #008d45); /* fallback verde Crenorte */
+  border: none;
+  color: #fff !important; /* garante que o texto fica branco */
+  border-radius: var(--crn-radius, 12px);
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+
+  box-shadow: 0 3px 6px rgba(0, 141, 69, 0.2);
+  transition: all 0.2s ease-in-out;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn-crn-primary i {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.btn-crn-primary:hover,
+.btn-crn-primary:focus {
+  background-color: var(--crn-green-light, #19a65b);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 12px rgba(0, 141, 69, 0.25);
+}
+
+.btn-crn-primary:active {
+  background-color: var(--crn-green, #008d45);
+  transform: translateY(0);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15) inset;
+}
+
+/* ==========================
+   Cabeçalho
+   ========================== */
+.pre-cadastros-view h4 {
+  font-size: 1.3rem;
+  letter-spacing: -0.3px;
+  color: var(--crn-dark);
+}
+.crn-kicker {
+  width: 6px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--crn-green);
+}
+
+/* ==========================
+   Tabela
+   ========================== */
+.pre-cadastros-view .table {
+  margin-bottom: 0;
+}
+.pre-cadastros-view .table thead th {
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  color: var(--crn-dark);
+  border-bottom: 2px solid var(--crn-border);
+}
+.pre-cadastros-view .table tbody tr {
+  transition: background .2s ease;
+}
+.pre-cadastros-view .table tbody tr:hover {
+  background: var(--crn-green-bg);
+}
+
+/* Badge CPF */
+.pre-cadastros-view .badge {
+  font-size: 0.85rem;
+  border-radius: 8px;
+  background: #f8f9fa;
+  padding: 0.35em 0.6em;
+}
+
+/* ==========================
+   Avatar inicial
+   ========================== */
+.avatar-inicial {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--crn-green-bg);
+  color: var(--crn-green);
+  font-weight: 700;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 2px #fff;
+}
+.avatar-lg {
+  width: 48px;
+  height: 48px;
+  font-size: 1.1rem;
+}
+
+/* ==========================
+   Card versão mobile
+   ========================== */
+.crn-card {
+  background: #fff;
+  border: 1px solid var(--crn-border);
+  border-radius: var(--crn-radius);
+  box-shadow: var(--crn-shadow);
+  margin-bottom: 1rem;
+  transition: all .2s ease;
+}
+.crn-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--crn-shadow-hover);
+}
+.crn-card .fw-semibold {
+  font-size: 1rem;
+}
+.crn-card .small {
+  font-size: 0.8rem;
+  color: var(--crn-gray);
+}
+
+/* ==========================
+   Ícones coloridos
+   ========================== */
+.text-crn {
+  color: var(--crn-green);
+}
+.text-crn-dark {
+  color: var(--crn-dark);
+}
+.bi {
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+/* ==========================
+   Responsividade
+   ========================== */
+@media (max-width: 576px) {
+  .pre-cadastros-view h4 {
+    font-size: 1.15rem;
+  }
+  .btn-crn-primary {
+    padding: 0.5rem 0.9rem;
+    font-size: 0.9rem;
+  }
+  .avatar-inicial {
+    width: 34px;
+    height: 34px;
+    font-size: 0.9rem;
+  }
+}

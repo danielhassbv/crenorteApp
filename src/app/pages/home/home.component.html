@@ -1,66 +1,146 @@
-<!-- OPCIONAL: se você NÃO puder ajustar o CSS global, use um espaçador logo após o header -->
-<!-- <div class="app-header-spacer"></div> -->
 <app-header></app-header>
 
-<!-- Conteúdo -->
 <ng-container *ngIf="perfil$ | async as perfil; else loginCTA">
-  <div class="container-fluid bg-light vh-100 d-flex flex-column align-items-center justify-content-center">
+  <div class="container-fluid bg-light min-vh-100 d-flex flex-column align-items-center justify-content-center py-5">
+
     <!-- Logo e título -->
     <div class="text-center mb-4">
-      <br>
-      <br>
-      <br>
-      <br>
       <img src="../../../assets/img/logo2-crenorte.png" alt="Logo Crenorte" />
       <h2 class="text-success fw-bold mt-2">Bem-vindo ao Sistema CRENORTE</h2>
+      <div class="badge crn-badge-live mt-2">Perfil: {{ perfil.papel | titlecase }}</div>
     </div>
 
-    <!-- Módulos -->
-    <div class="row w-100 justify-content-center gap-4">
+    <!-- Módulos (cards) -->
+    <div class="row w-100 justify-content-center g-3 g-md-4 px-3">
 
-      <!-- Novo Cadastro (admin, assessor, supervisor, coordenador) -->
-      <div class="col-md-2 col-10"
-        *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
-        <a routerLink="/cadastro" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
-          <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
-        </a>
-      </div>
+      <!-- ===================== VISÃO ASSESSOR ===================== -->
+      <ng-container *ngIf="hasAny(perfil.papel, ['assessor'])">
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/pre-cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-person-plus"></i></div>
+            <div class="mt-2 fw-bold text-dark">Novo Pré-cadastro</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/pre-cadastro/minha-lista" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-list-check"></i></div>
+            <div class="mt-2 fw-bold text-dark">Minha Lista</div>
+          </a>
+        </div>
+
+        <!-- Assessor também pode fazer cadastro e ver a listagem -->
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
+            <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
+          </a>
+        </div>
+      </ng-container>
+
+      <!-- ===================== VISÃO ANALISTA / SUPERVISOR / ADMIN ===================== -->
+      <ng-container *ngIf="hasAny(perfil.papel, ['analista','supervisor','admin'])">
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/pre-cadastro/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-graph-up"></i></div>
+            <div class="mt-2 fw-bold text-dark">Relatório Pré-cadastro</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/aprovacoes" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-check2-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Aprovações de Cadastros</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
+            <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
+          </a>
+        </div>
+
+        <!-- Criar Grupo (a partir de cadastro aprovado) -->
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/grupos/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-people"></i></div>
+            <div class="mt-2 fw-bold text-dark">Criar Grupo Solidário</div>
+          </a>
+        </div>
+
+      </ng-container>
+
+      <!-- ===================== VISÃO QA / ADMIN (Relatório de Grupos) ===================== -->
+      <ng-container *ngIf="hasAny(perfil.papel, ['qa','admin'])">
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/grupos/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-clipboard-data"></i></div>
+            <div class="mt-2 fw-bold text-dark">Relatório de Grupos</div>
+          </a>
+        </div>
+      </ng-container>
+
+      <!-- ===================== VISÃO COORDENADOR ===================== -->
+      <ng-container *ngIf="hasAny(perfil.papel, ['coordenador'])">
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
+          </a>
+        </div>
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
+            <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
+          </a>
+        </div>
+      </ng-container>
+
+      <!-- ===================== VISÃO OPERACIONAL / ROTAS ===================== -->
+      <ng-container *ngIf="hasAny(perfil.papel, ['operacional','admin','supervisor','coordenador'])">
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/rotas" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-map"></i></div>
+            <div class="mt-2 fw-bold text-dark">Módulo de Rotas</div>
+          </a>
+        </div>
+      </ng-container>
+
+      <!-- ===================== VISÃO RH ===================== -->
+      <ng-container *ngIf="hasAny(perfil.papel, ['admin','rh'])">
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/colaboradores" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-people-fill"></i></div>
+            <div class="mt-2 fw-bold text-dark">Colaboradores</div>
+          </a>
+        </div>
+      </ng-container>
 
 
-      <!-- Listagem de Cadastros (admin, assessor, supervisor, coordenador) -->
-      <div class="col-md-2 col-10"
-        *ngIf="perfil.papel === 'admin' || perfil.papel === 'assessor' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
-        <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
-          <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
-        </a>
-      </div>
 
-
-      <!-- Módulo de Rotas (admin, operacional, supervisor, coordenador) -->
-      <div class="col-md-2 col-10"
-        *ngIf="perfil.papel === 'admin' || perfil.papel === 'operacional' || perfil.papel === 'supervisor' || perfil.papel === 'coordenador'">
-        <a routerLink="/rotas" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1 text-success"><i class="bi bi-map"></i></div>
-          <div class="mt-2 fw-bold text-dark">Módulo de Rotas</div>
-        </a>
-      </div>
-
-      <!-- Colaboradores (admin, rh) -->
-      <div class="col-md-2 col-10" *ngIf="perfil.papel === 'admin' || perfil.papel === 'rh'">
-        <a routerLink="/colaboradores" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-          <div class="fs-1 text-success"><i class="bi bi-people-fill"></i></div>
-          <div class="mt-2 fw-bold text-dark">Colaboradores</div>
-        </a>
-      </div>
     </div>
   </div>
 </ng-container>
 
 <!-- CTA para login quando não autenticado -->
 <ng-template #loginCTA>
-  <div class="container-fluid bg-light vh-100 d-flex flex-column align-items-center justify-content-center">
+  <div class="container-fluid bg-light min-vh-100 d-flex flex-column align-items-center justify-content-center">
     <div class="text-center">
       <img src="../../../assets/img/logo2-crenorte.png" alt="Logo Crenorte" />
       <h2 class="text-success fw-bold mt-3">Bem-vindo ao Sistema CRENORTE</h2>
