@@ -14,7 +14,7 @@
     <div class="row w-100 justify-content-center g-3 g-md-4 px-3">
 
       <!-- ===================== VISÃO ASSESSOR ===================== -->
-      <ng-container>
+      <ng-container *ngIf="hasAny(perfil.papel, ['assessor'])">
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-person-plus"></i></div>
@@ -29,7 +29,6 @@
           </a>
         </div>
 
-        <!-- Assessor também pode fazer cadastro e ver a listagem -->
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
@@ -37,7 +36,6 @@
           </a>
         </div>
 
-              <!-- Criar Grupo (a partir de cadastro aprovado) -->
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/grupos/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-people"></i></div>
@@ -47,15 +45,8 @@
 
       </ng-container>
 
-      <!-- ===================== VISÃO ANALISTA / SUPERVISOR / ADMIN ===================== -->
+      <!-- ===================== VISÃO ANALISTA / SUPERVISOR ===================== -->
       <ng-container *ngIf="hasAny(perfil.papel, ['analista','supervisor'])">
-
-        <div class="col-10 col-sm-6 col-md-3">
-          <a routerLink="/pre-cadastro/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-graph-up"></i></div>
-            <div class="mt-2 fw-bold text-dark">Relatório Pré-cadastro</div>
-          </a>
-        </div>
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/aprovacoes" class="card text-center shadow-sm p-3 text-decoration-none h-100">
@@ -65,16 +56,16 @@
         </div>
 
         <div class="col-10 col-sm-6 col-md-3">
-          <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
-            <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
+          <a routerLink="/pre-cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-person-plus"></i></div>
+            <div class="mt-2 fw-bold text-dark">Novo Pré-cadastro</div>
           </a>
         </div>
 
         <div class="col-10 col-sm-6 col-md-3">
-          <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-card-list"></i></div>
-            <div class="mt-2 fw-bold text-dark">Listagem de Cadastros</div>
+          <a routerLink="/pre-cadastro/minha-lista" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-list-check"></i></div>
+            <div class="mt-2 fw-bold text-dark">Minha Lista (Pré-Cadastro)</div>
           </a>
         </div>
 
@@ -88,14 +79,57 @@
 
       </ng-container>
 
-      <!-- ===================== VISÃO QA / ADMIN (Relatório de Grupos) ===================== -->
-      <ng-container *ngIf="hasAny(perfil.papel, ['qa','admin'])">
+      <!-- ===================== VISÃO ADMIN  ===================== -->
+      <ng-container *ngIf="hasAny(perfil.papel, ['admin'])">
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/pre-cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-person-plus"></i></div>
+            <div class="mt-2 fw-bold text-dark">Novo Pré-cadastro</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/pre-cadastro/minha-lista" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-list-check"></i></div>
+            <div class="mt-2 fw-bold text-dark">Minha Lista (Pré-Cadastro)</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/pre-cadastro/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-graph-up"></i></div>
+            <div class="mt-2 fw-bold text-dark">Relatório Pré-cadastro</div>
+          </a>
+        </div>
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
+          </a>
+        </div>
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-check2-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Listagem Cadastros</div>
+          </a>
+        </div>
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/grupos/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-people"></i></div>
+            <div class="mt-2 fw-bold text-dark">Criar Grupo Solidário</div>
+          </a>
+        </div>
+
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/grupos/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-clipboard-data"></i></div>
             <div class="mt-2 fw-bold text-dark">Relatório de Grupos</div>
           </a>
         </div>
+
+
       </ng-container>
 
 

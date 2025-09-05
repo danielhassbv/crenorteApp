@@ -1,6 +1,6 @@
 import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router'; // ⬅️ ADICIONE Router AQUI
 import { FormsModule } from '@angular/forms';
 import { NgxMaskDirective, provideNgxMask } from 'ngx-mask';
 import { PreCadastroService } from '../../../services/pre-cadastro.service';
@@ -13,7 +13,6 @@ type PreCadastroEdit = PreCadastro & { id: string };
 @Component({
   selector: 'app-pre-cadastro-lista',
   standalone: true,
-  // DatePipe e NgxMaskDirective ficam aqui mesmo (standalone)
   imports: [CommonModule, RouterModule, DatePipe, FormsModule, NgxMaskDirective],
   providers: [provideNgxMask()],
   templateUrl: './pre-cadastro-lista.component.html',
@@ -22,6 +21,7 @@ type PreCadastroEdit = PreCadastro & { id: string };
 export class PreCadastroListaComponent implements OnInit, OnDestroy {
   private service = inject(PreCadastroService);
   private auth = inject(Auth);
+  private router = inject(Router); // ⬅️ INJEÇÃO DO ROUTER
 
   loading = signal(true);
   itens = signal<PreCadastro[]>([]);
@@ -50,9 +50,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void {
-    this.sub?.unsubscribe();
-  }
+  ngOnDestroy(): void { this.sub?.unsubscribe(); }
 
   // util para limpar máscara/pontuação
   private onlyDigits(v?: string | null): string {
@@ -66,7 +64,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
   abrirEditar(i: PreCadastro) {
     if (!i?.id) { console.warn('Item sem ID para edição'); return; }
-    // clona e normaliza para não iniciar inválido
     this.editModel.set({
       ...(i as any),
       id: i.id,
@@ -88,36 +85,31 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   }
 
   async salvarEdicao() {
-  const m = this.editModel();
-  if (!m?.id) return;
+    const m = this.editModel();
+    if (!m?.id) return;
 
-  this.saving.set(true);
-  try {
-    const patch: Partial<PreCadastro> = {
-      nomeCompleto: m.nomeCompleto ?? null as any,
-      cpf: this.onlyDigits(m.cpf as any) ?? null as any,
-      telefone: this.onlyDigits(m.telefone as any) ?? null as any,
-      email: (m.email ?? '').trim() || null as any,
-      bairro: (m.bairro ?? '').trim() || null as any,
-      endereco: (m.endereco ?? '').trim() || null as any,
-    };
+    this.saving.set(true);
+    try {
+      const patch: Partial<PreCadastro> = {
+        nomeCompleto: m.nomeCompleto ?? null as any,
+        cpf: this.onlyDigits(m.cpf as any) ?? null as any,
+        telefone: this.onlyDigits(m.telefone as any) ?? null as any,
+        email: (m.email ?? '').trim() || null as any,
+        bairro: (m.bairro ?? '').trim() || null as any,
+        endereco: (m.endereco ?? '').trim() || null as any,
+      };
 
-    await this.service.atualizar(m.id, patch);
-
-    this.itens.update(list => list.map(x => (x.id === m.id ? { ...x, ...patch } as PreCadastro : x)));
-
-    this.fecharModais();
-
-    // 🚨 alerta de sucesso
-    alert('Pré-cadastro editado com sucesso!');
-  } catch (err) {
-    console.error('[PreCadastro] Erro ao salvar edição:', err);
-    alert('Falha ao salvar. Tente novamente.');
-  } finally {
-    this.saving.set(false);
+      await this.service.atualizar(m.id, patch);
+      this.itens.update(list => list.map(x => (x.id === m.id ? { ...x, ...patch } as PreCadastro : x)));
+      this.fecharModais();
+      alert('Pré-cadastro editado com sucesso!');
+    } catch (err) {
+      console.error('[PreCadastro] Erro ao salvar edição:', err);
+      alert('Falha ao salvar. Tente novamente.');
+    } finally {
+      this.saving.set(false);
+    }
   }
-}
-
 
   async remover(item: PreCadastro) {
     if (!item?.id) { console.warn('Tentativa de remover sem ID:', item); return; }
@@ -131,5 +123,28 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       console.error('[PreCadastro] Erro ao remover:', err);
       alert('Falha ao remover. Tente novamente.');
     }
+  }
+
+  // ⬇️⬇️ NOVO: mesma lógica usada no Relatório
+  private buildQueryFromPre(pc: PreCadastro): Record<string, any> {
+    const contato = this.onlyDigits((pc as any)?.telefone ?? (pc as any)?.contato ?? '');
+    const cpf = this.onlyDigits((pc as any)?.cpf ?? '');
+    return {
+      nome: (pc as any)?.nomeCompleto ?? (pc as any)?.nome ?? '',
+      cpf,
+      contato, // mesmo nome que o CadastroForm lê
+      email: (pc as any)?.email ?? '',
+      endereco: (pc as any)?.endereco ?? (pc as any)?.enderecoCompleto ?? '',
+      preCadastroId: (pc as any)?.id ?? (pc as any)?.uid ?? '',
+    };
+  }
+
+  iniciarCadastro(pc: PreCadastro) {
+    // se algum modal estiver aberto, fecha por UX
+    this.fecharModais();
+
+    const qp = this.buildQueryFromPre(pc);
+    // navega para /cadastro/novo com os query params preenchidos
+    this.router.navigate(['/cadastro', 'novo'], { queryParams: qp });
   }
 }
