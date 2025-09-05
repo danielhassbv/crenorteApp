@@ -1,12 +1,13 @@
 import { Timestamp } from '@angular/fire/firestore';
 
 export interface PreCadastro {
-  id?: string;
+  id: string;   // era string | undefined
   nomeCompleto: string;
   cpf: string;
   endereco: string;
   telefone: string;
   email: string;
+  bairro: string;
 
   createdByUid?: string;
   createdByNome?: string;

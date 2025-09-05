@@ -41,6 +41,7 @@ export class PreCadastroFormComponent {
     endereco: '',
     telefone: '',
     email: '',
+    bairro: ''
   };
 
   private lastPreCadastroId: string | null = null;
@@ -92,6 +93,8 @@ export class PreCadastroFormComponent {
       endereco: this.limpar(this.model.endereco),
       telefone: this.limpar(this.model.telefone),
       email: this.limpar(this.model.email),
+      bairro: this.limpar(this.model.bairro),
+
     };
 
     if (!form.valid || !this.cpfValido(payload.cpf)) {

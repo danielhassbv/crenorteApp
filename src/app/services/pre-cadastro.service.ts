@@ -11,7 +11,9 @@ import {
   CollectionReference,
   DocumentData,
   doc,
-  getDoc
+  getDoc,
+  deleteDoc,
+  updateDoc, // <-- adicionado
 } from '@angular/fire/firestore';
 import { Auth } from '@angular/fire/auth';
 import { PreCadastro } from '../models/pre-cadastro.model';
@@ -39,8 +41,9 @@ export class PreCadastroService {
     let createdByNome = 'Assessor';
     try {
       const snap = await getDoc(doc(this.db, 'colaboradores', user.uid));
-      createdByNome = (snap.data() as any)?.papel ? (snap.data() as any)?.nome || user.displayName || 'Assessor'
-                                                  : user.displayName || 'Assessor';
+      createdByNome = (snap.data() as any)?.papel
+        ? ((snap.data() as any)?.nome || user.displayName || 'Assessor')
+        : (user.displayName || 'Assessor');
     } catch {
       // mantém fallback
     }
@@ -59,10 +62,6 @@ export class PreCadastroService {
   /**
    * Salva o feedback do CLIENTE em:
    * pre_cadastros/{id}/feedback_cliente
-   *
-   * As rules recomendadas liberam create para:
-   * - liderança (admin/supervisor/coordenador), OU
-   * - assessor dono do pré-cadastro (createdByUid == auth.uid)
    */
   async registrarFeedbackCliente(preCadastroId: string, feedback: any): Promise<void> {
     const user = this.auth.currentUser;
@@ -71,7 +70,7 @@ export class PreCadastroService {
     const col = collection(this.db, `pre_cadastros/${preCadastroId}/feedback_cliente`);
     await addDoc(col, {
       ...feedback,
-      assessorUid: user.uid, // útil para auditoria
+      assessorUid: user.uid,
       source: 'cliente',
       createdAt: serverTimestamp(),
     });
@@ -79,9 +78,8 @@ export class PreCadastroService {
 
   /**
    * Lista apenas os pré-cadastros do assessor logado (ou de um uid).
-   * Mantém a semântica das suas rules (liderança vê tudo do lado do server).
    */
-  async listarDoAssessor(uid?: string) {
+  async listarDoAssessor(uid?: string): Promise<PreCadastro[]> {
     const useUid = uid ?? this.auth.currentUser?.uid;
     if (!useUid) throw new Error('Usuário não autenticado.');
 
@@ -94,7 +92,7 @@ export class PreCadastroService {
       const snap = await getDocs(qy);
       return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
     } catch (e: any) {
-      console.warn('[PreCadastro] Fallback sem índice composto:', e?.message || e);
+      // fallback sem índice composto
       const qy = query(this.colRef, where('createdByUid', '==', useUid));
       const snap = await getDocs(qy);
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
@@ -112,9 +110,41 @@ export class PreCadastroService {
   /**
    * Lista todos os pré-cadastros (liderança).
    */
-  async listarTodos() {
+  async listarTodos(): Promise<PreCadastro[]> {
     const qy = query(this.colRef, orderBy('createdAt', 'desc'));
     const snap = await getDocs(qy);
     return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
+  }
+
+  /**
+   * Atualiza campos de um pré-cadastro.
+   */
+  async atualizar(id: string, patch: Partial<PreCadastro>): Promise<void> {
+    // remove undefined para não sobrescrever com undefined
+    const clean: Record<string, any> = {};
+    Object.entries(patch).forEach(([k, v]) => {
+      if (v !== undefined) clean[k] = v;
+    });
+    await updateDoc(doc(this.db, 'pre_cadastros', id), clean);
+  }
+
+  /**
+   * Remove um pré-cadastro pelo ID (apaga apenas o documento raiz).
+   */
+  async remover(id: string): Promise<void> {
+    await deleteDoc(doc(this.db, 'pre_cadastros', id));
+  }
+
+  /**
+   * (Opcional) Remove um pré-cadastro e subcoleções conhecidas.
+   * Use com cautela: Firestore não tem delete recursivo no client.
+   */
+  async removerDeep(id: string, opts?: { feedbackCliente?: boolean }): Promise<void> {
+    if (opts?.feedbackCliente) {
+      const subCol = collection(this.db, `pre_cadastros/${id}/feedback_cliente`);
+      const subSnap = await getDocs(subCol);
+      await Promise.all(subSnap.docs.map(d => deleteDoc(d.ref)));
+    }
+    await deleteDoc(doc(this.db, 'pre_cadastros', id));
   }
 }
