@@ -69,14 +69,6 @@
           </a>
         </div>
 
-        <!-- Criar Grupo (a partir de cadastro aprovado) -->
-        <div class="col-10 col-sm-6 col-md-3">
-          <a routerLink="/grupos/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-people"></i></div>
-            <div class="mt-2 fw-bold text-dark">Criar Grupo Solidário</div>
-          </a>
-        </div>
-
       </ng-container>
 
       <!-- ===================== VISÃO ADMIN  ===================== -->
@@ -100,6 +92,14 @@
           <a routerLink="/pre-cadastro/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-graph-up"></i></div>
             <div class="mt-2 fw-bold text-dark">Relatório Pré-cadastro</div>
+          </a>
+        </div>
+
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/aprovacoes" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-check2-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Aprovações de Cadastros</div>
           </a>
         </div>
 
@@ -129,7 +129,6 @@
           </a>
         </div>
 
-
       </ng-container>
 
 
@@ -143,6 +142,19 @@
         </div>
       </ng-container>
 
+      <!-- ===================== VISÃO Operacioanal ===================== -->
+
+
+      <!-- ===================== VISÃO Operacional ===================== -->
+      <ng-container *ngIf="hasAny(perfil?.papel, ['operacional', 'admin'])">
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/pre-cadastro/triagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-diagram-3-fill"></i></div>
+            <div class="mt-2 fw-bold text-dark">Triagem de Pré-cadastros</div>
+            <small class="text-muted d-block">Vincular por rota/unidade</small>
+          </a>
+        </div>
+      </ng-container>
 
 
     </div>

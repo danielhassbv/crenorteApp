@@ -1,0 +1,93 @@
+<div class="container py-4">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-3">
+    <div>
+      <h2 class="mb-1">Central de Triagem</h2>
+      <small class="text-muted">Todos os pré-cadastros (visão Operacional)</small>
+    </div>
+
+    <div class="d-flex flex-column flex-md-row gap-2 w-100 w-md-auto">
+      <input
+        class="form-control"
+        placeholder="Filtrar por rota"
+        [(ngModel)]="filtroRota"
+        (ngModelChange)="onFiltroRota($event)" />
+
+      <input
+        class="form-control"
+        placeholder="Buscar nome, CPF, telefone, e-mail, endereço…"
+        [(ngModel)]="busca"
+        (ngModelChange)="onBusca($event)" />
+
+      <button class="btn btn-outline-secondary" type="button" (click)="limparFiltros()">
+        Limpar
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="carregando()" class="alert alert-light">Carregando…</div>
+  <div *ngIf="!carregando() && erro()" class="alert alert-danger">{{ erro() }}</div>
+  <div *ngIf="!carregando() && !erro() && !view.length" class="alert alert-light">Nenhum pré-cadastro encontrado.</div>
+
+  <div *ngIf="!carregando() && !erro() && view.length" class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="min-width: 240px;">Nome</th>
+            <th class="d-none d-md-table-cell" style="min-width: 150px;">Data</th>
+            <th class="d-none d-lg-table-cell" style="min-width: 160px;">Telefone</th>
+            <th class="d-none d-xl-table-cell" style="min-width: 220px;">E-mail</th>
+            <th class="d-none d-xl-table-cell" style="min-width: 260px;">Endereço</th>
+            <th class="d-none d-lg-table-cell" style="min-width: 120px;">Rota</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of view">
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="rounded-circle bg-secondary text-white d-inline-flex justify-content-center align-items-center"
+                     style="width:32px; height:32px;">
+                  {{ initial(r.nome) }}
+                </div>
+                <div>
+                  <div class="fw-semibold text-truncate" style="max-width: 260px;" [title]="r.nome">
+                    {{ r.nome || '—' }}
+                  </div>
+                  <div class="small text-muted d-md-none">
+                    <!-- Em telas pequenas, mostrar extras sob o nome -->
+                    <span *ngIf="r.telefone">📞 {{ r.telefone }}</span>
+                    <span *ngIf="r.email"> · ✉️ {{ r.email }}</span>
+                  </div>
+                </div>
+              </div>
+            </td>
+
+            <td class="d-none d-md-table-cell">
+              <small class="text-muted">{{ r.data ? (r.data | date:'dd/MM/yyyy HH:mm') : '—' }}</small>
+            </td>
+
+            <td class="d-none d-lg-table-cell">
+              <small class="text-muted">{{ r.telefone || '—' }}</small>
+            </td>
+
+            <td class="d-none d-xl-table-cell">
+              <small class="text-muted text-truncate d-inline-block" style="max-width: 220px;" [title]="r.email">
+                {{ r.email || '—' }}
+              </small>
+            </td>
+
+            <td class="d-none d-xl-table-cell">
+              <small class="text-muted text-truncate d-inline-block" style="max-width: 240px;" [title]="r.endereco">
+                {{ r.endereco || '—' }}
+              </small>
+            </td>
+
+            <td class="d-none d-lg-table-cell">
+              <small class="text-muted">{{ r.rota || '—' }}</small>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

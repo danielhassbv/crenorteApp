@@ -8,6 +8,7 @@ export interface PreCadastro {
   telefone: string;
   email: string;
   bairro: string;
+  origem: string;
 
   createdByUid?: string;
   createdByNome?: string;

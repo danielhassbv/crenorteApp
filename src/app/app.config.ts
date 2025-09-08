@@ -20,6 +20,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { withPreloading, PreloadAllModules } from '@angular/router';
 
 export const appConfig: ApplicationConfig = {
+  
+  
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes, withPreloading(PreloadAllModules)),

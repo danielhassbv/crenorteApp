@@ -2,44 +2,10 @@
 <br>
 <div class="container py-5 mt-5">
   <!-- Título + Ações -->
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 py-4">
     <h3 class="mb-0 fw-bold text-success">
       <i class="bi bi-card-list me-2"></i>Todos os Cadastros
     </h3>
-
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <button class="btn btn-outline-success" (click)="exportarExcel()">
-        <i class="fas fa-file-excel me-2"></i> Exportar Excel
-      </button>
-
-      <!-- NOVO: seletor de data + export genérico -->
-      <div class="input-group" style="min-width: 280px;">
-        <span class="input-group-text"><i class="fa-regular fa-calendar"></i></span>
-        <input
-          type="date"
-          class="form-control"
-          [(ngModel)]="dataExportDia"
-          aria-label="Data para exportar nomes do dia"
-        />
-        <button class="btn btn-success"
-                [disabled]="!dataExportDia"
-                (click)="exportarContatosENomesDoDia()">
-          <i class="fa-solid fa-file-export me-2"></i>
-          Exportar: Nomes do dia
-        </button>
-      </div>
-
-      <button class="btn btn-outline-secondary" (click)="fileInput.click()">
-        <i class="fas fa-upload me-2"></i> Importar Planilha
-      </button>
-      <input #fileInput type="file" hidden accept=".xlsx, .xls, .csv" (change)="importarDoExcel($event)" />
-
-      <!-- Botão MIGRAR STATUS 
-      <button class="btn btn-outline-warning" (click)="migrarStatus()" [disabled]="carregando || migrando">
-        <i class="fas fa-exchange-alt me-2"></i>
-        {{ migrando ? 'Migrando...' : 'Migrar status' }}
-      </button> -->
-    </div>
   </div>
 
   <!-- KPIs -->

@@ -21,7 +21,7 @@ export class HomeComponent {
   // ✅ injeta o service e expõe um observable tipado pra template
   public auth = inject(AuthService);
   public perfil$: Observable<Colaborador | null> = this.auth.perfil$;
-    hasAny(userRole: string, roles: string[]): boolean {
-    return roles.includes(userRole);
+  hasAny(papel: string | null | undefined, roles: string[]): boolean {
+    return !!papel && roles.includes(papel);
   }
 }
