@@ -1,9 +1,11 @@
-import { Component, ElementRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, ElementRef, ViewChild, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, NgForm } from '@angular/forms';
-import { RouterModule, Router } from '@angular/router';
+import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { PreCadastroService } from '../../../services/pre-cadastro.service';
 import { PreCadastro } from '../../../models/pre-cadastro.model';
+
+import { Firestore, doc, getDoc, updateDoc } from '@angular/fire/firestore';
 
 declare const bootstrap: any;
 
@@ -25,15 +27,22 @@ type FeedbackCliente = {
   templateUrl: './pre-cadastro-form.component.html',
   styleUrls: ['./pre-cadastro-form.component.css'],
 })
-export class PreCadastroFormComponent {
+export class PreCadastroFormComponent implements OnInit {
   private service = inject(PreCadastroService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private afs = inject(Firestore);
 
   @ViewChild('feedbackModal', { static: false }) feedbackModalRef?: ElementRef<HTMLDivElement>;
   private feedbackModal?: any;
 
   loading = signal(false);
   msg = signal<string | null>(null);
+
+  /** Modo edição + referências do doc */
+  editMode = false;
+  private docPath: string | null = null; // caminho completo (preferível)
+  private docId: string | null = null;   // fallback (top-level)
 
   model: Omit<PreCadastro, 'id' | 'createdAt' | 'createdByUid' | 'createdByNome'> = {
     nomeCompleto: '',
@@ -84,6 +93,55 @@ export class PreCadastroFormComponent {
     return true;
   }
 
+  // ===== Carregamento inicial (modo edição) =====
+  async ngOnInit() {
+    this.route.queryParamMap.subscribe(async (qp) => {
+      this.editMode = qp.get('edit') === 'true';
+      this.docPath = qp.get('path');
+      this.docId = qp.get('id');
+
+      if (!this.editMode) return;
+
+      try {
+        let ref;
+        if (this.docPath) {
+          // caminho completo, ex.: colaboradores/{uid}/pre_cadastros/{docId}
+          ref = doc(this.afs, this.docPath);
+        } else if (this.docId) {
+          // fallback: top-level
+          ref = doc(this.afs, 'pre_cadastros', this.docId);
+        } else {
+          throw new Error('Sem path ou id para carregar o pré-cadastro.');
+        }
+
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          this.msg.set('Pré-cadastro não encontrado.');
+          return;
+        }
+
+        const data = snap.data() as any;
+
+        // Preenche TODOS os campos necessários do formulário
+        this.model = {
+          nomeCompleto: data.nomeCompleto ?? '',
+          cpf: data.cpf ?? '',
+          endereco: data.endereco ?? data.enderecoCompleto ?? '',
+          telefone: data.telefone ?? data.contato ?? '',
+          email: data.email ?? '',
+          bairro: data.bairro ?? '',
+          origem: data.origem ?? ''
+        };
+
+        // Guarda id para possível uso posterior
+        this.lastPreCadastroId = snap.id;
+      } catch (e: any) {
+        console.error('[PreCadastro] Erro ao carregar doc para edição:', e);
+        this.msg.set(e?.message || 'Erro ao carregar o pré-cadastro para edição.');
+      }
+    });
+  }
+
   // ===== Fluxo principal =====
   async salvar(form: NgForm) {
     if (this.loading()) return;
@@ -96,10 +154,9 @@ export class PreCadastroFormComponent {
       email: this.limpar(this.model.email),
       origem: this.limpar(this.model.origem),
       bairro: this.limpar(this.model.bairro),
-
     };
 
-    if (!form.valid || !this.cpfValido(payload.cpf)) {
+    if (!form.valid || (payload.cpf && !this.cpfValido(payload.cpf))) {
       this.msg.set('Preencha os campos corretamente (CPF inválido).');
       return;
     }
@@ -108,17 +165,40 @@ export class PreCadastroFormComponent {
     this.msg.set(null);
 
     try {
-      // criar() já seta createdByUid=auth.uid para atender às suas regras
-      const id = await this.service.criar(payload);
-      this.lastPreCadastroId = id;
+      if (this.editMode) {
+        // ===== Atualização de um pré-cadastro existente =====
+        let ref;
+        if (this.docPath) {
+          ref = doc(this.afs, this.docPath);
+        } else if (this.docId) {
+          ref = doc(this.afs, 'pre_cadastros', this.docId);
+        } else {
+          throw new Error('Sem referência para atualizar o pré-cadastro.');
+        }
 
-      this.msg.set('Pré-cadastro salvo com sucesso!');
-      form.resetForm();
+        await updateDoc(ref, {
+          ...payload,
+          atualizadoEm: new Date(),
+        });
 
-      // abre modal para o CLIENTE avaliar o atendimento
-      setTimeout(() => this.abrirFeedbackModal(), 0);
+        this.msg.set('Pré-cadastro atualizado com sucesso!');
+        // opcional: navegar de volta para a listagem
+        // this.router.navigateByUrl('/pre-cadastros');
+
+      } else {
+        // ===== Criação de um novo pré-cadastro =====
+        // criar() já seta createdByUid=auth.uid para atender às suas regras
+        const id = await this.service.criar(payload);
+        this.lastPreCadastroId = id;
+
+        this.msg.set('Pré-cadastro salvo com sucesso!');
+        form.resetForm();
+
+        // abre modal para o CLIENTE avaliar o atendimento (somente no create)
+        setTimeout(() => this.abrirFeedbackModal(), 0);
+      }
     } catch (e: any) {
-      console.error('[PreCadastro] Erro ao salvar pré-cadastro:', e);
+      console.error('[PreCadastro] Erro ao salvar/atualizar:', e);
       this.msg.set(e?.message || 'Erro ao salvar o pré-cadastro.');
     } finally {
       this.loading.set(false);

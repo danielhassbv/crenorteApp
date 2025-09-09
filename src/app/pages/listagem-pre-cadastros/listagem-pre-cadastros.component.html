@@ -1,0 +1,188 @@
+<app-header></app-header>
+<br>
+<div class="container py-5 mt-5">
+  <!-- Título -->
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 py-4">
+    <h3 class="mb-0 fw-bold text-success">
+      <i class="bi bi-card-list me-2"></i>Todos os Pré-cadastros
+    </h3>
+  </div>
+
+  <!-- KPIs -->
+  <div class="crn-kpi row g-3 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="crn-kpi__card">
+        <div class="crn-kpi__label">Total estimado</div>
+        <div class="crn-kpi__value">{{ totalEstimado }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="crn-kpi__card">
+        <div class="crn-kpi__label">Registros carregados</div>
+        <div class="crn-kpi__value">{{ presAll.length || 0 }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="crn-kpi__card">
+        <div class="crn-kpi__label">Após filtros</div>
+        <div class="crn-kpi__value">{{ presFiltrados.length || 0 }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="crn-kpi__card">
+        <div class="crn-kpi__label">Busca por nome</div>
+        <div class="crn-kpi__value">{{ filtro.nome ? 'Ativo' : '—' }}</div>
+        <div class="crn-kpi__hint">{{ filtro.nome || 'sem filtro' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Estado -->
+  <div *ngIf="carregando" class="alert alert-info py-2">Carregando pré-cadastros...</div>
+  <div *ngIf="!carregando && erroCarregar" class="alert alert-primary-subtle text-primary-emphasis border">
+    {{ erroCarregar }}
+  </div>
+
+  <!-- Filtros -->
+  <div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label">Buscar por nome</label>
+          <div class="input-group">
+            <input
+              type="text"
+              class="form-control"
+              placeholder="Digite o nome"
+              [(ngModel)]="filtro.nome"
+              (ngModelChange)="onFiltroNomeChange($event)"
+            />
+            <button class="btn btn-success" (click)="aplicarFiltrosLocais(true)">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Data de</label>
+          <input type="date" class="form-control" [(ngModel)]="filtro.dataDe" (change)="aplicarFiltrosLocais(true)" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Até</label>
+          <input type="date" class="form-control" [(ngModel)]="filtro.dataAte" (change)="aplicarFiltrosLocais(true)" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabela (md e acima) -->
+  <div class="table-responsive shadow-sm rounded-4 border d-none d-md-block">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="sticky-top" style="z-index:1;background:#eaf6ef">
+        <tr class="text-success">
+          <th style="width:34%; cursor:pointer" (click)="ordenarPor('nomeCompleto')">
+            <div class="d-inline-flex align-items-center gap-2">
+              <span>Nome</span>
+              <i *ngIf="sortField==='nomeCompleto' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
+              <i *ngIf="sortField==='nomeCompleto' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
+            </div>
+          </th>
+          <th style="width:220px">Assessor responsável</th>
+          <th style="width:160px">Telefone</th>
+          <th style="width:180px; cursor:pointer" (click)="ordenarPor('createdAt')">
+            <div class="d-inline-flex align-items-center gap-2">
+              <span>Criado em</span>
+              <i *ngIf="sortField==='createdAt' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
+              <i *ngIf="sortField==='createdAt' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
+            </div>
+          </th>
+          <th style="width:170px">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let c of presPaginados; trackBy: trackById">
+          <td class="fw-semibold text-success-emphasis text-truncate" style="max-width: 480px;">
+            {{ displayName(c.nomeCompleto) || '—' }}
+          </td>
+          <td class="text-truncate" style="max-width: 220px;">
+            {{ getAssessorNome(c) }}
+          </td>
+          <td>{{ maskPhone(getPhone(c)) }}</td>
+          <td>{{ toBRDate(c.createdAt) }}</td>
+          <td class="text-nowrap">
+            <div class="btn-group">
+              <button class="btn btn-sm btn-outline-success" (click)="editarPreCadastro(c)">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" (click)="removerPreCadastro(c)">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+
+        <tr *ngIf="!carregando && presPaginados.length === 0">
+          <td colspan="5" class="text-center text-muted py-4">Nenhum pré-cadastro encontrado</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Lista Mobile (sm e abaixo) -->
+  <div class="d-block d-md-none">
+    <div
+      *ngFor="let c of presPaginados; trackBy: trackById"
+      class="mobile-card shadow-sm border rounded-4 p-3 mb-2"
+    >
+      <div class="d-flex flex-column gap-1">
+        <div class="header-row mb-1">
+          <h6 class="mb-0 fw-bold text-success-emphasis title-truncate">
+            {{ displayName(c.nomeCompleto) || '—' }}
+          </h6>
+        </div>
+
+        <div class="small text-muted mt-1 lh-sm">
+          <div class="text-truncate" *ngIf="getAssessorNome(c) !== '—'">
+            <i class="fa-solid fa-user-tie me-1"></i> {{ getAssessorNome(c) }}
+          </div>
+          <div class="text-truncate" *ngIf="getPhone(c)">
+            <i class="fa-solid fa-phone me-1"></i> {{ maskPhone(getPhone(c)) }}
+          </div>
+          <div class="text-truncate" *ngIf="c.createdAt">
+            <i class="fa-regular fa-calendar me-1"></i> {{ toBRDate(c.createdAt) }}
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-2 action-row">
+          <button class="btn btn-outline-success btn-sm" (click)="editarPreCadastro(c)">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn btn-outline-danger btn-sm" (click)="removerPreCadastro(c)">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="!carregando && presPaginados.length === 0" class="text-center text-muted py-4">
+      Nenhum pré-cadastro encontrado
+    </div>
+  </div>
+
+  <!-- Paginação -->
+  <nav class="mt-4" *ngIf="!carregando && totalPaginas > 1">
+    <ul class="pagination justify-content-center flex-wrap gap-1">
+      <li class="page-item" [class.disabled]="paginaAtual === 1">
+        <button class="page-link" (click)="irParaPagina(paginaAtual - 1)">Anterior</button>
+      </li>
+
+      <li class="page-item" *ngFor="let p of pages()" [class.active]="paginaAtual === p">
+        <button class="page-link" (click)="irParaPagina(p)">{{ p }}</button>
+      </li>
+
+      <li class="page-item" [class.disabled]="paginaAtual === totalPaginas">
+        <button class="page-link" (click)="irParaPagina(paginaAtual + 1)">Próxima</button>
+      </li>
+    </ul>
+  </nav>
+</div>

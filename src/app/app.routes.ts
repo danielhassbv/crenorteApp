@@ -54,6 +54,15 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/pre-cadastro/pre-cadastro-relatorio/pre-cadastro-relatorio.component').then(m => m.PreCadastroRelatorioComponent),
   },
+  {
+    path: 'pre-cadastros',
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ['operacional', 'admin'] as Papel[] },
+    title: 'Todos os Pré-cadastros',
+    loadComponent: () =>
+      import('./pages/listagem-pre-cadastros/listagem-pre-cadastros.component')
+        .then(m => m.ListagemPreCadastrosComponent),
+  },
 
   // === TRIAGEM (Operacional) ===
   {
