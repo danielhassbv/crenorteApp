@@ -117,7 +117,6 @@ export interface Cliente {
   // Metadados opcionais
   criadoEm?: Date | string;          // definido no TS ao salvar
 
-  
   status?: StatusCadastro;                // novo
   statusHistory?: StatusEvent[];          // novo
 }

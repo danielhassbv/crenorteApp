@@ -1,5 +1,5 @@
 // src/app/pages/triagem/triagem-pre-cadastros/triagem-pre-cadastros.component.ts
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -10,6 +10,13 @@ import {
   onSnapshot,
   query,
   Unsubscribe,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  collection,
+  getDocs,
+  where,
 } from 'firebase/firestore';
 
 type PreCadastroRow = {
@@ -24,6 +31,23 @@ type PreCadastroRow = {
   bairro: string;
   rota: string;
   origem: string;
+
+  // path e flags auxiliares
+  _path: string;
+  _eDeAssessor?: boolean;
+
+  // “quem criou” (assessor designado)
+  createdByUid?: string | null;
+  createdByNome?: string | null;
+};
+
+type Assessor = {
+  uid: string;
+  nome?: string;
+  email?: string;
+  status?: string;
+  papel?: string;
+  rota?: string; // exibido em parênteses no seletor
 };
 
 @Component({
@@ -37,29 +61,37 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   carregando = signal(false);
   erro = signal<string | null>(null);
 
-  // filtros (propriedades simples para evitar erro de two-way binding)
+  // filtros
   busca = '';
   filtroRota = '';
+  somenteNaoDesignados = false;
 
   // dados
   private unsub?: Unsubscribe;
   all: PreCadastroRow[] = [];
   view: PreCadastroRow[] = [];
 
-  ngOnInit(): void {
+  // assessores / designação
+  assessores: Assessor[] = [];
+  selecaoAssessor: Record<string, string> = {}; // por id => uid do assessor
+  designando: Record<string, boolean> = {};
+  okDesignado: Record<string, boolean> = {};
+  errDesignado: Record<string, boolean> = {};
+
+  async ngOnInit(): Promise<void> {
+    await this.carregarAssessores();
     this.carregarTodos();
   }
 
   ngOnDestroy(): void {
-    if (this.unsub) this.unsub();
+    this.unsub?.();
   }
 
-  // ---------- carregar TODOS (sem orderBy para não exigir índice) ----------
+  // ---------- Firestore: carregar TODOS (sem orderBy para não exigir índice) ----------
   private carregarTodos() {
     this.carregando.set(true);
     this.erro.set(null);
 
-    // Sem orderBy -> não precisa de COLLECTION_GROUP index
     const base = collectionGroup(db, 'pre_cadastros');
     const qy = query(base);
 
@@ -68,6 +100,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       (snap) => {
         const rows: PreCadastroRow[] = snap.docs.map((d) => {
           const data = d.data() as any;
+          const path = d.ref.path;
           return {
             id: d.id,
             data: this.toDate(data?.createdAt ?? data?.criadoEm),
@@ -79,10 +112,16 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             bairro: String(data?.bairro ?? '').trim(),
             rota: String(data?.rota ?? '').trim(),
             origem: String(data?.origem ?? '').trim(),
+            _path: path,
+            _eDeAssessor: path.startsWith('colaboradores/'),
+
+            // quem “criou” (assessor designado)
+            createdByUid: data?.createdByUid ?? null,
+            createdByNome: data?.createdByNome ?? null,
           };
         });
 
-        // Ordena no cliente por data desc (sem exigir índice)
+        // ordena por data desc no cliente
         rows.sort((a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0));
 
         this.all = rows;
@@ -95,6 +134,38 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
         this.carregando.set(false);
       }
     );
+  }
+
+  // ---------- Firestore: carregar assessores ativos (assessor/admin) ----------
+  private async carregarAssessores() {
+    try {
+      const col = collection(db, 'colaboradores');
+      const q1 = query(
+        col,
+        where('status', '==', 'ativo'),
+        where('papel', 'in', ['assessor', 'admin'])
+      );
+      const snap = await getDocs(q1);
+
+      this.assessores = snap.docs
+        .map((d) => {
+          const x = d.data() as any;
+          return {
+            uid: d.id,
+            nome: x?.nome ?? x?.displayName ?? '',
+            email: x?.email ?? '',
+            status: x?.status,
+            papel: x?.papel,
+            rota: x?.rota ?? '',
+          } as Assessor;
+        })
+        .sort((a, b) =>
+          (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? '')
+        );
+    } catch (e) {
+      console.error('[Triagem] Falha ao carregar assessores:', e);
+      this.assessores = [];
+    }
   }
 
   // ---------- utils ----------
@@ -123,13 +194,14 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   limparFiltros() {
     this.busca = '';
     this.filtroRota = '';
+    this.somenteNaoDesignados = false;
     this.aplicarFiltros();
   }
 
   aplicarFiltros() {
     let list = [...this.all];
-    const term = this.busca.toLowerCase();
-    const rota = this.filtroRota.toLowerCase();
+    const term = (this.busca || '').toLowerCase();
+    const rota = (this.filtroRota || '').toLowerCase();
 
     if (rota) {
       list = list.filter((p) => (p.rota || '').toLowerCase().includes(rota));
@@ -141,6 +213,62 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       });
     }
 
+    if (this.somenteNaoDesignados) {
+      list = list.filter(
+        (p) => !(p.createdByUid && String(p.createdByUid).trim()) && !p._eDeAssessor
+      );
+    }
+
     this.view = list;
+  }
+
+  // ========== ação: designar para assessor (como “quem criou”) ==========
+  async designarParaAssessor(r: PreCadastroRow) {
+    const uid = this.selecaoAssessor[r.id];
+    if (!uid) return;
+
+    this.designando[r.id] = true;
+    this.okDesignado[r.id] = false;
+    this.errDesignado[r.id] = false;
+
+    try {
+      // 1) buscar dados do colaborador escolhido
+      const colabRef = doc(db, 'colaboradores', uid);
+      const colabSnap = await getDoc(colabRef);
+      if (!colabSnap.exists()) throw new Error('Colaborador (assessor) não encontrado.');
+
+      const colab = colabSnap.data() as any;
+      const assessorNome = colab?.nome ?? colab?.displayName ?? null;
+
+      // 2) atualizar o documento original com “quem criou”
+      const srcRef = doc(db, r._path);
+      const patch = {
+        createdByUid: uid,
+        createdByNome: assessorNome,
+        // metadados úteis
+        designadoEm: serverTimestamp(),
+        designadoPara: uid, // opcional manter
+      };
+      await setDoc(srcRef, patch, { merge: true });
+
+      // 3) feedback visual imediato
+      const idx = this.all.findIndex((x) => x.id === r.id && x._path === r._path);
+      if (idx >= 0) {
+        this.all[idx] = {
+          ...this.all[idx],
+          createdByUid: uid,
+          createdByNome: assessorNome,
+        };
+        this.aplicarFiltros();
+      }
+
+      this.okDesignado[r.id] = true;
+    } catch (e) {
+      console.error('[Triagem] designarParaAssessor erro:', e);
+      this.errDesignado[r.id] = true;
+      alert('Não foi possível designar. Verifique as regras e tente novamente.');
+    } finally {
+      this.designando[r.id] = false;
+    }
   }
 }
