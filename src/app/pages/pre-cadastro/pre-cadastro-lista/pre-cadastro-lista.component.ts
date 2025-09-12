@@ -7,13 +7,14 @@ import { PreCadastroService } from '../../../services/pre-cadastro.service';
 import { Auth, user } from '@angular/fire/auth';
 import { Subscription } from 'rxjs';
 import { PreCadastro } from '../../../models/pre-cadastro.model';
+import { HeaderComponent } from '../../shared/header/header.component';
 
 type PreCadastroEdit = PreCadastro & { id: string };
 
 @Component({
   selector: 'app-pre-cadastro-lista',
   standalone: true,
-  imports: [CommonModule, RouterModule, DatePipe, FormsModule, NgxMaskDirective],
+  imports: [CommonModule, RouterModule, DatePipe, FormsModule, NgxMaskDirective, HeaderComponent],
   providers: [provideNgxMask()],
   templateUrl: './pre-cadastro-lista.component.html',
   styleUrls: ['./pre-cadastro-lista.component.css']

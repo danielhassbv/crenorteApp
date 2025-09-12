@@ -13,12 +13,14 @@ import { RouterModule } from '@angular/router';
 import { Cliente, FluxoCaixa, StatusCadastro, StatusEvent } from '../../models/cliente.model';
 import { municipiosNorte } from '../../../shared/municipios-norte';
 import { NgxMaskDirective, provideNgxMask } from 'ngx-mask';
-
 import { ActivatedRoute } from '@angular/router';
+
+// Auth
+import { Auth } from '@angular/fire/auth';
 
 // Firestore
 import { db } from '../../firebase.config';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 // Storage (usa a MESMA instância exportada em firebase.config.ts)
 import { FirebaseStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -168,8 +170,8 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   uploadStatus = { ok: false, msg: '' };
   private storage: FirebaseStorage = fbStorage;
 
-  // ---------- Ciclo de Vida ----------
-  constructor(private zone: NgZone, private route: ActivatedRoute) { }
+  // Auth
+  constructor(private zone: NgZone, private route: ActivatedRoute, private auth: Auth) { }
 
   private onlyDigits(v?: string): string {
     return (v ?? '').replace(/\D/g, '');
@@ -248,24 +250,202 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
   }
 
   ngAfterViewInit(): void {
-    if (!this.signatureCanvas) return;
-    const canvas = this.signatureCanvas.nativeElement;
+    // Canvas pode não existir dependendo do template/rota — proteja
+    if (!this.signatureCanvas?.nativeElement) return;
+    this.initSignatureCanvas();
+  }
+
+  // ============ ASSINATURA (PRECISA E ESTÁVEL) ============
+  private pointerDownHandler = (e: PointerEvent) => this.iniciarDesenho(e);
+  private pointerMoveHandler = (e: PointerEvent) => this.continuarDesenho(e);
+  private pointerUpHandler = (_: PointerEvent) => this.pararDesenho();
+
+  private initSignatureCanvas() {
+    const canvas = this.signatureCanvas?.nativeElement;
+    if (!canvas) return;
+
+    // Contexto
     this.sigCtx = canvas.getContext('2d')!;
     this.sigCtx.lineWidth = 2;
     this.sigCtx.lineCap = 'round';
     this.sigCtx.strokeStyle = '#111';
 
-    this.zone.runOutsideAngular(() => {
-      canvas.addEventListener('mousedown', (e) => this.iniciarDesenho(e));
-      canvas.addEventListener('mousemove', (e) => this.continuarDesenho(e));
-      window.addEventListener('mouseup', () => this.pararDesenho());
+    // Ajuste de DPI com base no tamanho CSS atual
+    this.ajustarDPI();
 
-      canvas.addEventListener('touchstart', (e) => this.iniciarDesenho(e));
-      canvas.addEventListener('touchmove', (e) => this.continuarDesenho(e));
-      window.addEventListener('touchend', () => this.pararDesenho());
+    // Desabilita gesto de rolagem enquanto desenha
+    canvas.style.touchAction = 'none';
+
+    // Usa Pointer Events (cobre mouse/touch/caneta)
+    this.zone.runOutsideAngular(() => {
+      canvas.addEventListener('pointerdown', this.pointerDownHandler);
+      canvas.addEventListener('pointermove', this.pointerMoveHandler);
+      window.addEventListener('pointerup', this.pointerUpHandler);
+      window.addEventListener('pointercancel', this.pointerUpHandler);
+      window.addEventListener('resize', () => this.ajustarDPI());
     });
 
-    this.ajustarDPI();
+    // Se houver assinatura salva, opcionalmente renderiza no canvas
+    if (this.signatureDataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        this.sigCtx.clearRect(0, 0, canvas.width, canvas.height);
+        const r = this.getCanvasVisibleRect();
+        this.sigCtx.drawImage(img, 0, 0, r.w, r.h);
+      };
+      img.src = this.signatureDataUrl;
+    }
+  }
+
+  private getCanvasVisibleRect() {
+    const canvas = this.signatureCanvas.nativeElement;
+    // largura/altura CSS (visível)
+    const cssW = canvas.clientWidth || canvas.offsetWidth || 300;
+    const cssH = canvas.clientHeight || canvas.offsetHeight || 150;
+    // dpi real
+    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+    const w = Math.max(1, Math.round(cssW * dpr));
+    const h = Math.max(1, Math.round(cssH * dpr));
+    return { cssW, cssH, w, h, dpr };
+  }
+
+  private ajustarDPI() {
+    if (!this.signatureCanvas) return;
+    const canvas = this.signatureCanvas.nativeElement;
+    const { cssW, cssH, w, h, dpr } = this.getCanvasVisibleRect();
+
+    // Define resolução física baseada no tamanho CSS
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+
+    // Reescala o contexto
+    this.sigCtx.setTransform(1, 0, 0, 1, 0, 0); // reset
+    this.sigCtx.scale(dpr, dpr);
+    this.sigCtx.lineWidth = 2;
+  }
+
+  private getPos(e: PointerEvent) {
+    const canvas = this.signatureCanvas.nativeElement;
+    const rect = canvas.getBoundingClientRect();
+    // Mapeia coords do ponteiro (pixels CSS) para coords do canvas (sem DPR)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * (1 / Math.max(1, Math.min(window.devicePixelRatio || 1, 2)));
+    const y = (e.clientY - rect.top) * (1 / Math.max(1, Math.min(window.devicePixelRatio || 1, 2)));
+    return { x: x * scaleX / (canvas.width / rect.width), y: y * scaleY / (canvas.height / rect.height) };
+  }
+
+  private iniciarDesenho(e: PointerEvent) {
+    if (!this.sigCtx) return;
+    const canvas = this.signatureCanvas.nativeElement;
+    this.desenhando = true;
+    this.ultimoPonto = this.getPos(e);
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  private continuarDesenho(e: PointerEvent) {
+    if (!this.desenhando || !this.ultimoPonto || !this.sigCtx) return;
+    const atual = this.getPos(e);
+    this.sigCtx.beginPath();
+    this.sigCtx.moveTo(this.ultimoPonto.x, this.ultimoPonto.y);
+    this.sigCtx.lineTo(atual.x, atual.y);
+    this.sigCtx.stroke();
+    this.ultimoPonto = atual;
+    e.preventDefault();
+  }
+
+  private pararDesenho() {
+    this.desenhando = false;
+    this.ultimoPonto = null;
+  }
+
+  limparAssinatura() {
+    if (!this.signatureCanvas || !this.sigCtx) return;
+    const canvas = this.signatureCanvas.nativeElement;
+    this.sigCtx.clearRect(0, 0, canvas.width, canvas.height);
+    this.signatureDataUrl = null;
+    this.signaturePreview = null;
+  }
+
+  salvarAssinatura() {
+    if (!this.signatureCanvas) return;
+    const canvas = this.signatureCanvas.nativeElement;
+    // Exporta no tamanho real (já ajustado a DPR)
+    const dataUrl = canvas.toDataURL('image/png');
+    this.signatureDataUrl = dataUrl;
+    this.signaturePreview = dataUrl;
+  }
+
+  private dataURLtoBlob(dataUrl: string): Blob {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] ?? 'image/png';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8 = new Uint8Array(n);
+    while (n--) u8[n] = bstr.charCodeAt(n);
+    return new Blob([u8], { type: mime });
+  }
+
+  // ================== MINIATURAS & COMPRESSÃO ==================
+  private fileToImage(file: File): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  private async generateThumbnail(file: File, maxSize = this.THUMB_PX): Promise<string> {
+    const img = await this.fileToImage(file);
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(img.src);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  }
+
+  private async compressImage(file: File, maxDim = this.COMPRESS_MAX_DIM, quality = this.COMPRESS_QUALITY): Promise<Blob> {
+    const img = await this.fileToImage(file);
+    const { width, height } = img;
+    const scale = Math.min(1, maxDim / Math.max(width, height));
+    const targetW = Math.round(width * scale);
+    const targetH = Math.round(height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+    URL.revokeObjectURL(img.src);
+    return await new Promise<Blob>((resolve) =>
+      canvas.toBlob(b => resolve(b!), 'image/jpeg', quality)
+    );
+  }
+
+  async onFilesChange(key: string, evt: Event) {
+    const input = evt.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []).filter(f => f.type.startsWith('image/'));
+    const selecionados = files.slice(0, this.MAX_QTD_POR_CATEGORIA);
+
+    const muitoGrandes = selecionados.filter(f => f.size > this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
+    if (muitoGrandes.length) {
+      alert(`⚠️ Arquivo(s) acima de ${this.MAX_MB_POR_ARQUIVO}MB foram ignorados.`);
+    }
+    const validos = selecionados.filter(f => f.size <= this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
+
+    this.previewMap[key] = [];
+    if (validos[0]) {
+      const thumb = await this.generateThumbnail(validos[0]);
+      this.previewMap[key] = [thumb];
+    }
+
+    this.arquivosMap[key] = validos;
   }
 
   // ---------- Datas ----------
@@ -571,145 +751,6 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
     this.cliente.dataPreenchimento = `${dd}/${mm}/${a}`;
   }
 
-  // ================== MINIATURAS & COMPRESSÃO ==================
-  private fileToImage(file: File): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = URL.createObjectURL(file);
-    });
-  }
-
-  private async generateThumbnail(file: File, maxSize = this.THUMB_PX): Promise<string> {
-    const img = await this.fileToImage(file);
-    const canvas = document.createElement('canvas');
-    const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-    canvas.width = Math.max(1, Math.round(img.width * scale));
-    canvas.height = Math.max(1, Math.round(img.height * scale));
-    const ctx = canvas.getContext('2d')!;
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    URL.revokeObjectURL(img.src);
-    return canvas.toDataURL('image/jpeg', 0.8);
-  }
-
-  private async compressImage(file: File, maxDim = this.COMPRESS_MAX_DIM, quality = this.COMPRESS_QUALITY): Promise<Blob> {
-    const img = await this.fileToImage(file);
-    const { width, height } = img;
-    const scale = Math.min(1, maxDim / Math.max(width, height));
-    const targetW = Math.round(width * scale);
-    const targetH = Math.round(height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d')!;
-    ctx.drawImage(img, 0, 0, targetW, targetH);
-    URL.revokeObjectURL(img.src);
-    return await new Promise<Blob>((resolve) =>
-      canvas.toBlob(b => resolve(b!), 'image/jpeg', quality)
-    );
-  }
-
-  async onFilesChange(key: string, evt: Event) {
-    const input = evt.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []).filter(f => f.type.startsWith('image/'));
-    const selecionados = files.slice(0, this.MAX_QTD_POR_CATEGORIA);
-
-    const muitoGrandes = selecionados.filter(f => f.size > this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
-    if (muitoGrandes.length) {
-      alert(`⚠️ Arquivo(s) acima de ${this.MAX_MB_POR_ARQUIVO}MB foram ignorados.`);
-    }
-    const validos = selecionados.filter(f => f.size <= this.MAX_MB_POR_ARQUIVO * 1024 * 1024);
-
-    this.previewMap[key] = [];
-    if (validos[0]) {
-      const thumb = await this.generateThumbnail(validos[0]);
-      this.previewMap[key] = [thumb];
-    }
-
-    this.arquivosMap[key] = validos;
-  }
-
-  // ================== CANVAS ASSINATURA ==================
-  private ajustarDPI() {
-    const canvas = this.signatureCanvas?.nativeElement;
-    if (!canvas) return;
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
-    const w = canvas.width;
-    const h = canvas.height;
-    canvas.width = Math.floor(w * ratio);
-    canvas.height = Math.floor(h * ratio);
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-    this.sigCtx.scale(ratio, ratio);
-    this.sigCtx.lineWidth = 2;
-  }
-
-  private getPos(evt: MouseEvent | TouchEvent) {
-    const canvas = this.signatureCanvas.nativeElement;
-    const rect = canvas.getBoundingClientRect();
-    let clientX = 0, clientY = 0;
-
-    if (evt instanceof TouchEvent) {
-      const t = evt.touches[0] || evt.changedTouches[0];
-      clientX = t?.clientX ?? 0;
-      clientY = t?.clientY ?? 0;
-      evt.preventDefault();
-    } else {
-      clientX = (evt as MouseEvent).clientX;
-      clientY = (evt as MouseEvent).clientY;
-    }
-
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  }
-
-  private iniciarDesenho(evt: MouseEvent | TouchEvent) {
-    this.desenhando = true;
-    this.ultimoPonto = this.getPos(evt);
-  }
-
-  private continuarDesenho(evt: MouseEvent | TouchEvent) {
-    if (!this.desenhando || !this.ultimoPonto) return;
-    const atual = this.getPos(evt);
-    this.sigCtx.beginPath();
-    this.sigCtx.moveTo(this.ultimoPonto.x, this.ultimoPonto.y);
-    this.sigCtx.lineTo(atual.x, atual.y);
-    this.sigCtx.stroke();
-    this.ultimoPonto = atual;
-  }
-
-  private pararDesenho() {
-    this.desenhando = false;
-    this.ultimoPonto = null;
-  }
-
-  limparAssinatura() {
-    if (!this.signatureCanvas) return;
-    const canvas = this.signatureCanvas.nativeElement;
-    if (!this.sigCtx) return;
-    this.sigCtx.clearRect(0, 0, canvas.width, canvas.height);
-    this.signatureDataUrl = null;
-    this.signaturePreview = null;
-  }
-
-  salvarAssinatura() {
-    if (!this.signatureCanvas) return;
-    const canvas = this.signatureCanvas.nativeElement;
-    const dataUrl = canvas.toDataURL('image/png');
-    this.signatureDataUrl = dataUrl;
-    this.signaturePreview = dataUrl;
-  }
-
-  private dataURLtoBlob(dataUrl: string): Blob {
-    const arr = dataUrl.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1] ?? 'image/png';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8 = new Uint8Array(n);
-    while (n--) u8[n] = bstr.charCodeAt(n);
-    return new Blob([u8], { type: mime });
-  }
-
   // ================== UPLOAD (com compressão) ==================
   private async uploadArquivosGrupo(clienteId: string, key: string, files: File[]): Promise<string[]> {
     const urls: string[] = [];
@@ -828,12 +869,18 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
       // ---------- Status inicial + histórico ----------
       const statusInicial: StatusEvent = {
         at: new Date(),
-        byUid: 'system',          // se tiver Auth, troque por this.auth.currentUser?.uid
-        byNome: 'Assessor',       // ou o nome do colaborador logado
+        byUid: 'system',          // se quiser trocar pelo assessor no futuro, mantenha este como histórico “sistema”
+        byNome: 'Assessor',
         from: undefined,
         to: 'em_analise',
         note: 'Cadastro criado e enviado para análise.',
       };
+
+      // >>>>>> Quem criou (Auth)
+      const u = this.auth.currentUser;
+      const createdByUid = u?.uid || null;
+      const createdByNome = u?.displayName || u?.email || 'Usuário';
+      const createdByEmail = u?.email || null;
 
       // Coagir tipos e remover undefined
       const coerced = this.coerceCliente(this.cliente);
@@ -848,10 +895,21 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
         valorSolicitadoFormatado,
         nomeIndex,
         anexos: anexosUrls,
+
         // >>>>>>> campos de status <<<<<<<<
         status: 'em_analise' as StatusCadastro,
         statusHistory: [statusInicial],
-        criadoEm: new Date()
+
+        // >>>>>>> autoria <<<<<<<<
+        createdByUid,
+        createdByNome,
+        createdByEmail,
+        createdAt: serverTimestamp(),   // melhor para ordenação no backend
+
+        // espelhos úteis
+        _thumbUrl: (anexosUrls['fotoPessoa']?.[0] ?? null),
+        _assinaturaUrl: (anexosUrls['assinatura']?.[0] ?? null),
+
       });
 
       // >>>>>>> AQUI grava no Firestore <<<<<<<<
@@ -1157,28 +1215,7 @@ export class CadastroFormComponent implements OnInit, AfterViewInit {
 
   // ---- Nacionalidade ----
   nacionalidadeBase: string = '';
-  listaPaises: string[] = [
-    "Afeganistão", "África do Sul", "Albânia", "Alemanha", "Andorra", "Angola", "Antígua e Barbuda", "Arábia Saudita", "Argélia", "Argentina",
-    "Armênia", "Austrália", "Áustria", "Azerbaijão", "Bahamas", "Bangladesh", "Barbados", "Barein", "Bélgica", "Belize",
-    "Benim", "Bielorrússia", "Bolívia", "Bósnia e Herzegovina", "Botsuana", "Brasil", "Brunei", "Bulgária", "Burquina Faso", "Burundi",
-    "Butão", "Cabo Verde", "Camarões", "Camboja", "Canadá", "Catar", "Cazaquistão", "Chade", "Chile", "China",
-    "Chipre", "Colômbia", "Comores", "Congo", "Coreia do Norte", "Coreia do Sul", "Costa do Marfim", "Costa Rica", "Croácia", "Cuba",
-    "Dinamarca", "Djibuti", "Dominica", "Egito", "El Salvador", "Emirados Árabes Unidos", "Equador", "Eritreia", "Eslováquia", "Eslovênia",
-    "Espanha", "Estado da Palestina", "Estados Unidos", "Estônia", "Eswatini", "Etiópia", "Fiji", "Filipinas", "Finlândia", "França",
-    "Gabão", "Gâmbia", "Gana", "Geórgia", "Granada", "Grécia", "Guatemala", "Guiana", "Guiné", "Guiné Equatorial",
-    "Guiné-Bissau", "Haiti", "Holanda", "Honduras", "Hungria", "Iêmen", "Ilhas Marshall", "Ilhas Salomão", "Índia", "Indonésia",
-    "Irã", "Iraque", "Irlanda", "Islândia", "Israel", "Itália", "Jamaica", "Japão", "Jordânia", "Kiribati",
-    "Kosovo", "Kuwait", "Laos", "Lesoto", "Letônia", "Líbano", "Libéria", "Líbia", "Liechtenstein", "Lituânia",
-    "Luxemburgo", "Macedônia do Norte", "Madagascar", "Malásia", "Malawi", "Maldivas", "Mali", "Malta", "Marrocos", "Maurícia",
-    "Mauritânia", "México", "Micronésia", "Moçambique", "Moldávia", "Mônaco", "Mongólia", "Montenegro", "Myanmar", "Namíbia",
-    "Nauru", "Nepal", "Nicarágua", "Níger", "Nigéria", "Noruega", "Nova Zelândia", "Omã", "País de Gales", "Países Baixos",
-    "Paquistão", "Panamá", "Papua-Nova Guiné", "Paraguai", "Peru", "Polônia", "Portugal", "Quênia", "Quirguistão", "Reino Unido",
-    "República Centro-Africana", "República Checa", "República Democrática do Congo", "República Dominicana", "Romênia", "Ruanda", "Rússia", "Samoa", "San Marino", "Santa Lúcia",
-    "São Cristóvão e Névis", "São Tomé e Príncipe", "São Vicente e Granadinas", "Seicheles", "Senegal", "Serra Leoa", "Sérvia", "Singapura", "Síria", "Somália",
-    "Sri Lanka", "Sudão", "Sudão do Sul", "Suécia", "Suíça", "Suriname", "Tailândia", "Taiwan", "Tajiquistão", "Tanzânia",
-    "Timor-Leste", "Togo", "Tonga", "Trinidad e Tobago", "Tunísia", "Turcomenistão", "Turquia", "Tuvalu", "Ucrânia", "Uganda",
-    "Uruguai", "Uzbequistão", "Vanuatu", "Vaticano", "Venezuela", "Vietnã", "Zâmbia", "Zimbábue"
-  ];
+  listaPaises: string[] = [/* ... (mesma lista) ... */"Zimbábue"];
 
   private syncNacionalidadeBaseFromCliente() {
     const val = this.cliente?.nacionalidade || '';

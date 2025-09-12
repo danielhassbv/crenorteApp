@@ -1,8 +1,14 @@
-<div class="container-fluid py-4">
-  <form #f="ngForm" (ngSubmit)="salvar(f)" class="container py-4 card-crenorte shadow-lg rounded precadastro">
+<app-header></app-header>
+<br>
+<br>
+<br>
+<br>
+<br>
+<div class="container-fluid">
+  <form #f="ngForm" (ngSubmit)="salvar(f)" class="container card-crenorte shadow-lg rounded precadastro">
     <!-- HEADER -->
-    <div class="form-header d-flex justify-content-between align-items-center mb-3">
-      <div class="title-box px-2">
+    <div class="form-header d-flex justify-content-between align-items-center">
+      <div class="title-box px-2 py-4">
         <h2 class="form-title mb-0">Novo Pré-cadastro</h2>
         <small class="subtitle">Microcrédito Produtivo Orientado</small>
       </div>
@@ -54,7 +60,6 @@
               autocomplete="origem" />
           </div>
 
-
         </div>
 
         <div class="d-flex gap-2 mt-4 sticky-actions-md">
@@ -65,5 +70,6 @@
         <div *ngIf="msg()" class="alert alert-info mt-3">{{ msg() }}</div>
       </div>
     </div>
+    <br>
   </form>
 </div>

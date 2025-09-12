@@ -4,6 +4,7 @@ import { FormsModule, NgForm } from '@angular/forms';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { PreCadastroService } from '../../../services/pre-cadastro.service';
 import { PreCadastro } from '../../../models/pre-cadastro.model';
+import { HeaderComponent } from '../../shared/header/header.component';
 
 import { Firestore, doc, getDoc, updateDoc } from '@angular/fire/firestore';
 
@@ -23,7 +24,7 @@ type FeedbackCliente = {
 @Component({
   selector: 'app-pre-cadastro-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, HeaderComponent],
   templateUrl: './pre-cadastro-form.component.html',
   styleUrls: ['./pre-cadastro-form.component.css'],
 })

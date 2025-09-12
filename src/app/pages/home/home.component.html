@@ -19,53 +19,35 @@
           <a routerLink="/pre-cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-person-plus"></i></div>
             <div class="mt-2 fw-bold text-dark">Novo Pré-cadastro</div>
+            <small class="text-muted d-block">Registrar interessado rapidamente</small>
           </a>
         </div>
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastro/minha-lista" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-list-check"></i></div>
-            <div class="mt-2 fw-bold text-dark">Minha Lista</div>
+            <div class="fs-1 text-success"><i class="bi bi-clipboard2"></i></div>
+            <div class="mt-2 fw-bold text-dark">Minha Lista (Pré-Cadastros)</div>
+            <small class="text-muted d-block">Seus pré-cadastros</small>
           </a>
         </div>
-
-        <div class="col-10 col-sm-6 col-md-3">
-          <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
-            <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
-          </a>
-        </div>
-
-        <div class="col-10 col-sm-6 col-md-3">
-          <a routerLink="/grupos/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-people"></i></div>
-            <div class="mt-2 fw-bold text-dark">Criar Grupo Solidário</div>
-          </a>
-        </div>
-
       </ng-container>
 
       <!-- ===================== VISÃO ANALISTA / SUPERVISOR ===================== -->
-      <ng-container *ngIf="hasAny(perfil.papel, ['analista','supervisor'])">
-
-        <div class="col-10 col-sm-6 col-md-3">
-          <a routerLink="/aprovacoes" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-check2-square"></i></div>
-            <div class="mt-2 fw-bold text-dark">Aprovações de Cadastros</div>
-          </a>
-        </div>
+      <ng-container *ngIf="hasAny(perfil.papel, ['analista', 'supervisor', 'coordenador'])">
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-person-plus"></i></div>
             <div class="mt-2 fw-bold text-dark">Novo Pré-cadastro</div>
+            <small class="text-muted d-block">Registrar interessado</small>
           </a>
         </div>
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastro/minha-lista" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-list-check"></i></div>
+            <div class="fs-1 text-success"><i class="bi bi-clipboard2"></i></div>
             <div class="mt-2 fw-bold text-dark">Minha Lista (Pré-Cadastro)</div>
+            <small class="text-muted d-block">Seus registros</small>
           </a>
         </div>
 
@@ -78,13 +60,24 @@
           <a routerLink="/pre-cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-person-plus"></i></div>
             <div class="mt-2 fw-bold text-dark">Novo Pré-cadastro</div>
+            <small class="text-muted d-block">Registrar interessado</small>
           </a>
         </div>
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastro/minha-lista" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-list-check"></i></div>
+            <div class="fs-1 text-success"><i class="bi bi-clipboard2"></i></div>
             <div class="mt-2 fw-bold text-dark">Minha Lista (Pré-Cadastro)</div>
+            <small class="text-muted d-block">Pré-cadastros do seu usuário</small>
+          </a>
+        </div>
+
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/lista-cadastro" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-list-check"></i></div>
+            <div class="mt-2 fw-bold text-dark">Minha Lista (Cadastro)</div>
+            <small class="text-muted d-block">Seus pré-cadastros</small>
           </a>
         </div>
 
@@ -92,39 +85,47 @@
           <a routerLink="/pre-cadastro/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-graph-up"></i></div>
             <div class="mt-2 fw-bold text-dark">Relatório Pré-cadastro</div>
+            <small class="text-muted d-block">Indicadores e ranking por assessor</small>
           </a>
         </div>
-
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/aprovacoes" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-check2-square"></i></div>
             <div class="mt-2 fw-bold text-dark">Aprovações de Cadastros</div>
+            <small class="text-muted d-block">Analisar e aprovar cadastros</small>
           </a>
         </div>
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
-            <div class="fs-1 text-success"><i class="bi bi-pencil-square"></i></div>
+            <div class="fs-1 text-success"><i class="bi bi-person-vcard"></i></div>
             <div class="mt-2 fw-bold text-dark">Novo Cadastro</div>
+            <small class="text-muted d-block">Abrir ficha completa</small>
           </a>
         </div>
+
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-check2-square"></i></div>
             <div class="mt-2 fw-bold text-dark">Listagem Cadastros</div>
+            <small class="text-muted d-block">Todos os Cadastros</small>
           </a>
         </div>
-         <div class="col-10 col-sm-6 col-md-3">
+
+        <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastros" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-check-square"></i></div>
             <div class="mt-2 fw-bold text-dark">Listagem Pré-Cadastros</div>
+            <small class="text-muted d-block">Todos os Pré-Cadastros</small>
           </a>
         </div>
+
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/grupos/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-people"></i></div>
             <div class="mt-2 fw-bold text-dark">Criar Grupo Solidário</div>
+            <small class="text-muted d-block">Criar grupo solidário a partir de cadastros aprovados</small>
           </a>
         </div>
 
@@ -132,11 +133,18 @@
           <a routerLink="/grupos/relatorio" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-clipboard-data"></i></div>
             <div class="mt-2 fw-bold text-dark">Relatório de Grupos</div>
+            <small class="text-muted d-block">Controle de grupos</small>
+          </a>
+        </div>
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/relatorio-cadastros" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-clipboard-data"></i></div>
+            <div class="mt-2 fw-bold text-dark">Relatório de Cadastros</div>
+            <small class="text-muted d-block">Controle de Cadastros</small>
           </a>
         </div>
 
       </ng-container>
-
 
       <!-- ===================== VISÃO RH ===================== -->
       <ng-container *ngIf="hasAny(perfil.papel, ['admin','rh'])">
@@ -144,12 +152,10 @@
           <a routerLink="/colaboradores" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-people-fill"></i></div>
             <div class="mt-2 fw-bold text-dark">Colaboradores</div>
+            <small class="text-muted d-block">Gerenciar e criar novos colaboradores</small>
           </a>
         </div>
       </ng-container>
-
-      <!-- ===================== VISÃO Operacioanal ===================== -->
-
 
       <!-- ===================== VISÃO Operacional ===================== -->
       <ng-container *ngIf="hasAny(perfil?.papel, ['operacional', 'admin'])">
@@ -160,9 +166,7 @@
             <small class="text-muted d-block">Vincular por rota/unidade</small>
           </a>
         </div>
-   
       </ng-container>
-
 
     </div>
   </div>

@@ -82,6 +82,14 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/listagem-cadastros/listagem-cadastros.component').then(m => m.ListagemCadastrosComponent),
   },
+
+  {
+    path: 'lista-cadastros',
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ['admin', 'assessor'] as Papel[] },
+    loadComponent: () =>
+      import('./pages/lista-cadastros/lista-cadastros.component').then(m => m.ListaCadastrosComponent),
+  },
   {
     path: 'cadastro/novo',
     canActivate: [authGuard, roleGuard],
@@ -96,6 +104,14 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/cadastro-form/cadastro-form.component').then(m => m.CadastroFormComponent),
   },
+    {
+    path: 'relatorio-cadastros',
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ['admin'] as Papel[] },
+    loadComponent: () =>
+      import('./pages/relatorio-cadastros/relatorio-cadastros.component').then(m => m.RelatorioCadastrosComponent),
+  },
+
 
   // === Grupos Solidários ===
   {
