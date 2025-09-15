@@ -71,6 +71,31 @@
           <label class="form-label">Até</label>
           <input type="date" class="form-control" [(ngModel)]="filtro.dataAte" (change)="aplicarFiltrosLocais(true)" />
         </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Agendados</label>
+          <select class="form-select" [(ngModel)]="filtro.agendado" (change)="aplicarFiltrosLocais(true)">
+            <option value="todos">Todos</option>
+            <option value="sim">Somente agendados</option>
+            <option value="nao">Somente não agendados</option>
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Origem</label>
+          <select class="form-select" [(ngModel)]="filtro.origem" (change)="aplicarFiltrosLocais(true)">
+            <option value="">Todas as origens</option>
+            <option *ngFor="let o of origensDisponiveis" [value]="o">{{ o }}</option>
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Bairro</label>
+          <select class="form-select" [(ngModel)]="filtro.bairro" (change)="aplicarFiltrosLocais(true)">
+            <option value="">Todos os bairros</option>
+            <option *ngFor="let b of bairrosDisponiveis" [value]="b">{{ b }}</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>
@@ -80,35 +105,79 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="sticky-top" style="z-index:1;background:#eaf6ef">
         <tr class="text-success">
-          <th style="width:34%; cursor:pointer" (click)="ordenarPor('nomeCompleto')">
+          <th style="width:22%; cursor:pointer" (click)="ordenarPor('nomeCompleto')">
             <div class="d-inline-flex align-items-center gap-2">
               <span>Nome</span>
               <i *ngIf="sortField==='nomeCompleto' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
               <i *ngIf="sortField==='nomeCompleto' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
             </div>
           </th>
-          <th style="width:220px">Assessor responsável</th>
-          <th style="width:160px">Telefone</th>
-          <th style="width:180px; cursor:pointer" (click)="ordenarPor('createdAt')">
+
+          <th style="width:200px; cursor:pointer" (click)="ordenarPor('assessorNome')">
+            <div class="d-inline-flex align-items-center gap-2">
+              <span>Assessor responsável</span>
+              <i *ngIf="sortField==='assessorNome' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
+              <i *ngIf="sortField==='assessorNome' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
+            </div>
+          </th>
+
+          <th style="width:130px">Telefone</th>
+
+          <th style="width:150px; cursor:pointer" (click)="ordenarPor('createdAt')">
             <div class="d-inline-flex align-items-center gap-2">
               <span>Criado em</span>
               <i *ngIf="sortField==='createdAt' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
               <i *ngIf="sortField==='createdAt' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
             </div>
           </th>
-          <th style="width:170px">Ações</th>
+
+          <th style="width:180px">Agendamento</th>
+
+          <th style="width:160px; cursor:pointer" (click)="ordenarPor('bairro')">
+            <div class="d-inline-flex align-items-center gap-2">
+              <span>Bairro</span>
+              <i *ngIf="sortField==='bairro' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
+              <i *ngIf="sortField==='bairro' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
+            </div>
+          </th>
+
+          <th style="width:160px">Origem</th>
+          <th style="width:150px">Ações</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let c of presPaginados; trackBy: trackById">
-          <td class="fw-semibold text-success-emphasis text-truncate" style="max-width: 480px;">
+          <td class="fw-semibold text-success-emphasis text-truncate" style="max-width: 400px;">
             {{ displayName(c.nomeCompleto) || '—' }}
           </td>
+
           <td class="text-truncate" style="max-width: 220px;">
             {{ getAssessorNome(c) }}
           </td>
+
           <td>{{ maskPhone(getPhone(c)) }}</td>
+
           <td>{{ toBRDate(c.createdAt) }}</td>
+
+          <td class="text-truncate" style="max-width: 220px;">
+            <span
+              class="badge me-1"
+              [class.text-bg-success]="isAgendado(c)"
+              [class.text-bg-secondary]="!isAgendado(c)"
+            >
+              {{ isAgendado(c) ? 'Agendado' : 'Sem agendamento' }}
+            </span>
+            <small class="text-muted d-block">{{ getAgendamentoResumo(c) }}</small>
+          </td>
+
+          <td class="text-truncate" style="max-width: 180px;">
+            {{ getBairro(c) }}
+          </td>
+
+          <td class="text-truncate" style="max-width: 160px;">
+            {{ getOrigem(c) }}
+          </td>
+
           <td class="text-nowrap">
             <div class="btn-group">
               <button class="btn btn-sm btn-outline-success" (click)="editarPreCadastro(c)">
@@ -122,7 +191,7 @@
         </tr>
 
         <tr *ngIf="!carregando && presPaginados.length === 0">
-          <td colspan="5" class="text-center text-muted py-4">Nenhum pré-cadastro encontrado</td>
+          <td colspan="8" class="text-center text-muted py-4">Nenhum pré-cadastro encontrado</td>
         </tr>
       </tbody>
     </table>
@@ -150,6 +219,19 @@
           </div>
           <div class="text-truncate" *ngIf="c.createdAt">
             <i class="fa-regular fa-calendar me-1"></i> {{ toBRDate(c.createdAt) }}
+          </div>
+          <div class="text-truncate">
+            <i class="fa-regular fa-clock me-1"></i>
+            <strong>{{ isAgendado(c) ? 'Agendado:' : 'Sem agendamento' }}</strong>
+            <span *ngIf="isAgendado(c)"> — {{ getAgendamentoResumo(c) }}</span>
+          </div>
+          <div class="text-truncate">
+            <i class="fa-solid fa-location-dot me-1"></i>
+            <strong>Bairro:</strong> {{ getBairro(c) }}
+          </div>
+          <div class="text-truncate">
+            <i class="fa-solid fa-hashtag me-1"></i>
+            <strong>Origem:</strong> {{ getOrigem(c) }}
           </div>
         </div>
 

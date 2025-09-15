@@ -1,0 +1,199 @@
+<div class="org">
+  <!-- Toolbar -->
+  <header class="org__toolbar">
+    <div class="org__title">
+      <h1>Hierarquia por Supervisor</h1>
+      <p class="muted">Defina um <strong>nome de time</strong> para cada Analista (com seus Assessores).</p>
+    </div>
+    <div class="org__tools">
+      <div class="legend">
+        <span class="chip chip--sup"><span class="dot"></span>Supervisor</span>
+        <span class="chip chip--ana"><span class="dot"></span>Analista</span>
+        <span class="chip chip--ass"><span class="dot"></span>Assessor</span>
+      </div>
+
+      <div class="search">
+        <i class="bi bi-search"></i>
+        <input
+          class="search__input"
+          placeholder="Buscar assessor por nome ou e-mail"
+          [(ngModel)]="busca"
+          (ngModelChange)="montarArvore()"
+          aria-label="Buscar assessor"
+        />
+      </div>
+    </div>
+  </header>
+
+  <!-- Estados -->
+  <div *ngIf="loading()" class="state state--loading">Carregando…</div>
+  <div *ngIf="!loading() && erro()" class="state state--error">{{ erro() }}</div>
+
+  <!-- Grupos por supervisor -->
+  <section *ngIf="!loading() && !erro()" class="groups">
+    <article class="group-card" *ngFor="let g of porSupervisor()">
+      <div class="group-card__header">
+        <div class="node node--sup">
+          <div class="avatar" [class.has-photo]="!!g.supervisor.photoURL" aria-hidden="true">
+            <img *ngIf="g.supervisor.photoURL as foto" [src]="foto" alt="">
+            <span *ngIf="!g.supervisor.photoURL">{{ inicial(g.supervisor.nome) }}</span>
+          </div>
+          <div class="meta">
+            <div class="title">{{ g.supervisor.nome }}</div>
+            <div class="sub">Supervisor • {{ g.supervisor.cargo || '—' }}</div>
+          </div>
+          <span class="badge" title="Total de assessores deste supervisor">{{ totalAssessoresDoGrupo(g) }}</span>
+        </div>
+      </div>
+
+      <div class="group-card__body">
+        <div class="buckets">
+          <!-- Buckets por analista -->
+          <div class="bucket" *ngFor="let b of g.buckets">
+
+            <!-- NOME DO TIME (TOPO DO BUCKET) -->
+            <div class="bucket__title">
+              <ng-container *ngIf="editEquipeId !== b.equipeId; else editNome">
+                <div class="teamname__label" [class.is-empty]="!b.equipeNome">
+                  {{ b.equipeNome || 'Nome do time' }}
+                </div>
+                <button class="btn btn--plain" (click)="startEditEquipe(b, g.supervisor.id)">
+                  <i class="bi bi-pencil-square"></i> Editar
+                </button>
+              </ng-container>
+              <ng-template #editNome>
+                <input class="teamname__input" [(ngModel)]="editEquipeNome" maxlength="48" />
+                <div class="teamname__actions">
+                  <button class="btn btn--primary" (click)="salvarEquipeNome(b, g.supervisor.id)">
+                    <i class="bi bi-check2"></i> Salvar
+                  </button>
+                  <button class="btn btn--plain" (click)="cancelEditEquipe()">
+                    <i class="bi bi-x"></i> Cancelar
+                  </button>
+                </div>
+              </ng-template>
+            </div>
+
+            <!-- Cabeçalho do analista -->
+            <div class="bucket__head">
+              <div class="node node--ana">
+                <div class="avatar" [class.has-photo]="!!b.analista?.photoURL">
+                  <img *ngIf="b.analista?.photoURL as foto" [src]="foto" alt="">
+                  <span *ngIf="!b.analista?.photoURL">{{ inicial(b.analista?.nome || 'A') }}</span>
+                </div>
+                <div class="meta">
+                  <div class="title">{{ b.analista?.nome || 'Analista' }}</div>
+                  <div class="sub">Analista</div>
+                </div>
+                <span class="badge" title="Assessores deste analista">{{ b.assessores.length }}</span>
+              </div>
+            </div>
+
+            <div class="bucket__branch" aria-hidden="true"></div>
+
+            <div class="assessor-grid">
+              <div class="node node--ass" *ngFor="let a of b.assessores">
+                <div class="avatar" [class.has-photo]="!!a.photoURL">
+                  <img *ngIf="a.photoURL as foto" [src]="foto" alt="">
+                  <span *ngIf="!a.photoURL">{{ inicial(a.nome) }}</span>
+                </div>
+                <div class="meta">
+                  <div class="title">{{ a.nome }}</div>
+                  <div class="sub">Assessor</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Assessores desse supervisor sem analista -->
+          <div class="bucket bucket--muted" *ngIf="g.semAnalista.length">
+            <div class="bucket__title bucket__title--muted">
+              <div class="teamname__label is-empty">Sem analista</div>
+            </div>
+
+            <div class="bucket__head">
+              <div class="node node--ana node--neutral">
+                <div class="avatar"><span>∅</span></div>
+                <div class="meta">
+                  <div class="title">Sem analista</div>
+                  <div class="sub">—</div>
+                </div>
+                <span class="badge">{{ g.semAnalista.length }}</span>
+              </div>
+            </div>
+
+            <div class="bucket__branch" aria-hidden="true"></div>
+
+            <div class="assessor-grid">
+              <div class="node node--ass" *ngFor="let a of g.semAnalista">
+                <div class="avatar" [class.has-photo]="!!a.photoURL">
+                  <img *ngIf="a.photoURL as foto" [src]="foto" alt="">
+                  <span *ngIf="!a.photoURL">{{ inicial(a.nome) }}</span>
+                </div>
+                <div class="meta">
+                  <div class="title">{{ a.nome }}</div>
+                  <div class="sub">Assessor</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div> <!-- /buckets -->
+      </div>
+    </article>
+
+    <!-- GLOBAL: assessores sem supervisor (agrupados por analista) -->
+    <article class="group-card group-card--muted" *ngIf="semSupervisor().length">
+      <div class="group-card__header only">
+        <div class="node node--sup node--neutral">
+          <div class="avatar"><span>∅</span></div>
+          <div class="meta">
+            <div class="title">Assessores sem supervisor</div>
+            <div class="sub">Agrupados por analista</div>
+          </div>
+          <span class="badge">{{ totalAssessoresSemSup() }}</span>
+        </div>
+      </div>
+
+      <div class="group-card__body">
+        <div class="buckets">
+          <div class="bucket" *ngFor="let b of semSupervisor()">
+            <div class="bucket__title">
+              <div class="teamname__label">
+                {{ b.analista?.nome ? ('Time do ' + (b.analista?.nome)) : 'Sem analista' }}
+              </div>
+            </div>
+
+            <div class="bucket__head">
+              <div class="node node--ana">
+                <div class="avatar" [class.has-photo]="!!b.analista?.photoURL">
+                  <img *ngIf="b.analista?.photoURL as foto" [src]="foto" alt="">
+                  <span *ngIf="!b.analista?.photoURL">{{ inicial(b.analista?.nome || 'A') }}</span>
+                </div>
+                <div class="meta">
+                  <div class="title">{{ b.analista?.nome || 'Sem analista' }}</div>
+                  <div class="sub">{{ b.analista ? 'Analista' : '—' }}</div>
+                </div>
+                <span class="badge">{{ b.assessores.length }}</span>
+              </div>
+            </div>
+
+            <div class="bucket__branch" aria-hidden="true"></div>
+
+            <div class="assessor-grid">
+              <div class="node node--ass" *ngFor="let a of b.assessores">
+                <div class="avatar" [class.has-photo]="!!a.photoURL">
+                  <img *ngIf="a.photoURL as foto" [src]="foto" alt="">
+                  <span *ngIf="!a.photoURL">{{ inicial(a.nome) }}</span>
+                </div>
+                <div class="meta">
+                  <div class="title">{{ a.nome }}</div>
+                  <div class="sub">Assessor</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div> <!-- /buckets -->
+      </div>
+    </article>
+  </section>
+</div>

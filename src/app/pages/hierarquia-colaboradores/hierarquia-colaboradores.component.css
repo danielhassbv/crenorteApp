@@ -1,0 +1,200 @@
+/* ===== Paleta Crenorte (ajuste aqui se precisar) ===========================
+   Verde primário  -> --brand-primary            (ex.: #0f8b3b  / #0B6A2C)
+   Verde hover     -> --brand-primary-600
+   Verde claro     -> --brand-primary-050
+   Azul secundário -> --brand-secondary          (ex.: #0b3d91 / #0A2F73)
+   Azul claro      -> --brand-secondary-050
+   Cinza de borda  -> --line
+============================================================================ */
+
+:root{
+  --brand-primary:      #0f8b3b;
+  --brand-primary-600:  #0b6a2c;
+  --brand-primary-050:  #eef8f1;
+
+  --brand-secondary:    #0b3d91;
+  --brand-secondary-050:#eef2fb;
+
+  --bg:    #f7fafc;
+  --panel: #ffffff;
+  --panel-2:#f4f7fb;
+
+  --text:  #0f172a;
+  --muted: #64748b;
+  --line:  #e2e8f0;
+
+  --chip-sup: var(--brand-secondary);
+  --chip-ana: var(--brand-primary);
+  --chip-ass: #6b7280;  /* cinza neutro p/ assessor */
+
+  --warn:#f59e0b;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"}
+.org{
+  padding:16px 20px;
+  color:var(--text);
+  background:var(--bg);
+  min-height:100%;
+}
+.muted{color:var(--muted)}
+
+/* ===== Toolbar =========================================================== */
+.org__toolbar{
+  display:flex;gap:24px;align-items:center;justify-content:space-between;
+  margin-bottom:18px;flex-wrap:wrap;
+}
+.org__title h1{margin:0;font-size:22px;font-weight:700;letter-spacing:.2px}
+.org__title p{margin:4px 0 0;font-size:13px;color:var(--muted)}
+
+.org__tools{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.legend{display:flex;gap:8px;flex-wrap:wrap}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;
+  background:var(--panel);font-size:12px;border:1px solid var(--line)
+}
+.chip .dot{width:8px;height:8px;border-radius:50%}
+.chip--sup .dot{background:var(--chip-sup)}
+.chip--ana .dot{background:var(--chip-ana)}
+.chip--ass .dot{background:var(--chip-ass)}
+
+.search{position:relative}
+.search i{position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.6}
+.search__input{
+  padding:10px 12px 10px 30px;border-radius:10px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);min-width:260px;outline:none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.search__input:focus{
+  border-color: var(--brand-secondary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-secondary) 20%, transparent);
+}
+
+/* ===== States ============================================================ */
+.state{
+  padding:14px 16px;border-radius:12px;background:var(--panel);
+  border:1px dashed var(--line);font-size:14px;color:var(--muted)
+}
+.state--loading{opacity:.9}
+.state--error{border-color:#ef4444;color:#b91c1c;background:#fff1f2}
+
+/* ===== Cards/Grids ======================================================= */
+.groups{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.group-card{
+  grid-column: span 12; background:var(--panel); border:1px solid var(--line);
+  border-radius:16px; overflow:hidden;
+  box-shadow:0 6px 18px rgba(2, 8, 23, .06);
+}
+.group-card--muted{background:var(--panel-2)}
+.group-card__header{padding:16px;border-bottom:1px solid var(--line);background: var(--brand-secondary-050)}
+.group-card__header.only{border-bottom:none}
+.group-card__body{padding:12px 16px 18px}
+
+/* ===== Nodes (Supervisor/Analista/Assessor) ============================= */
+.node{display:flex;align-items:center;gap:12px}
+.node .avatar{
+  width:44px;height:44px;border-radius:50%;
+  background:#f1f5f9;border:1px solid var(--line);
+  display:grid;place-items:center;font-weight:700;color:#0b3d91;overflow:hidden
+}
+.node .avatar.has-photo{background:#fff;border:1px solid #e5e7eb}
+.node .avatar img{width:100%;height:100%;object-fit:cover}
+.node .meta .title{font-weight:600}
+.node .meta .sub{font-size:12px;color:var(--muted)}
+
+.node--sup .avatar{outline:2px solid color-mix(in srgb, var(--chip-sup) 45%, transparent)}
+.node--ana .avatar{outline:2px solid color-mix(in srgb, var(--chip-ana) 45%, transparent)}
+.node--ass .avatar{outline:2px solid color-mix(in srgb, var(--chip-ass) 45%, transparent)}
+.node--neutral .avatar{outline:2px dashed #cbd5e1; color:#94a3b8}
+
+.badge{
+  margin-left:auto;background:var(--brand-secondary-050);
+  border:1px solid color-mix(in srgb, var(--brand-secondary) 20%, #c7d2fe);
+  color:var(--brand-secondary);
+  padding:4px 10px;border-radius:999px;font-size:12px;min-width:28px;text-align:center
+}
+
+/* ===== Buckets =========================================================== */
+.buckets{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-top:8px}
+.bucket{
+  grid-column: span 12;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  border:1px solid var(--line);border-radius:14px;padding:12px;
+}
+.bucket--muted{background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%)}
+.bucket__head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.bucket__branch{height:14px;border-left:2px solid #dbe6f5;margin:8px 0 12px 22px}
+
+/* ===== Team name (editable) ============================================= */
+.teamname{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.teamname__label{
+  padding:6px 12px;border-radius:10px;border:1px dashed var(--line);
+  background:#ffffff;min-width:180px;color:#0f172a
+}
+.teamname__label.is-empty{opacity:.7}
+.teamname__input{
+  padding:8px 12px;border-radius:10px;border:1px solid var(--line);
+  background:#ffffff;color:var(--text);min-width:240px;outline:none;
+}
+.teamname__input:focus{
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 20%, transparent);
+}
+.teamname__actions{display:flex;gap:8px}
+
+/* ===== Assessores grid =================================================== */
+.assessor-grid{
+  display:grid;grid-template-columns:repeat(12,1fr);gap:10px;
+}
+.assessor-grid .node{
+  grid-column: span 6;
+  background:#ffffff;border:1px solid var(--line);border-radius:12px;padding:10px;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.assessor-grid .node:hover{
+  transform: translateY(-1px);
+  box-shadow:0 10px 18px rgba(2,8,23,.05);
+}
+
+/* ===== Responsivo ======================================================== */
+@media (min-width: 900px){
+  .group-card{grid-column: span 12}
+  .bucket{grid-column: span 6}
+  .assessor-grid .node{grid-column: span 4}
+}
+@media (min-width: 1280px){
+  .bucket{grid-column: span 4}
+  .assessor-grid .node{grid-column: span 6}
+}
+
+/* ===== Botões ============================================================ */
+.btn, .btn-icon{
+  display:inline-flex;align-items:center;gap:6px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--line);background:#ffffff;color:var(--text);padding:8px 12px;font-size:13px;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.btn--primary{
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color:#ffffff;
+}
+.btn--primary:hover{background: var(--brand-primary-600);border-color: var(--brand-primary-600)}
+.btn--plain{background:transparent}
+.btn--plain:hover{border-color:#cbd5e1;background:#f8fafc}
+.btn-icon{padding:6px 10px}
+
+/* ===== Pequenos refinamentos ============================================ */
+.group-card__header .node .meta .title{font-size:15px}
+.bucket__head .node .meta .title{font-size:14px}
+.assessor-grid .node .meta .title{font-size:14px}
+/* título do bucket (nome do time no topo) */
+.bucket__title{
+  display:flex;align-items:center;gap:10px;justify-content:space-between;
+  margin-bottom:10px;padding-bottom:8px;border-bottom:1px dashed var(--line);
+}
+.bucket__title--muted .teamname__label{opacity:.8}
+
+/* como agora o nome do time sai do .bucket__head, mantém o espaçamento */
+.bucket__head{margin-top:6px}

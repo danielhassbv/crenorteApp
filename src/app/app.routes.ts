@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './guards/auth.guard';
 import { roleGuard } from './guards/role.guard';
 import type { Papel } from './models/colaborador.model';
+import { AgendamentosListaComponent } from './pages/agendamentos/agendamentos-lista/agendamentos-lista.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
@@ -11,11 +12,15 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),
   },
+  { path: 'agendamentos', component: AgendamentosListaComponent },
   {
     path: 'acesso-negado',
     loadComponent: () =>
       import('./pages/acesso-negado/acesso-negado.component').then(m => m.AcessoNegadoComponent),
   },
+  // src/app/app.routes.ts
+  { path: 'organograma', loadComponent: () => import('./pages/hierarquia-colaboradores/hierarquia-colaboradores.component').then(m => m.HierarquiaColaboradoresComponent) },
+
 
   {
     path: 'dashboard',
@@ -104,7 +109,7 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/cadastro-form/cadastro-form.component').then(m => m.CadastroFormComponent),
   },
-    {
+  {
     path: 'relatorio-cadastros',
     canActivate: [authGuard, roleGuard],
     data: { roles: ['admin'] as Papel[] },

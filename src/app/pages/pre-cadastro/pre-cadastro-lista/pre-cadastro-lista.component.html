@@ -1,16 +1,16 @@
 <app-header></app-header>
 
-<br>
-<br>
-<br>
-<br>
-<br>
-<br>
+<br><br><br><br><br><br>
 
 <div class="container pre-cadastros-view">
 
+  <!-- ✅ Toast de feedback -->
+  <div *ngIf="toastVisivel()" class="alert alert-success shadow-sm border-0">
+    Status atualizado com sucesso!
+  </div>
+
   <!-- Header / Hero -->
-  <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center" >
+  <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center">
     <div class="d-flex align-items-center gap-3">
       <div class="crn-kicker"></div>
       <div>
@@ -18,8 +18,7 @@
         <div class="mt-1 d-flex align-items-center gap-2">
           <span class="badge-soft">Total: {{ itens().length }}</span>
           <span class="text-muted" style="font-size:.9rem">Visão geral dos seus cadastros recentes</span>
-          <br>
-          <br>
+          <br><br>
         </div>
       </div>
     </div>
@@ -27,21 +26,22 @@
       <a routerLink="/pre-cadastro/novo" class="btn btn-principal">
         <i class="bi bi-plus-lg me-1"></i> Novo
       </a>
+      <a routerLink="/agendamentos" class="btn btn-outline-success">
+        <i class="bi bi-calendar2-week me-1"></i> Meus agendamentos
+      </a>
     </div>
   </div>
 
-  <!-- Toolbar: busca, filtros, ordenação -->
+  <!-- Toolbar -->
   <div class="card shadow-sm border-0 mb-3">
     <div class="card-body py-3">
       <div class="row g-2 align-items-center">
-        <!-- Busca -->
         <div class="col-12">
           <div class="input-group">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
             <input type="search" class="form-control" placeholder="Buscar por nome, CPF, e-mail…">
           </div>
         </div>
-
       </div>
     </div>
   </div>
@@ -58,7 +58,7 @@
 
       <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
         <div class="col" *ngFor="let i of itens()">
-          <div class="crn-card h-100 d-flex flex-column">
+          <div class="crn-card h-100 d-flex flex-column" [class.crn-card--highlight]="i.id === highlightId()">
             <!-- Cabeçalho -->
             <div class="crn-card__header">
               <div class="avatar-inicial">
@@ -104,11 +104,27 @@
                   {{ i.createdAt?.toDate ? (i.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : '—' }}
                 </span>
               </div>
+
+              <!-- Status de agendamento -->
+              <div class="crn-field">
+                <span class="crn-label">Agendamento</span>
+                <span class="crn-value">
+                  <span class="badge" [ngClass]="{
+                      'text-bg-secondary': (i.agendamentoStatus || 'nao_agendado')==='nao_agendado',
+                      'text-bg-info': (i.agendamentoStatus || 'nao_agendado')==='agendado',
+                      'text-bg-success': (i.agendamentoStatus || 'nao_agendado')==='visitado'
+                    }">
+                    {{
+                    (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
+                    (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
+                    }}
+                  </span>
+                </span>
+              </div>
             </div>
 
             <!-- Ações -->
             <div class="crn-card__actions mt-3 d-flex flex-column gap-3">
-              <!-- Linha 1: três ações menores -->
               <div class="d-flex gap-2">
                 <button type="button" class="btn btn-outline-primary flex-fill" (click)="abrirVer(i)">
                   <i class="bi bi-eye me-1"></i> Ver
@@ -121,13 +137,37 @@
                 </button>
               </div>
 
-              <!-- Linha 2: botão CTA sozinho -->
-              <button type="button" class="btn btn-success w-100" (click)="iniciarCadastro(i)">
-                <i class="bi bi-clipboard-check me-1"></i> Iniciar cadastro
-              </button>
+              <div class="d-flex gap-2">
+                <!-- 
+                <button type="button" class="btn btn-success flex-fill" (click)="iniciarCadastro(i)">
+                  <i class="bi bi-clipboard-check me-1"></i> Iniciar cadastro
+                </button>
+-->
+                <a class="btn btn-outline-success flex-fill" *ngIf="i.telefone" [href]="whatsHref(i.telefone)"
+                  target="_blank" rel="noopener">
+                  <i class="bi bi-whatsapp me-1"></i> Entrar em contato
+                </a>
+
+                <button type="button" class="btn btn-outline-secondary flex-fill" (click)="abrirAgendar(i)"
+                  [disabled]="(i.agendamentoStatus||'nao_agendado')==='agendado'" title="Criar agendamento de visita">
+                  <i class="bi bi-calendar-plus me-1"></i>
+                  {{ (i.agendamentoStatus||'nao_agendado')==='agendado' ? 'Já agendado' : 'Marcar visita' }}
+                </button>
+              </div>
+
+              <div class="d-flex gap-2">
+
+                <button type="button" class="btn btn-outline-primary flex-fill"
+                  *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'" (click)="marcarVisitado(i)">
+                  <i class="bi bi-check2-circle me-1"></i> Marcar como visitado
+                </button>
+
+                <button type="button" class="btn btn-outline-danger flex-fill"
+                  *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'" (click)="cancelarAgendamento(i)">
+                  <i class="bi bi-x-circle me-1"></i> Cancelar agendamento
+                </button>
+              </div>
             </div>
-
-
           </div>
         </div>
       </div>
@@ -177,60 +217,38 @@
   </div>
 </div>
 
-<!-- ===== MODAL: EDITAR ===== (sem validações visuais) -->
-<div *ngIf="modalEditarAberto()" class="crn-modal" role="dialog" aria-modal="true">
+<!-- ===== MODAL: AGENDAR VISITA ===== -->
+<div *ngIf="modalAgendarAberto()" class="crn-modal" role="dialog" aria-modal="true">
   <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
-  <div class="crn-modal__dialog" role="document" aria-labelledby="modalEditarTitulo">
+  <div class="crn-modal__dialog" role="document" aria-labelledby="modalAgendarTitulo">
     <div class="crn-modal__header">
-      <h5 id="modalEditarTitulo" class="mb-0">Editar Pré-cadastro</h5>
+      <h5 id="modalAgendarTitulo" class="mb-0">Agendar visita</h5>
       <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
     </div>
 
-    <form #formEdit="ngForm" (ngSubmit)="salvarEdicao()" *ngIf="editModel() as m" novalidate>
-      <div class="crn-modal__body">
-        <div class="row g-3">
+    <div class="crn-modal__body" *ngIf="itemAgendar() as a">
+      <p class="mb-3">
+        <strong>Cliente:</strong> {{ a.nomeCompleto }} <br>
+        <small class="text-muted">CPF {{ a.cpf || '—' }} • {{ a.telefone || 'sem telefone' }}</small>
+      </p>
 
-          <div class="col-12">
-            <label class="form-label">Nome completo</label>
-            <input type="text" class="form-control" name="nomeCompleto" [(ngModel)]="m.nomeCompleto"
-              autocomplete="name">
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label">CPF</label>
-            <input type="text" class="form-control" name="cpf" [(ngModel)]="m.cpf" mask="000.000.000-00"
-              [dropSpecialCharacters]="true" [validation]="false" inputmode="numeric" autocomplete="off">
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label">Telefone</label>
-            <input type="text" class="form-control" name="telefone" [(ngModel)]="m.telefone" mask="(00) 00000-0000"
-              [dropSpecialCharacters]="true" [validation]="false" inputmode="tel" autocomplete="tel-national">
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label">E-mail</label>
-            <input type="text" class="form-control" name="email" [(ngModel)]="m.email" autocomplete="email">
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label">Bairro</label>
-            <input type="text" class="form-control" name="bairro" [(ngModel)]="m.bairro" autocomplete="address-level2">
-          </div>
-
-          <div class="col-12">
-            <label class="form-label">Endereço</label>
-            <input type="text" class="form-control" name="endereco" [(ngModel)]="m.endereco"
-              autocomplete="street-address">
-          </div>
-
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Data</label>
+          <input type="date" class="form-control" [(ngModel)]="agData" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Horário</label>
+          <input type="time" class="form-control" [(ngModel)]="agHora" />
         </div>
       </div>
+    </div>
 
-      <div class="crn-modal__footer">
-        <button type="button" class="btn btn-light" (click)="fecharModais()">Cancelar</button>
-        <button type="submit" class="btn btn-success" [disabled]="saving()">Salvar</button>
-      </div>
-    </form>
+    <div class="crn-modal__footer">
+      <button class="btn btn-light" (click)="fecharModais()">Cancelar</button>
+      <button class="btn btn-success" (click)="salvarAgendamento()" [disabled]="agSalvando()">
+        <i class="bi bi-check2 me-1"></i> Salvar agendamento
+      </button>
+    </div>
   </div>
 </div>

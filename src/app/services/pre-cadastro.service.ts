@@ -99,8 +99,8 @@ export class PreCadastroService {
 
       const ms = (x: any) =>
         x?.toMillis ? x.toMillis() :
-        x?.toDate ? x.toDate().getTime() :
-        (typeof x === 'number' ? x : 0);
+          x?.toDate ? x.toDate().getTime() :
+            (typeof x === 'number' ? x : 0);
 
       rows.sort((a: any, b: any) => (ms(b.createdAt) - ms(a.createdAt)));
       return rows;
@@ -147,4 +147,12 @@ export class PreCadastroService {
     }
     await deleteDoc(doc(this.db, 'pre_cadastros', id));
   }
+
+  async atualizarStatusAgendamento(id: string, status: 'nao_agendado' | 'agendado' | 'visitado', agendamentoId?: string | null) {
+    return this.atualizar(id, {
+      agendamentoStatus: status,
+      agendamentoId: agendamentoId ?? null,
+    } as any);
+  }
+
 }

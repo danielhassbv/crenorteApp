@@ -162,3 +162,17 @@
 @media (max-width:420px){
   .crn-card__actions > .d-flex{ flex-direction:column; }
 }
+
+/* anima flash ao focar um card vindo da tela de Agendamentos */
+.crn-card--highlight {
+  outline: 2px solid #006e37;
+  box-shadow: 0 0 0 3px rgba(0,110,55,.15);
+  border-radius: 12px;
+}
+@keyframes crnFlash {
+  0% { background-color: #eaf6f0; }
+  100% { background-color: #ffffff; }
+}
+.crn-card--flash {
+  animation: crnFlash 1.4s ease-in-out 1;
+}

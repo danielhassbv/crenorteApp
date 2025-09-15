@@ -8,7 +8,6 @@ import {
   getCountFromServer,
   deleteDoc,
   doc,
-  getDoc,
   QuerySnapshot,
   DocumentData,
 } from 'firebase/firestore';
@@ -20,17 +19,37 @@ type SortDir = 'asc' | 'desc';
 
 type PreCadastroList = {
   id: string;
-  _path: string;             // caminho completo no Firestore (para deletar / editar com segurança)
+  _path: string;
+
   nomeCompleto?: string;
+
   telefone?: string;
   contato?: string;
   email?: string;
+
   cidade?: string;
   endereco?: string;
   enderecoCompleto?: string;
-  createdAt?: any;           // Timestamp | ISO | Date | number
+  bairro?: string; // <-- adicionado
+
+  createdAt?: any;
   createdByUid?: string;
   createdByNome?: string;
+
+  origem?: string | null;
+
+  agendado?: boolean;
+  agendamento?: {
+    data?: any;
+    hora?: string;
+    status?: string;
+    observacao?: string;
+  } | null;
+
+  agendamentoEm?: any;
+  agendaData?: any;
+  agendaHora?: string | null;
+  agendamentoStatus?: string | null;
 };
 
 @Component({
@@ -46,18 +65,27 @@ export class ListagemPreCadastrosComponent implements OnInit {
   presFiltrados: PreCadastroList[] = [];
   presPaginados: PreCadastroList[] = [];
 
+  // Filtros
   filtro: {
     nome: string;
     dataDe?: string;
     dataAte?: string;
-  } = { nome: '', dataDe: '', dataAte: '' };
+    agendado: 'todos' | 'sim' | 'nao';
+    origem: string;
+    bairro: string; // <-- adicionado
+  } = { nome: '', dataDe: '', dataAte: '', agendado: 'todos', origem: '', bairro: '' };
+
+  // Opções dinâmicas
+  origensDisponiveis: string[] = [];
+  bairrosDisponiveis: string[] = []; // <-- adicionado
 
   itensPorPagina = 20;
   paginaAtual = 1;
   totalPaginas = 1;
   totalEstimado = 0;
 
-  sortField: 'nomeCompleto' | 'createdAt' = 'createdAt';
+  // agora inclui 'bairro' e 'assessorNome'
+  sortField: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro' = 'createdAt';
   sortDir: SortDir = 'desc';
 
   carregando = false;
@@ -109,10 +137,71 @@ export class ListagemPreCadastrosComponent implements OnInit {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
   }
 
+  public toBRTime(hhmm?: string | null): string {
+    if (!hhmm) return '';
+    const clean = hhmm.replace(/[^\d]/g, '');
+    if (clean.length === 4) return `${clean.slice(0,2)}:${clean.slice(2,4)}`;
+    if (clean.length === 3) return `0${clean[0]}:${clean.slice(1)}`;
+    return hhmm;
+  }
+
   public getAssessorNome(c: PreCadastroList): string {
     if (c.createdByNome && c.createdByNome.trim()) return this.displayName(c.createdByNome);
     if (c.createdByUid) return `UID: ${c.createdByUid.slice(0,6)}…`;
     return '—';
+  }
+
+  public getOrigem(c: PreCadastroList): string {
+    const o = (c.origem ?? (c as any)?.origemNome ?? '').toString().trim();
+    return o || '—';
+  }
+
+  public getBairro(c: PreCadastroList): string {
+    // tenta vários campos/formatos
+    const b =
+      c.bairro ??
+      (c as any)?.enderecoBairro ??
+      (c as any)?.addressBairro ??
+      this.extrairBairroDeEndereco(c.enderecoCompleto || c.endereco || '');
+    return (b || '').toString().trim() || '—';
+  }
+
+  private extrairBairroDeEndereco(endereco: string): string {
+    // heurística simples: procura por "Bairro: XYZ" ou pega o trecho antes de " - Cidade"
+    const m1 = endereco.match(/bairro[:\s-]*([^,-]+)/i);
+    if (m1?.[1]) return m1[1].trim();
+    const m2 = endereco.split(' - ')[0];
+    return m2?.trim() || '';
+  }
+
+  // ===== Agendamento =====
+  public isAgendado(c: PreCadastroList): boolean {
+    if (c.agendado === true) return true;
+    if (c.agendamento?.data || c.agendamentoEm || c.agendaData) return true;
+    if (c.agendamento?.status || c.agendamentoStatus) return true;
+    return false;
+  }
+
+  private getAgendaData(c: PreCadastroList): Date | null {
+    return this.asDate(c.agendamento?.data ?? c.agendamentoEm ?? c.agendaData ?? null);
+  }
+
+  private getAgendaHora(c: PreCadastroList): string | null {
+    return c.agendamento?.hora ?? c.agendaHora ?? null;
+  }
+
+  private getAgendaStatus(c: PreCadastroList): string {
+    return (c.agendamento?.status ?? c.agendamentoStatus ?? '').toString();
+  }
+
+  public getAgendamentoResumo(c: PreCadastroList): string {
+    if (!this.isAgendado(c)) return '—';
+    const d = this.getAgendaData(c);
+    const data = d ? this.toBRDate(d) : '';
+    const hora = this.toBRTime(this.getAgendaHora(c) || '');
+    const status = this.getAgendaStatus(c);
+    const pedacos = [data, hora].filter(Boolean).join(' ');
+    return [pedacos || 'Agendado', status].filter(Boolean).join(' · ');
   }
 
   // ====================== CARGA ======================
@@ -152,6 +241,15 @@ export class ListagemPreCadastrosComponent implements OnInit {
         this.presAll.push({ id: d.id, _path: d.ref.path, ...dados });
       });
 
+      // opções dinâmicas (origens e bairros)
+      this.origensDisponiveis = Array.from(new Set(
+        this.presAll.map(c => this.getOrigem(c)).filter(o => o && o !== '—')
+      )).sort((a,b)=> this.normalize(a).localeCompare(this.normalize(b)));
+
+      this.bairrosDisponiveis = Array.from(new Set(
+        this.presAll.map(c => this.getBairro(c)).filter(b => b && b !== '—')
+      )).sort((a,b)=> this.normalize(a).localeCompare(this.normalize(b)));
+
       this.aplicarFiltrosLocais(true);
     } catch (e) {
       console.error(e);
@@ -184,8 +282,10 @@ export class ListagemPreCadastrosComponent implements OnInit {
     const nl = this.normalize(this.filtro.nome);
     let arr = [...this.presAll];
 
+    // nome
     if (nl) arr = arr.filter(c => this.normalize(this.displayName(c.nomeCompleto || '')).includes(nl));
 
+    // datas
     if (this.filtro.dataDe || this.filtro.dataAte) {
       const start = this.filtro.dataDe ? new Date(this.filtro.dataDe + 'T00:00:00') : null;
       const end   = this.filtro.dataAte ? new Date(this.filtro.dataAte + 'T23:59:59.999') : null;
@@ -197,29 +297,61 @@ export class ListagemPreCadastrosComponent implements OnInit {
       });
     }
 
+    // agendado
+    if (this.filtro.agendado !== 'todos') {
+      const want = this.filtro.agendado === 'sim';
+      arr = arr.filter(c => this.isAgendado(c) === want);
+    }
+
+    // origem
+    if (this.filtro.origem) {
+      const alvo = this.normalize(this.filtro.origem);
+      arr = arr.filter(c => this.normalize(this.getOrigem(c)) === alvo);
+    }
+
+    // bairro
+    if (this.filtro.bairro) {
+      const alvoB = this.normalize(this.filtro.bairro);
+      arr = arr.filter(c => this.normalize(this.getBairro(c)) === alvoB);
+    }
+
+    // ordenar
     this.presFiltrados = this.ordenarArray(arr, this.sortField, this.sortDir);
+
     if (resetPagina) this.paginaAtual = 1;
     this.recalcularPaginacao();
   }
 
-  ordenarPor(campo: 'nomeCompleto' | 'createdAt') {
+  ordenarPor(campo: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro') {
     if (this.sortField === campo) this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
     else { this.sortField = campo; this.sortDir = 'asc'; }
     this.presFiltrados = this.ordenarArray(this.presFiltrados, this.sortField, this.sortDir);
     this.recalcularPaginacao();
   }
 
-  private ordenarArray(arr: PreCadastroList[], campo: 'nomeCompleto' | 'createdAt', dir: SortDir): PreCadastroList[] {
+  private ordenarArray(
+    arr: PreCadastroList[],
+    campo: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro',
+    dir: SortDir
+  ): PreCadastroList[] {
     const mult = dir === 'asc' ? 1 : -1;
     return [...arr].sort((a, b) => {
       let va: any; let vb: any;
+
       if (campo === 'createdAt') {
         va = this.asDate(a.createdAt)?.getTime() ?? 0;
         vb = this.asDate(b.createdAt)?.getTime() ?? 0;
+      } else if (campo === 'assessorNome') {
+        va = this.normalize(this.getAssessorNome(a));
+        vb = this.normalize(this.getAssessorNome(b));
+      } else if (campo === 'bairro') {
+        va = this.normalize(this.getBairro(a));
+        vb = this.normalize(this.getBairro(b));
       } else {
-        va = this.displayName(a.nomeCompleto || '').toLowerCase();
-        vb = this.displayName(b.nomeCompleto || '').toLowerCase();
+        va = this.normalize(this.displayName(a.nomeCompleto || ''));
+        vb = this.normalize(this.displayName(b.nomeCompleto || ''));
       }
+
       if (va < vb) return -1*mult;
       if (va > vb) return  1*mult;
       return 0;
@@ -228,8 +360,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
 
   // ====================== EDITAR / REMOVER ======================
   editarPreCadastro(item: PreCadastroList) {
-    // Passa o mínimo necessário para o form buscar TUDO direto do Firestore:
-    // /pre-cadastro/novo?edit=true&id=...&path=...
     const url = `/pre-cadastro/novo?edit=true&id=${encodeURIComponent(item.id)}&path=${encodeURIComponent(item._path)}`;
     window.location.href = url;
   }
@@ -242,6 +372,16 @@ export class ListagemPreCadastrosComponent implements OnInit {
       await deleteDoc(doc(db, path));
       const key = path;
       this.presAll = this.presAll.filter(c => (c._path || `pre_cadastros/${c.id}`) !== key);
+
+      // Atualiza opções dinâmicas
+      this.origensDisponiveis = Array.from(new Set(
+        this.presAll.map(c => this.getOrigem(c)).filter(o => o && o !== '—')
+      )).sort((a,b)=> this.normalize(a).localeCompare(this.normalize(b)));
+
+      this.bairrosDisponiveis = Array.from(new Set(
+        this.presAll.map(c => this.getBairro(c)).filter(b => b && b !== '—')
+      )).sort((a,b)=> this.normalize(a).localeCompare(this.normalize(b)));
+
       this.aplicarFiltrosLocais();
     } catch (e) {
       console.error(e);
