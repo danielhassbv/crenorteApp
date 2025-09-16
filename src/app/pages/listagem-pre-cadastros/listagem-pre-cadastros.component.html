@@ -50,13 +50,8 @@
         <div class="col-md-4">
           <label class="form-label">Buscar por nome</label>
           <div class="input-group">
-            <input
-              type="text"
-              class="form-control"
-              placeholder="Digite o nome"
-              [(ngModel)]="filtro.nome"
-              (ngModelChange)="onFiltroNomeChange($event)"
-            />
+            <input type="text" class="form-control" placeholder="Digite o nome" [(ngModel)]="filtro.nome"
+              (ngModelChange)="onFiltroNomeChange($event)" />
             <button class="btn btn-success" (click)="aplicarFiltrosLocais(true)">
               <i class="fas fa-search"></i>
             </button>
@@ -160,15 +155,11 @@
           <td>{{ toBRDate(c.createdAt) }}</td>
 
           <td class="text-truncate" style="max-width: 220px;">
-            <span
-              class="badge me-1"
-              [class.text-bg-success]="isAgendado(c)"
-              [class.text-bg-secondary]="!isAgendado(c)"
-            >
+            <span class="badge me-1" [class.text-bg-success]="isAgendado(c)" [class.text-bg-secondary]="!isAgendado(c)">
               {{ isAgendado(c) ? 'Agendado' : 'Sem agendamento' }}
             </span>
-            <small class="text-muted d-block">{{ getAgendamentoResumo(c) }}</small>
           </td>
+
 
           <td class="text-truncate" style="max-width: 180px;">
             {{ getBairro(c) }}
@@ -199,10 +190,7 @@
 
   <!-- Lista Mobile (sm e abaixo) -->
   <div class="d-block d-md-none">
-    <div
-      *ngFor="let c of presPaginados; trackBy: trackById"
-      class="mobile-card shadow-sm border rounded-4 p-3 mb-2"
-    >
+    <div *ngFor="let c of presPaginados; trackBy: trackById" class="mobile-card shadow-sm border rounded-4 p-3 mb-2">
       <div class="d-flex flex-column gap-1">
         <div class="header-row mb-1">
           <h6 class="mb-0 fw-bold text-success-emphasis title-truncate">

@@ -32,11 +32,10 @@ type PreCadastroRow = {
   rota: string;
   origem: string;
 
-  // path e flags auxiliares
   _path: string;
   _eDeAssessor?: boolean;
 
-  // “quem criou” (assessor designado)
+  // já designado/enviado
   createdByUid?: string | null;
   createdByNome?: string | null;
 };
@@ -47,7 +46,7 @@ type Assessor = {
   email?: string;
   status?: string;
   papel?: string;
-  rota?: string; // exibido em parênteses no seletor
+  rota?: string;
 };
 
 @Component({
@@ -71,12 +70,18 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   all: PreCadastroRow[] = [];
   view: PreCadastroRow[] = [];
 
-  // assessores / designação
+  // assessores / designação (sem select)
   assessores: Assessor[] = [];
-  selecaoAssessor: Record<string, string> = {}; // por id => uid do assessor
+  selecaoAssessor: Record<string, string> = {};       // rowId -> uid
+  selecaoAssessorNome: Record<string, string> = {};   // rowId -> nome exibido
   designando: Record<string, boolean> = {};
-  okDesignado: Record<string, boolean> = {};
   errDesignado: Record<string, boolean> = {};
+
+  // modal
+  showAssessorModal = false;
+  assessorBusca = '';
+  assessoresFiltrados: Assessor[] = [];
+  rowSelecionado: PreCadastroRow | null = null;
 
   async ngOnInit(): Promise<void> {
     await this.carregarAssessores();
@@ -87,7 +92,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.unsub?.();
   }
 
-  // ---------- Firestore: carregar TODOS (sem orderBy para não exigir índice) ----------
+  // ---------- carregar pré-cadastros ----------
   private carregarTodos() {
     this.carregando.set(true);
     this.erro.set(null);
@@ -115,7 +120,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             _path: path,
             _eDeAssessor: path.startsWith('colaboradores/'),
 
-            // quem “criou” (assessor designado)
             createdByUid: data?.createdByUid ?? null,
             createdByNome: data?.createdByNome ?? null,
           };
@@ -123,6 +127,14 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
 
         // ordena por data desc no cliente
         rows.sort((a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0));
+
+        // pré-preenche a seleção para linhas já enviadas
+        rows.forEach((r) => {
+          if (r.createdByUid) {
+            this.selecaoAssessor[r.id] = r.createdByUid!;
+            this.selecaoAssessorNome[r.id] = r.createdByNome || this.resolveAssessorNome(r.createdByUid!);
+          }
+        });
 
         this.all = rows;
         this.aplicarFiltros();
@@ -136,7 +148,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     );
   }
 
-  // ---------- Firestore: carregar assessores ativos (assessor/admin) ----------
+  // ---------- carregar assessores ----------
   private async carregarAssessores() {
     try {
       const col = collection(db, 'colaboradores');
@@ -159,9 +171,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             rota: x?.rota ?? '',
           } as Assessor;
         })
-        .sort((a, b) =>
-          (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? '')
-        );
+        .sort((a, b) => (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? ''));
     } catch (e) {
       console.error('[Triagem] Falha ao carregar assessores:', e);
       this.assessores = [];
@@ -177,9 +187,39 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return null;
   }
 
+  private normalize(s: string): string {
+    return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
   initial(s: string): string {
     const t = (s ?? '').toString().trim();
     return t ? t.charAt(0).toUpperCase() : '?';
+  }
+
+  nomeAssessor(a: Assessor): string {
+    return (a?.nome || a?.email || a?.uid || '').toString();
+  }
+
+  resolveAssessorNome(uid: string): string {
+    const a = this.assessores.find((x) => x.uid === uid);
+    return this.nomeAssessor(a as Assessor) || uid;
+  }
+
+  isEnviado(r: PreCadastroRow): boolean {
+    return !!(r.createdByUid && String(r.createdByUid).trim());
+  }
+
+  actionLabel(r: PreCadastroRow): string {
+    return this.isEnviado(r) ? 'Atualizar' : 'Enviar';
+  }
+
+  isEnviarDisabled(r: PreCadastroRow): boolean {
+    const sel = this.selecaoAssessor[r.id];
+    if (!sel) return true;
+    if (this.designando[r.id]) return true;
+    // se já enviado e não mudou o assessor, não habilita
+    if (this.isEnviado(r) && sel === r.createdByUid) return true;
+    return false;
   }
 
   // ---------- filtros ----------
@@ -200,39 +240,35 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
 
   aplicarFiltros() {
     let list = [...this.all];
-    const term = (this.busca || '').toLowerCase();
-    const rota = (this.filtroRota || '').toLowerCase();
+    const term = this.normalize(this.busca);
+    const rota = this.normalize(this.filtroRota);
 
-    if (rota) {
-      list = list.filter((p) => (p.rota || '').toLowerCase().includes(rota));
-    }
+    if (rota) list = list.filter((p) => this.normalize(p.rota).includes(rota));
     if (term) {
       list = list.filter((p) => {
-        const blob = `${p.nome} ${p.cpf} ${p.telefone} ${p.email} ${p.endereco} ${p.bairro} ${p.rota} ${p.origem}`.toLowerCase();
+        const blob = this.normalize(
+          `${p.nome} ${p.cpf} ${p.telefone} ${p.email} ${p.endereco} ${p.bairro} ${p.rota} ${p.origem}`
+        );
         return blob.includes(term);
       });
     }
-
     if (this.somenteNaoDesignados) {
-      list = list.filter(
-        (p) => !(p.createdByUid && String(p.createdByUid).trim()) && !p._eDeAssessor
-      );
+      list = list.filter((p) => !this.isEnviado(p) && !p._eDeAssessor);
     }
 
     this.view = list;
   }
 
-  // ========== ação: designar para assessor (como “quem criou”) ==========
+  // ========== enviar/atualizar ==========
   async designarParaAssessor(r: PreCadastroRow) {
     const uid = this.selecaoAssessor[r.id];
     if (!uid) return;
 
     this.designando[r.id] = true;
-    this.okDesignado[r.id] = false;
     this.errDesignado[r.id] = false;
 
     try {
-      // 1) buscar dados do colaborador escolhido
+      // 1) dados do colaborador
       const colabRef = doc(db, 'colaboradores', uid);
       const colabSnap = await getDoc(colabRef);
       if (!colabSnap.exists()) throw new Error('Colaborador (assessor) não encontrado.');
@@ -240,35 +276,71 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       const colab = colabSnap.data() as any;
       const assessorNome = colab?.nome ?? colab?.displayName ?? null;
 
-      // 2) atualizar o documento original com “quem criou”
+      // 2) patch no doc de origem
       const srcRef = doc(db, r._path);
       const patch = {
         createdByUid: uid,
         createdByNome: assessorNome,
-        // metadados úteis
         designadoEm: serverTimestamp(),
-        designadoPara: uid, // opcional manter
+        designadoPara: uid,
       };
       await setDoc(srcRef, patch, { merge: true });
 
-      // 3) feedback visual imediato
+      // 3) feedback visual
       const idx = this.all.findIndex((x) => x.id === r.id && x._path === r._path);
       if (idx >= 0) {
-        this.all[idx] = {
-          ...this.all[idx],
-          createdByUid: uid,
-          createdByNome: assessorNome,
-        };
+        this.all[idx] = { ...this.all[idx], createdByUid: uid, createdByNome: assessorNome };
+        // atualiza o nome exibido na pílula
+        this.selecaoAssessorNome[r.id] = assessorNome || this.resolveAssessorNome(uid);
         this.aplicarFiltros();
       }
-
-      this.okDesignado[r.id] = true;
     } catch (e) {
       console.error('[Triagem] designarParaAssessor erro:', e);
       this.errDesignado[r.id] = true;
-      alert('Não foi possível designar. Verifique as regras e tente novamente.');
+      alert('Não foi possível enviar/atualizar. Tente novamente.');
     } finally {
       this.designando[r.id] = false;
     }
+  }
+
+  // ===== Modal =====
+  abrirModalAssessor(row: PreCadastroRow) {
+    this.rowSelecionado = row;
+    this.assessorBusca = '';
+    this.filtrarAssessores();
+    this.showAssessorModal = true;
+  }
+
+  fecharModalAssessor() {
+    this.showAssessorModal = false;
+    this.rowSelecionado = null;
+  }
+
+  filtrarAssessores() {
+    const t = this.normalize(this.assessorBusca);
+    let arr = [...this.assessores];
+    if (t) {
+      arr = arr.filter((a) =>
+        this.normalize(`${a.nome ?? ''} ${a.email ?? ''} ${a.rota ?? ''}`).includes(t)
+      );
+    }
+    arr.sort((a, b) => (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? ''));
+    this.assessoresFiltrados = arr;
+  }
+
+  escolherAssessor(a: Assessor) {
+    if (!this.rowSelecionado) return;
+    this.selecaoAssessor[this.rowSelecionado.id] = a.uid;
+    this.selecaoAssessorNome[this.rowSelecionado.id] = this.nomeAssessor(a);
+    this.fecharModalAssessor();
+  }
+
+  async escolherEEnviar(a: Assessor) {
+    if (!this.rowSelecionado) return;
+    this.selecaoAssessor[this.rowSelecionado.id] = a.uid;
+    this.selecaoAssessorNome[this.rowSelecionado.id] = this.nomeAssessor(a);
+    const row = this.rowSelecionado;
+    this.fecharModalAssessor();
+    await this.designarParaAssessor(row);
   }
 }

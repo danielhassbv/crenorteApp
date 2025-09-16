@@ -85,3 +85,28 @@
   background:var(--green);
   border:none;
 }
+/* tabela */
+.break-anywhere { word-break: break-word; white-space: normal; }
+
+/* “pílula” com o nome do assessor selecionado */
+.selected-pill {
+  border: 1px dashed rgba(0,0,0,.2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-width: 160px;
+  text-align: left;
+  background: #fff;
+}
+
+/* ===== modal simples sem JS do bootstrap ===== */
+.overlay { position: fixed; inset: 0; z-index: 1050; }
+.overlay__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.4); }
+.overlay__panel {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: 6vh; width: min(960px, 94vw); max-height: 88vh;
+  background: #fff; border-radius: 12px; box-shadow: 0 10px 40px rgba(16,24,40,.2);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.overlay__header { padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,.08); display:flex; align-items:center; justify-content:space-between; }
+.overlay__body { padding: 12px 16px; }
+.overlay__list { max-height: 62vh; overflow: auto; border: 1px solid rgba(0,0,0,.06); border-radius: 8px; }
