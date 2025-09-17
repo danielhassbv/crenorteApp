@@ -1,124 +1,229 @@
-<div class="container py-4">
-  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-3">
-    <div><h2 class="mb-1">Central de Triagem</h2></div>
+<div class="container py-4 px-5 triagem" [class.is-compact]="density==='compact'" [class.drawer-open]="showFilters">
+  <!-- ===================== STICKY TOOLBAR ===================== -->
+  <div class="triagem-toolbar py-4 px-2">
+    <div class="triagem-toolbar__row align-items-end mb-3 px-4">
+      <h2 class="mb-0">Central de Triagem</h2>
+      <div class="triagem-toolbar__controls">
+        <div class="input-with-icon mb-3">
+          <i class="bi bi-search" aria-hidden="true"></i>
+          <input class="form-control form-control" placeholder="Buscar nome, CPF, telefone, e-mail, endereço..."
+            [(ngModel)]="busca" (ngModelChange)="onBusca($event)" aria-label="Campo de busca geral" />
+        </div>
 
-    <div class="d-flex flex-column flex-md-row gap-2 w-100 w-md-auto">
-      <input
-        class="form-control"
-        placeholder="Buscar nome, CPF, telefone, e-mail, endereço…"
-        [(ngModel)]="busca"
-        (ngModelChange)="onBusca($event)" />
+        <!-- Filtros (abre drawer no mobile) -->
+        <button type="button" class="btn btn-outline-secondary btn-filtros d-lg-none" (click)="toggleFilters()"
+          [attr.aria-expanded]="showFilters" aria-controls="filtersDrawerPanel">
+          <i class="bi bi-sliders"></i>
+          Filtros
+        </button>
+      </div>
     </div>
   </div>
 
-  <div *ngIf="carregando()" class="alert alert-light">Carregando…</div>
-  <div *ngIf="!carregando() && erro()" class="alert alert-danger">{{ erro() }}</div>
-  <div *ngIf="!carregando() && !erro() && !view.length" class="alert alert-light">Nenhum pré-cadastro encontrado.</div>
+  <!-- ===================== LAYOUT: SIDEBAR + CONTENT ===================== -->
+  <div class="triagem-layout mt-3 gap-4">
+    <!-- Sidebar fixa (desktop) -->
+    <aside class="filters-sidebar d-none d-lg-block px-2 py-4" style="border-radius: 10px;">
+      <ng-container *ngTemplateOutlet="filtersContent"></ng-container>
+    </aside>
 
-  <div *ngIf="!carregando() && !erro() && view.length" class="card shadow-sm">
-    <div class="table-responsive">
-      <table class="table align-middle mb-0">
-        <thead class="table-light">
-          <tr>
-            <th style="min-width: 260px;">Nome</th>
-            <th class="d-none d-md-table-cell" style="min-width: 150px;">Data</th>
-            <th class="d-none d-xl-table-cell" style="min-width: 260px;">Bairro</th>
-            <th style="min-width: 420px;">Designar</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let r of view">
-            <td>
-              <div class="d-flex align-items-center gap-2">
-                <div class="rounded-circle bg-secondary text-white d-inline-flex justify-content-center align-items-center"
-                     style="width:32px; height:32px;">
-                  {{ initial(r.nome) }}
-                </div>
-                <div>
-                  <div class="fw-semibold text-truncate" style="max-width: 260px;" [title]="r.nome">
-                    {{ r.nome || '—' }}
+    <!-- Conteúdo -->
+    <main class="triagem-content">
+      <!-- STATES -->
+      <div *ngIf="carregando()" class="alert alert-light mb-4">Carregando…</div>
+      <div *ngIf="!carregando() && erro()" class="alert alert-danger mb-4">{{ erro() }}</div>
+      <div *ngIf="!carregando() && !erro() && !view.length" class="alert alert-light mb-4">Nenhum pré-cadastro
+        encontrado.</div>
+
+      <!-- LISTA EM CARDS -->
+      <div class="container">
+        <div *ngIf="!carregando() && !erro() && view.length" class="card shadow-sm p-2 p-sm-3 p-md-4">
+          <ul class="list-unstyled mb-0">
+            <li *ngFor="let r of view; trackBy: trackById" class="triagem-card row-hover px-4 py-4">
+              <!-- Linha 1 -->
+              <div class="tc-row1 gap-3">
+                <div class="tc-id gap-3">
+                  <div class="avatar" [attr.aria-label]="'Inicial de '+(r.nome || 'sem nome')">{{ initial(r.nome) }}
                   </div>
-
-                  <div class="small text-muted" *ngIf="r.createdByNome">Assessor: {{ r.createdByNome }}</div>
-
-                  <div class="small text-muted d-md-none">
-                    <span *ngIf="r.telefone">📞 {{ r.telefone }}</span>
+                  <div class="min-w-0">
+                    <div class="fw-semibold text-truncate fs-5 mb-1" [title]="r.nome">{{ r.nome || '—' }}</div>
+                    <div class="small text-muted" *ngIf="r.createdByNome">Assessor: {{ r.createdByNome }}</div>
                   </div>
                 </div>
+
+                <div class="tc-cta gap-2">
+                  <span *ngIf="isEnviado(r)" class="badge text-bg-success me-2">Enviado</span>
+                  <button class="btn btn-sm px-3"
+                    [ngClass]="{ 'btn-atualizar': isEnviado(r), 'btn-enviar': !isEnviado(r) }"
+                    [disabled]="isEnviarDisabled(r)" (click)="designarParaAssessor(r)"
+                    [attr.aria-label]="actionLabel(r) + ' para ' + (selecaoAssessorNome[r.id] || 'assessor')">
+                    <span *ngIf="!designando[r.id]">{{ actionLabel(r) }}</span>
+                    <span *ngIf="designando[r.id]">Enviando…</span>
+                  </button>
+                </div>
               </div>
-            </td>
 
-            <td class="d-none d-md-table-cell">
-              <small class="text-muted">{{ r.data ? (r.data | date:'dd/MM/yyyy HH:mm') : '—' }}</small>
-            </td>
-
-            <td class="d-none d-xl-table-cell">
-              <small class="text-muted text-wrap break-anywhere" [title]="r.endereco">{{ r.bairro || '—' }}</small>
-            </td>
-
-            <td>
-              <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2">
-                <!-- Badge de status (não esconde as ações) -->
-                <span *ngIf="isEnviado(r)" class="badge text-bg-success">Enviado</span>
-
-                <button type="button" class="btn btn-outline-secondary" (click)="abrirModalAssessor(r)">
-                  Procurar
-                </button>
-
-                <div class="selected-pill flex-grow-1" [title]="selecaoAssessorNome[r.id] || 'Nenhum selecionado'">
-                  {{ selecaoAssessorNome[r.id] || '—' }}
+              <!-- Linha 2 -->
+              <div class="tc-row2 mt-3 gap-3">
+                <div class="chips gap-2 gap-md-3">
+                  <span class="chip" *ngIf="r.data" title="Data do pré-cadastro">🗓 {{ r.data | date:'dd/MM/yyyy HH:mm'
+                    }}</span>
+                  <span class="chip" *ngIf="r.bairro" title="Bairro">📍 {{ r.bairro }}</span>
+                  <span class="chip" *ngIf="r.origemLabel" title="Origem">📌 {{ r.origemLabel }}</span>
                 </div>
 
-                <button class="btn btn-principal"
-                        [disabled]="isEnviarDisabled(r)"
-                        (click)="designarParaAssessor(r)">
-                  <span *ngIf="!designando[r.id]">{{ actionLabel(r) }}</span>
-                  <span *ngIf="designando[r.id]">Enviando…</span>
-                </button>
-
-                <small class="text-danger" *ngIf="errDesignado[r.id]">Falha ao enviar/atualizar.</small>
+                <div class="tc-actions gap-2 gap-md-3">
+                  <button type="button" class="btn btn-outline-secondary btn-sm px-3" (click)="abrirModalAssessor(r)">
+                    Procurar
+                  </button>
+                  <div class="selected-pill selected-pill--sm ms-1 ms-sm-2"
+                    [title]="selecaoAssessorNome[r.id] || 'Nenhum selecionado'">
+                    {{ selecaoAssessorNome[r.id] || '—' }}
+                  </div>
+                  <small class="text-danger ms-1" *ngIf="errDesignado[r.id]">Falha ao enviar/atualizar.</small>
+                </div>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ===== Drawer lateral (mobile/tablet) ===== -->
+  <div class="filters-drawer d-lg-none" [class.open]="showFilters" id="filtersDrawerPanel">
+    <div class="filters-backdrop" (click)="closeFilters()"></div>
+    <div class="filters-panel" role="dialog" aria-modal="true" aria-label="Filtros">
+      <div class="filters-panel__header px-2 py-4">
+        <strong>Filtros</strong>
+        <button type="button" class="btn-close" aria-label="Fechar" (click)="closeFilters()"></button>
+      </div>
+      <div class="filters-panel__body">
+        <ng-container *ngTemplateOutlet="filtersContent"></ng-container>
+      </div>
+      <div class="filters-panel__footer">
+        <button class="btn btn-link p-0 me-3" (click)="limparFiltros()">Limpar</button>
+        <button class="btn btn-primary" (click)="closeFilters()">Aplicar</button>
+      </div>
     </div>
   </div>
+
+  <!-- ===== TEMPLATE compartilhado dos filtros (colapsável por grupo) ===== -->
+  <ng-template #filtersContent>
+    <div class="filters-group mb-4">
+      <button class="filters-group__header" type="button" (click)="toggleGroup('status')"
+        [attr.aria-expanded]="isOpen('status')">
+        <span>Status</span>
+        <i class="bi" [ngClass]="isOpen('status') ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+      <div class="filters-group__body pt-2" *ngIf="isOpen('status')">
+        <div class="chips gap-2 gap-md-3">
+          <button class="chip chip-toggle" [class.active]="isStatusActive('todos')"
+            (click)="setStatus('todos')">Todos</button>
+          <button class="chip chip-toggle" [class.active]="isStatusActive('enviados')"
+            (click)="setStatus('enviados')">Enviados</button>
+          <button class="chip chip-toggle" [class.active]="isStatusActive('nao')" (click)="setStatus('nao')">Não
+            designados</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters-group mb-4">
+      <button class="filters-group__header" type="button" (click)="toggleGroup('periodo')"
+        [attr.aria-expanded]="isOpen('periodo')">
+        <span>Período</span>
+        <i class="bi" [ngClass]="isOpen('periodo') ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+      <div class="filters-group__body pt-2" *ngIf="isOpen('periodo')">
+        <div class="chips gap-2 gap-md-3">
+          <button class="chip chip-toggle" [class.active]="isPeriodoActive('todos')"
+            (click)="setPeriodo('todos')">Todos</button>
+          <button class="chip chip-toggle" [class.active]="isPeriodoActive('hoje')"
+            (click)="setPeriodo('hoje')">Hoje</button>
+          <button class="chip chip-toggle" [class.active]="isPeriodoActive('7')" (click)="setPeriodo('7')">Últimos 7
+            dias</button>
+          <button class="chip chip-toggle" [class.active]="isPeriodoActive('30')" (click)="setPeriodo('30')">Últimos 30
+            dias</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters-group mb-4">
+      <button class="filters-group__header" type="button" (click)="toggleGroup('origem')"
+        [attr.aria-expanded]="isOpen('origem')">
+        <span>Origem</span>
+        <i class="bi" [ngClass]="isOpen('origem') ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+      <div class="filters-group__body pt-2" *ngIf="isOpen('origem')">
+        <div class="chips gap-2 gap-md-3">
+          <button class="chip chip-toggle" [class.active]="!filtroOrigemKey" (click)="setOrigem('')">Todas</button>
+          <ng-container *ngFor="let o of origens">
+            <button class="chip chip-toggle" [class.active]="isOrigemActive(o.key)" (click)="setOrigem(o.key)">
+              {{ o.label }} <span class="opacity-50" *ngIf="o.count">({{ o.count }})</span>
+            </button>
+          </ng-container>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters-group mb-3">
+      <button class="filters-group__header" type="button" (click)="toggleGroup('bairros')"
+        [attr.aria-expanded]="isOpen('bairros')">
+        <span>Bairros populares</span>
+        <i class="bi" [ngClass]="isOpen('bairros') ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+      <div class="filters-group__body pt-2" *ngIf="isOpen('bairros')">
+        <div class="chips gap-2 gap-md-3">
+          <button class="chip chip-toggle" [class.active]="!filtroBairro" (click)="setBairro('')">Todos</button>
+          <ng-container *ngFor="let b of topBairros">
+            <button class="chip chip-toggle" [class.active]="isBairroActive(b.label)" (click)="setBairro(b.label)">
+              {{ b.label }} <span class="opacity-50">({{ b.count }})</span>
+            </button>
+          </ng-container>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters-actions d-none d-lg-flex pt-2">
+      <button class="btn btn-link p-0" (click)="limparFiltros()">Limpar filtros</button>
+    </div>
+  </ng-template>
 </div>
 
 <!-- ===== MODAL DE SELEÇÃO DE ASSESSOR ===== -->
 <div class="overlay" *ngIf="showAssessorModal">
   <div class="overlay__backdrop" (click)="fecharModalAssessor()"></div>
 
-  <div class="overlay__panel">
-    <div class="overlay__header">
+  <div class="overlay__panel" role="dialog" aria-modal="true" aria-label="Selecionar assessor">
+    <div class="overlay__header  py-2 px-2">
       <h5 class="mb-0">Selecionar assessor</h5>
-      <button type="button" class="btn-close" aria-label="Close" (click)="fecharModalAssessor()"></button>
+      <button type="button" class="btn-close" aria-label="Fechar" (click)="fecharModalAssessor()"></button>
     </div>
 
-    <div class="overlay__body">
+    <div class="overlay__body  py-4 px-4">
       <div class="input-group mb-3">
         <span class="input-group-text">Buscar</span>
-        <input type="text" class="form-control" placeholder="Nome, e-mail ou rota…"
-               [(ngModel)]="assessorBusca" (ngModelChange)="filtrarAssessores()" autofocus />
+        <input type="text" class="form-control" placeholder="Nome, e-mail ou rota…" [(ngModel)]="assessorBusca"
+          (ngModelChange)="filtrarAssessores()" autofocus />
       </div>
 
       <div class="list-group list-group-flush overlay__list">
-        <div class="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2"
-             *ngFor="let a of assessoresFiltrados">
+        <div
+          class="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 py-3"
+          *ngFor="let a of assessoresFiltrados">
           <div class="me-2">
-            <div class="fw-semibold">{{ a.nome || a.email || a.uid }}</div>
+            <div class="fw-semibold mb-1">{{ a.nome || a.email || a.uid }}</div>
             <div class="small text-muted break-anywhere" *ngIf="a.rota">{{ a.rota }}</div>
-            <div class="small text-muted" *ngIf="a.email && a.nome">{{ a.email }}</div>
           </div>
 
           <div class="d-flex gap-2">
-            <button class="btn btn-outline-primary btn-sm" (click)="escolherAssessor(a)">Selecionar</button>
-            <button class="btn btn-primary btn-sm" (click)="escolherEEnviar(a)">Selecionar &amp; {{ actionLabel(rowSelecionado!) }}</button>
+            <button class="btn btn-outline-primary btn-sm px-3" (click)="escolherAssessor(a)">Selecionar</button>
+
           </div>
         </div>
 
-        <div class="list-group-item text-muted" *ngIf="!assessoresFiltrados.length">
+        <div class="list-group-item text-muted py-3" *ngIf="!assessoresFiltrados.length">
           Nenhum assessor encontrado para “{{ assessorBusca }}”.
         </div>
       </div>
