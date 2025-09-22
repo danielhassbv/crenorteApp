@@ -3,6 +3,7 @@ import { authGuard } from './guards/auth.guard';
 import { roleGuard } from './guards/role.guard';
 import type { Papel } from './models/colaborador.model';
 import { AgendamentosListaComponent } from './pages/agendamentos/agendamentos-lista/agendamentos-lista.component';
+import { ListagemAgendamentosComponent } from './pages/listagem-agendamentos/listagem-agendamentos.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
@@ -12,7 +13,11 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),
   },
+  
   { path: 'agendamentos', component: AgendamentosListaComponent },
+
+  { path: 'listagem-agendamentos', component: ListagemAgendamentosComponent },
+
   {
     path: 'acesso-negado',
     loadComponent: () =>
@@ -20,7 +25,6 @@ export const routes: Routes = [
   },
   // src/app/app.routes.ts
   { path: 'organograma', loadComponent: () => import('./pages/hierarquia-colaboradores/hierarquia-colaboradores.component').then(m => m.HierarquiaColaboradoresComponent) },
-
 
   {
     path: 'dashboard',
