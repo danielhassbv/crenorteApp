@@ -41,20 +41,14 @@
           <label class="form-label mb-1">Buscar por nome</label>
           <div class="input-group">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
-            <input
-              type="search"
-              class="form-control"
-              placeholder="Digite o nome do cliente…"
-              [ngModel]="searchTerm()"
+            <input type="search" class="form-control" placeholder="Digite o nome do cliente…" [ngModel]="searchTerm()"
               (ngModelChange)="searchTerm.set($event)" />
           </div>
         </div>
 
         <div class="col-6 col-lg-2">
           <label class="form-label mb-1">Status</label>
-          <select class="form-select"
-                  [ngModel]="filtroStatus()"
-                  (ngModelChange)="filtroStatus.set($event)">
+          <select class="form-select" [ngModel]="filtroStatus()" (ngModelChange)="filtroStatus.set($event)">
             <option value="todos">Todos</option>
             <option value="nao_agendado">Não agendado</option>
             <option value="agendado">Agendado</option>
@@ -64,16 +58,14 @@
 
         <div class="col-6 col-lg-2">
           <label class="form-label mb-1">Data início</label>
-          <input type="date" class="form-control"
-                 [ngModel]="filtroDataIni()"
-                 (ngModelChange)="filtroDataIni.set($event)" />
+          <input type="date" class="form-control" [ngModel]="filtroDataIni()"
+            (ngModelChange)="filtroDataIni.set($event)" />
         </div>
 
         <div class="col-6 col-lg-2">
           <label class="form-label mb-1">Data fim</label>
-          <input type="date" class="form-control"
-                 [ngModel]="filtroDataFim()"
-                 (ngModelChange)="filtroDataFim.set($event)" />
+          <input type="date" class="form-control" [ngModel]="filtroDataFim()"
+            (ngModelChange)="filtroDataFim.set($event)" />
         </div>
 
       </div>
@@ -115,28 +107,52 @@
                 <span class="crn-label">CPF</span>
                 <span class="crn-value"><span class="badge text-bg-light fw-medium">{{ i.cpf || '—' }}</span></span>
               </div>
+
               <div class="crn-field">
                 <span class="crn-label">Telefone</span>
                 <span class="crn-value"><i class="bi bi-telephone text-crn me-1"></i> {{ i.telefone || '—' }}</span>
               </div>
+
               <div class="crn-field">
                 <span class="crn-label">E-mail</span>
-                <span class="crn-value text-break"><i class="bi bi-envelope text-muted me-1"></i> {{ i.email || '—' }}</span>
+                <span class="crn-value text-break"><i class="bi bi-envelope text-muted me-1"></i> {{ i.email || '—'
+                  }}</span>
               </div>
+
               <div class="crn-field">
                 <span class="crn-label">Endereço</span>
                 <span class="crn-value text-break">{{ i.endereco || '—' }}</span>
               </div>
+
               <div class="crn-field">
                 <span class="crn-label">Bairro</span>
                 <span class="crn-value text-break">{{ i.bairro || '—' }}</span>
               </div>
+
               <div class="crn-field">
                 <span class="crn-label">Criado em</span>
                 <span class="crn-value">
-                  {{ i.createdAt?.toDate ? (i.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : '—' }}
+                  {{ i.createdAt?.toDate ? (i.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : (i.createdAt |
+                  date:'dd/MM/yyyy HH:mm') }}
                 </span>
               </div>
+
+              <div class="crn-field">
+                <span class="crn-label">Valor solicitado</span>
+                <span class="crn-value fw-semibold">
+                  <ng-container *ngIf="i?.valorSolicitadoFormatado?.trim(); else calcBRL">
+                    {{ i.valorSolicitadoFormatado }}
+                  </ng-container>
+                  <ng-template #calcBRL>
+                    <ng-container
+                      *ngIf="i?.valorSolicitado !== null && i?.valorSolicitado !== undefined; else noValorSolic2">
+                      {{ i.valorSolicitado | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}
+                    </ng-container>
+                    <ng-template #noValorSolic2>—</ng-template>
+                  </ng-template>
+                </span>
+              </div>
+
 
               <!-- Status de agendamento -->
               <div class="crn-field">
@@ -148,8 +164,8 @@
                       'text-bg-success': (i.agendamentoStatus || 'nao_agendado')==='visitado'
                     }">
                     {{
-                      (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
-                      (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
+                    (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
+                    (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
                     }}
                   </span>
                 </span>
@@ -199,7 +215,8 @@
         </div>
       </div>
 
-      <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">Nenhum registro encontrado para os filtros/busca.</div>
+      <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">Nenhum registro encontrado para os
+        filtros/busca.</div>
     </div>
 
     <!-- Paginação -->
@@ -241,7 +258,8 @@
         <div class="min-w-0">
           <div class="fw-semibold truncate-2 text-crn-dark">{{ v.nomeCompleto || '—' }}</div>
           <small class="text-muted">
-            {{ v.createdAt?.toDate ? (v.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : '—' }}
+            {{ v.createdAt?.toDate ? (v.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : (v.createdAt | date:'dd/MM/yyyy
+            HH:mm') }}
           </small>
         </div>
       </div>
@@ -249,18 +267,195 @@
       <dl class="row mb-0">
         <dt class="col-sm-3">CPF</dt>
         <dd class="col-sm-9">{{ v.cpf || '—' }}</dd>
+
         <dt class="col-sm-3">Telefone</dt>
         <dd class="col-sm-9">{{ v.telefone || '—' }}</dd>
+
         <dt class="col-sm-3">E-mail</dt>
         <dd class="col-sm-9 text-break">{{ v.email || '—' }}</dd>
+
         <dt class="col-sm-3">Endereço</dt>
         <dd class="col-sm-9 text-break">{{ v.endereco || '—' }}</dd>
+
         <dt class="col-sm-3">Bairro</dt>
         <dd class="col-sm-9 text-break">{{ v.bairro || '—' }}</dd>
+
+        <dt class="col-sm-3">Valor solicitado</dt>
+        <dd class="col-sm-9">
+          <ng-container *ngIf="v?.valorSolicitado != null; else noValorVer">
+            {{ v.valorSolicitado | currency:'BRL':'symbol-narrow':'1.0-2':'pt-BR' }}
+          </ng-container>
+          <ng-template #noValorVer>—</ng-template>
+        </dd>
       </dl>
     </div>
     <div class="crn-modal__footer">
       <button class="btn btn-secondary" (click)="fecharModais()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: EDITAR (inclui Fluxo de Caixa) ===== -->
+<div *ngIf="modalEditarAberto()" class="crn-modal" role="dialog" aria-modal="true">
+  <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
+  <div class="crn-modal__dialog" role="document" aria-labelledby="modalEditarTitulo">
+    <div class="crn-modal__header">
+      <h5 id="modalEditarTitulo" class="mb-0">Editar Pré-cadastro</h5>
+      <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
+    </div>
+
+    <div class="crn-modal__body" *ngIf="editModel() as m">
+      <!-- Dados básicos -->
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label">Nome completo</label>
+          <input class="form-control" [ngModel]="m.nomeCompleto"
+            (ngModelChange)="onEditChange('nomeCompleto', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">CPF</label>
+          <input class="form-control" [ngModel]="m.cpf" (ngModelChange)="onEditChange('cpf', $event)" />
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Telefone</label>
+          <input class="form-control" [ngModel]="m.telefone" (ngModelChange)="onEditChange('telefone', $event)" />
+        </div>
+        <div class="col-md-8">
+          <label class="form-label">E-mail</label>
+          <input type="email" class="form-control" [ngModel]="m.email"
+            (ngModelChange)="onEditChange('email', $event)" />
+        </div>
+
+        <div class="col-md-8">
+          <label class="form-label">Endereço</label>
+          <input class="form-control" [ngModel]="m.endereco" (ngModelChange)="onEditChange('endereco', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Bairro</label>
+          <input class="form-control" [ngModel]="m.bairro" (ngModelChange)="onEditChange('bairro', $event)" />
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Valor solicitado</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.valorSolicitado"
+            (ngModelChange)="onEditChange('valorSolicitado', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Parcelas</label>
+          <input type="number" class="form-control" [ngModel]="m.parcelas"
+            (ngModelChange)="onEditChange('parcelas', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Valor da parcela</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.valorParcela"
+            (ngModelChange)="onEditChange('valorParcela', $event)" />
+        </div>
+      </div>
+
+      <hr class="my-4">
+
+      <!-- Fluxo de Caixa -->
+      <div class="d-flex align-items-center justify-content-between">
+        <h6 class="mb-0">Fluxo de Caixa</h6>
+        <small class="text-muted">Preencha os campos para manter os dados de fluxo de caixa atualizados</small>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-md-4">
+          <label class="form-label">Faturamento mensal</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.faturamentoMensal"
+            (ngModelChange)="onFluxoNumberChange('faturamentoMensal', $event)" />
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-12"><strong>Custos fixos</strong></div>
+        <div class="col-md-4">
+          <label class="form-label">Aluguel</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.aluguel"
+            (ngModelChange)="onFluxoNumberChange('fixos.aluguel', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Salários</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.salarios"
+            (ngModelChange)="onFluxoNumberChange('fixos.salarios', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Energia elétrica</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.energiaEletrica"
+            (ngModelChange)="onFluxoNumberChange('fixos.energiaEletrica', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Água</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.agua"
+            (ngModelChange)="onFluxoNumberChange('fixos.agua', $event)" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Telefone/Internet</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.telefoneInternet"
+            (ngModelChange)="onFluxoNumberChange('fixos.telefoneInternet', $event)" />
+        </div>
+      </div>
+
+      <div class="row g-3 mt-3">
+        <div class="col-12"><strong>Custos variáveis</strong></div>
+        <div class="col-md-3">
+          <label class="form-label">Matéria-prima</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.materiaPrima"
+            (ngModelChange)="onFluxoNumberChange('variaveis.materiaPrima', $event)" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Insumos</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.insumos"
+            (ngModelChange)="onFluxoNumberChange('variaveis.insumos', $event)" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Frete</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.frete"
+            (ngModelChange)="onFluxoNumberChange('variaveis.frete', $event)" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Transporte</label>
+          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.transporte"
+            (ngModelChange)="onFluxoNumberChange('variaveis.transporte', $event)" />
+        </div>
+
+        <div class="col-12 mt-2 d-flex align-items-center justify-content-between">
+          <strong>Outros custos variáveis</strong>
+          <button class="btn btn-sm btn-outline-primary" type="button" (click)="addOutro()">
+            <i class="bi bi-plus-lg"></i> Adicionar
+          </button>
+        </div>
+
+        <div class="col-12" *ngIf="m.fluxoCaixa?.variaveis?.outros?.length; else semOutros">
+          <div class="row g-2" *ngFor="let o of m.fluxoCaixa?.variaveis?.outros; let idx = index">
+            <div class="col-md-7">
+              <input class="form-control" placeholder="Descrição" [ngModel]="o.nome"
+                (ngModelChange)="onOutroNomeChange(idx, $event)" />
+            </div>
+            <div class="col-md-3">
+              <input type="number" step="0.01" class="form-control" placeholder="Valor" [ngModel]="o.valor"
+                (ngModelChange)="onOutroValorChange(idx, $event)" />
+            </div>
+            <div class="col-md-2 d-grid">
+              <button type="button" class="btn btn-outline-danger" (click)="removeOutro(idx)">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <ng-template #semOutros>
+          <div class="col-12 text-muted">Nenhum item adicional.</div>
+        </ng-template>
+      </div>
+    </div>
+
+    <div class="crn-modal__footer">
+      <button class="btn btn-light" (click)="fecharModais()">Cancelar</button>
+      <button class="btn btn-success" (click)="salvarEdicao()" [disabled]="saving()">
+        <i class="bi bi-check2 me-1"></i> Salvar alterações
+      </button>
     </div>
   </div>
 </div>

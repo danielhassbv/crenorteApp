@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { PreCadastroService } from '../../../services/pre-cadastro.service';
 import { Auth, user } from '@angular/fire/auth';
 import { Subscription } from 'rxjs';
-import { PreCadastro } from '../../../models/pre-cadastro.model';
+import { PreCadastro, FluxoCaixa } from '../../../models/pre-cadastro.model';
 import { HeaderComponent } from '../../shared/header/header.component';
 import { AgendamentoService } from '../../../services/agendamento.service';
 import { Timestamp } from '@angular/fire/firestore';
@@ -31,7 +31,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   private sub?: Subscription;
 
   // ====== UI STATE ======
-  // busca
   searchTerm = signal<string>('');
 
   // filtros
@@ -70,7 +69,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   constructor() {
     // sempre que busca/filtros mudarem, voltar para a primeira página
     effect(() => {
-      // leitura reativa:
       this.searchTerm();
       this.filtroStatus();
       this.filtroHasPhone();
@@ -142,7 +140,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     if (!d) return '';
     const core = d.startsWith('55') ? d : `55${d}`;
     return `https://wa.me/${core}`;
-    // dica: se quiser mensagem automática: +`?text=${encodeURIComponent('Olá! Vi seu pré-cadastro...')}`
   }
 
   // ===== Derived UI data =====
@@ -169,30 +166,24 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     const dtFim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
 
     return this.itens().filter(i => {
-      // busca por nome (ignora acentos/maiúsculas)
       if (term) {
         const nome = this.normalize(i.nomeCompleto ?? (i as any).nome ?? '');
         if (!nome.includes(term)) return false;
       }
 
-      // status
       const statusAtual = (i.agendamentoStatus || 'nao_agendado') as 'nao_agendado' | 'agendado' | 'visitado';
       if (st !== 'todos' && statusAtual !== st) return false;
 
-      // tem telefone?
       const temTel = !!(i.telefone && this.onlyDigits(i.telefone).length >= 10);
       if (hasPhone === 'sim' && !temTel) return false;
       if (hasPhone === 'nao' && temTel) return false;
 
-      // tem e-mail?
       const temEmail = !!((i.email ?? '').trim());
       if (hasEmail === 'sim' && !temEmail) return false;
       if (hasEmail === 'nao' && temEmail) return false;
 
-      // bairro
       if (bairro && (i.bairro ?? '') !== bairro) return false;
 
-      // intervalo de datas (createdAt)
       if (dtIni || dtFim) {
         const created = this.toJSDate(i.createdAt);
         if (!created) return false;
@@ -234,17 +225,41 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   // ===== Abertura/fechamento modais =====
   abrirVer(i: PreCadastro) { this.viewItem.set(i); this.modalVerAberto.set(true); }
 
+  private defaultFluxo(): FluxoCaixa {
+    return {
+      faturamentoMensal: 0,
+      fixos: {
+        aluguel: 0,
+        salarios: 0,
+        energiaEletrica: 0,
+        agua: 0,
+        telefoneInternet: 0
+      },
+      variaveis: {
+        materiaPrima: 0,
+        insumos: 0,
+        frete: 0,
+        transporte: 0,
+        outros: []
+      }
+    };
+  }
+
   abrirEditar(i: PreCadastro) {
     if (!i?.id) { console.warn('Item sem ID'); return; }
+    // Clona e garante fluxoCaixa não-nulo para edição
+    const fluxo = i.fluxoCaixa ? JSON.parse(JSON.stringify(i.fluxoCaixa)) as FluxoCaixa : this.defaultFluxo();
     this.editModel.set({
       ...(i as any),
       id: i.id,
-      cpf: this.onlyDigits(i.cpf as any),
-      telefone: this.onlyDigits(i.telefone as any),
+      // normaliza strings principais
+      cpf: (i.cpf ?? '').trim(),
+      telefone: (i.telefone ?? '').trim(),
       email: (i.email ?? '').trim(),
       nomeCompleto: (i.nomeCompleto ?? '').trim(),
       bairro: i.bairro ?? '',
-      endereco: i.endereco ?? ''
+      endereco: i.endereco ?? '',
+      fluxoCaixa: fluxo
     });
     this.modalEditarAberto.set(true);
   }
@@ -260,6 +275,90 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.agHora = '';
   }
 
+  // ===== Atualização do editModel (top-level, sem arrow/spread no template) =====
+  onEditChange<K extends keyof PreCadastroEdit>(prop: K, value: PreCadastroEdit[K]) {
+    const m = this.editModel();
+    if (!m) return;
+
+    // números top-level que você pode editar aqui
+    const numericProps = new Set(['valorSolicitado', 'parcelas', 'valorParcela']);
+
+    let v: any = value;
+    if (numericProps.has(prop as string) && typeof value === 'string') {
+      v = value === '' ? undefined : Number(value);
+    }
+
+    this.editModel.set({ ...(m as any), [prop]: v });
+  }
+
+  // ===== Atualização do fluxoCaixa (aninhado) =====
+  onFluxoNumberChange(path: string, value: string | number) {
+    // path exemplos:
+    // 'faturamentoMensal'
+    // 'fixos.aluguel'
+    // 'variaveis.materiaPrima'
+    // 'variaveis.outros[3].valor'  (aqui cuidaremos via helpers específicos, ver mais abaixo)
+    const m = this.editModel();
+    if (!m) return;
+    const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
+
+    // converte para número
+    const num = typeof value === 'string' ? (value === '' ? 0 : Number(value)) : value;
+
+    const setNested = (obj: any, p: string[], val: any) => {
+      if (p.length === 1) { obj[p[0]] = val; return; }
+      const [head, ...rest] = p;
+      if (!(head in obj) || typeof obj[head] !== 'object' || obj[head] === null) obj[head] = {};
+      setNested(obj[head], rest, val);
+    };
+
+    setNested(fluxo as any, path.split('.'), num);
+
+    this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
+  }
+
+  // ===== Outros (lista dinâmica) =====
+  addOutro() {
+    const m = this.editModel();
+    if (!m) return;
+    const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
+    const arr = fluxo.variaveis?.outros ?? [];
+    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }) };
+    fluxo.variaveis.outros = [...arr, { nome: '', valor: 0 }];
+    this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
+  }
+
+  removeOutro(index: number) {
+    const m = this.editModel();
+    if (!m || !m.fluxoCaixa?.variaveis?.outros) return;
+    const fluxo = { ...m.fluxoCaixa };
+    fluxo.variaveis = { ...fluxo.variaveis, outros: fluxo.variaveis.outros.filter((_, i) => i !== index) };
+    this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
+  }
+
+  onOutroNomeChange(index: number, value: string) {
+    const m = this.editModel();
+    if (!m) return;
+    const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
+    const outros = [...(fluxo.variaveis?.outros ?? [])];
+    if (!outros[index]) outros[index] = { nome: '', valor: 0 };
+    outros[index] = { ...outros[index], nome: value };
+    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }), outros };
+    this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
+  }
+
+  onOutroValorChange(index: number, value: string | number) {
+    const m = this.editModel();
+    if (!m) return;
+    const num = typeof value === 'string' ? (value === '' ? 0 : Number(value)) : value;
+    const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
+    const outros = [...(fluxo.variaveis?.outros ?? [])];
+    if (!outros[index]) outros[index] = { nome: '', valor: 0 };
+    outros[index] = { ...outros[index], valor: Number(num) };
+    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }), outros };
+    this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
+  }
+
   // ===== CRUD =====
   async salvarEdicao() {
     const m = this.editModel();
@@ -267,13 +366,22 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
     this.saving.set(true);
     try {
+      // Monta patch aderente ao SEU modelo
       const patch: Partial<PreCadastro> = {
-        nomeCompleto: m.nomeCompleto ?? null as any,
-        cpf: this.onlyDigits(m.cpf as any) ?? null as any,
-        telefone: this.onlyDigits(m.telefone as any) ?? null as any,
-        email: (m.email ?? '').trim() || null as any,
-        bairro: (m.bairro ?? '').trim() || null as any,
-        endereco: (m.endereco ?? '').trim() || null as any,
+        nomeCompleto: (m.nomeCompleto ?? '').trim(),
+        cpf: (m.cpf ?? '').trim(),
+        telefone: (m.telefone ?? '').trim(),
+        email: (m.email ?? '').trim(),
+        bairro: (m.bairro ?? '').trim(),
+        endereco: (m.endereco ?? '').trim(),
+        origem: m.origem ?? '',
+
+        // Financeiro
+        valorSolicitado: typeof m.valorSolicitado === 'number' ? m.valorSolicitado : m.valorSolicitado ? Number(m.valorSolicitado) : undefined,
+        parcelas: m.parcelas ?? null,
+        valorParcela: typeof m.valorParcela === 'number' ? m.valorParcela : m.valorParcela ? Number(m.valorParcela) : undefined,
+        fluxoCaixa: m.fluxoCaixa ? { ...m.fluxoCaixa } : undefined,
+        fluxoCaixaTotais: m.fluxoCaixaTotais ?? undefined,
       };
 
       await this.service.atualizar(m.id, patch);
@@ -353,16 +461,16 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       const dataHora = this.combineToTimestamp(data, hora);
       const agId = await this.agService.criar({
         preCadastroId: pre.id,
-        clienteNome: pre.nomeCompleto,
-        clienteCpf: pre.cpf || null,
-        clienteTelefone: pre.telefone || null,
-        clienteEmail: pre.email || null,
-        clienteEndereco: pre.endereco || null,
-        clienteBairro: pre.bairro || null,
+        clienteNome: pre.nomeCompleto ?? null,
+        clienteCpf: pre.cpf ?? null,
+        clienteTelefone: pre.telefone ?? null,
+        clienteEmail: pre.email ?? null,
+        clienteEndereco: pre.endereco ?? null,
+        clienteBairro: pre.bairro ?? null,
         dataHora,
-        assessorUid: this.currentUserUid,
-        assessorNome: this.currentUserNome || null,
-        createdByUid: this.currentUserUid,
+        assessorUid: this.currentUserUid!,
+        assessorNome: this.currentUserNome ?? null,
+        createdByUid: this.currentUserUid!,
         status: 'agendado'
       });
 
@@ -414,7 +522,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     if (!ok) return;
 
     try {
-      // se o doc de agendamento já tiver sido removido, ignore
       try { await this.agService.remover(agId); }
       catch (e: any) {
         if (e?.code === 'not-found' || /No document to delete|NOT_FOUND/i.test(e?.message || '')) {
