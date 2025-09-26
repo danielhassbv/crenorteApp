@@ -15,8 +15,9 @@
       <div class="crn-kicker"></div>
       <div>
         <h3 class="mb-0 text-crn-dark fw-bold">Meus Pré-cadastros</h3>
-        <div class="mt-1 d-flex align-items-center gap-2">
-          <span class="badge-soft">Total: {{ itens().length }}</span>
+        <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
+          <span class="badge-soft">Total: {{ totalGeral() }}</span>
+          <span class="badge-soft">Filtrados: {{ totalFiltrado() }}</span>
           <span class="text-muted" style="font-size:.9rem">Visão geral dos seus cadastros recentes</span>
           <br><br>
         </div>
@@ -32,16 +33,49 @@
     </div>
   </div>
 
-  <!-- Toolbar -->
+  <!-- Toolbar: Busca + Filtros -->
   <div class="card shadow-sm border-0 mb-3">
     <div class="card-body py-3">
-      <div class="row g-2 align-items-center">
-        <div class="col-12">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-lg-4">
+          <label class="form-label mb-1">Buscar por nome</label>
           <div class="input-group">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
-            <input type="search" class="form-control" placeholder="Buscar por nome, CPF, e-mail…">
+            <input
+              type="search"
+              class="form-control"
+              placeholder="Digite o nome do cliente…"
+              [ngModel]="searchTerm()"
+              (ngModelChange)="searchTerm.set($event)" />
           </div>
         </div>
+
+        <div class="col-6 col-lg-2">
+          <label class="form-label mb-1">Status</label>
+          <select class="form-select"
+                  [ngModel]="filtroStatus()"
+                  (ngModelChange)="filtroStatus.set($event)">
+            <option value="todos">Todos</option>
+            <option value="nao_agendado">Não agendado</option>
+            <option value="agendado">Agendado</option>
+            <option value="visitado">Visita realizada</option>
+          </select>
+        </div>
+
+        <div class="col-6 col-lg-2">
+          <label class="form-label mb-1">Data início</label>
+          <input type="date" class="form-control"
+                 [ngModel]="filtroDataIni()"
+                 (ngModelChange)="filtroDataIni.set($event)" />
+        </div>
+
+        <div class="col-6 col-lg-2">
+          <label class="form-label mb-1">Data fim</label>
+          <input type="date" class="form-control"
+                 [ngModel]="filtroDataFim()"
+                 (ngModelChange)="filtroDataFim.set($event)" />
+        </div>
+
       </div>
     </div>
   </div>
@@ -57,7 +91,7 @@
     <div class="card-body">
 
       <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
-        <div class="col" *ngFor="let i of itens()">
+        <div class="col" *ngFor="let i of pagedItems()">
           <div class="crn-card h-100 d-flex flex-column" [class.crn-card--highlight]="i.id === highlightId()">
             <!-- Cabeçalho -->
             <div class="crn-card__header">
@@ -87,8 +121,7 @@
               </div>
               <div class="crn-field">
                 <span class="crn-label">E-mail</span>
-                <span class="crn-value text-break"><i class="bi bi-envelope text-muted me-1"></i> {{ i.email || '—'
-                  }}</span>
+                <span class="crn-value text-break"><i class="bi bi-envelope text-muted me-1"></i> {{ i.email || '—' }}</span>
               </div>
               <div class="crn-field">
                 <span class="crn-label">Endereço</span>
@@ -115,8 +148,8 @@
                       'text-bg-success': (i.agendamentoStatus || 'nao_agendado')==='visitado'
                     }">
                     {{
-                    (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
-                    (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
+                      (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
+                      (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
                     }}
                   </span>
                 </span>
@@ -138,11 +171,6 @@
               </div>
 
               <div class="d-flex gap-2">
-                <!-- 
-                <button type="button" class="btn btn-success flex-fill" (click)="iniciarCadastro(i)">
-                  <i class="bi bi-clipboard-check me-1"></i> Iniciar cadastro
-                </button>
--->
                 <a class="btn btn-outline-success flex-fill" *ngIf="i.telefone" [href]="whatsHref(i.telefone)"
                   target="_blank" rel="noopener">
                   <i class="bi bi-whatsapp me-1"></i> Entrar em contato
@@ -156,7 +184,6 @@
               </div>
 
               <div class="d-flex gap-2">
-
                 <button type="button" class="btn btn-outline-primary flex-fill"
                   *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'" (click)="marcarVisitado(i)">
                   <i class="bi bi-check2-circle me-1"></i> Marcar como visitado
@@ -172,7 +199,28 @@
         </div>
       </div>
 
-      <div *ngIf="!itens()?.length" class="text-center text-muted py-4">Nenhum registro ainda.</div>
+      <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">Nenhum registro encontrado para os filtros/busca.</div>
+    </div>
+
+    <!-- Paginação -->
+    <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        Página {{ page() }} de {{ totalPages() }}
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-outline-secondary" (click)="goFirst()" [disabled]="page()===1">
+          <i class="bi bi-chevron-double-left"></i>
+        </button>
+        <button class="btn btn-outline-secondary" (click)="goPrev()" [disabled]="page()===1">
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <button class="btn btn-outline-secondary" (click)="goNext()" [disabled]="page()===totalPages()">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+        <button class="btn btn-outline-secondary" (click)="goLast()" [disabled]="page()===totalPages()">
+          <i class="bi bi-chevron-double-right"></i>
+        </button>
+      </div>
     </div>
   </div>
 </div>

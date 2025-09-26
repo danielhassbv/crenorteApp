@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, computed, effect, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -30,6 +30,22 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   itens = signal<PreCadastro[]>([]);
   private sub?: Subscription;
 
+  // ====== UI STATE ======
+  // busca
+  searchTerm = signal<string>('');
+
+  // filtros
+  filtroStatus = signal<'todos' | 'nao_agendado' | 'agendado' | 'visitado'>('todos');
+  filtroHasPhone = signal<'todos' | 'sim' | 'nao'>('todos');
+  filtroHasEmail = signal<'todos' | 'sim' | 'nao'>('todos');
+  filtroBairro = signal<string>('');
+  filtroDataIni = signal<string>(''); // yyyy-MM-dd
+  filtroDataFim = signal<string>(''); // yyyy-MM-dd
+
+  // paginação
+  pageSize = signal<number>(9);
+  page = signal<number>(1);
+
   // modais
   modalVerAberto = signal(false);
   modalEditarAberto = signal(false);
@@ -50,6 +66,21 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
   currentUserUid: string | null = null;
   currentUserNome: string | null = null;
+
+  constructor() {
+    // sempre que busca/filtros mudarem, voltar para a primeira página
+    effect(() => {
+      // leitura reativa:
+      this.searchTerm();
+      this.filtroStatus();
+      this.filtroHasPhone();
+      this.filtroHasEmail();
+      this.filtroBairro();
+      this.filtroDataIni();
+      this.filtroDataFim();
+      this.page.set(1);
+    });
+  }
 
   ngOnInit(): void {
     this.route.queryParamMap.subscribe(pm => {
@@ -86,14 +117,121 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void { this.sub?.unsubscribe(); }
 
+  // ===== Helpers =====
   private onlyDigits(v?: string | null): string { return (v ?? '').replace(/\D+/g, ''); }
+
+  private toJSDate(v: any): Date | null {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+    if (typeof v?.toDate === 'function') {
+      try { return v.toDate(); } catch { return null; }
+    }
+    return null;
+  }
+
+  private normalize(s: string): string {
+    return (s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
   whatsHref(v?: string | null): string {
     const d = this.onlyDigits(v);
     if (!d) return '';
     const core = d.startsWith('55') ? d : `55${d}`;
     return `https://wa.me/${core}`;
+    // dica: se quiser mensagem automática: +`?text=${encodeURIComponent('Olá! Vi seu pré-cadastro...')}`
   }
 
+  // ===== Derived UI data =====
+  bairrosDisponiveis = computed<string[]>(() => {
+    const set = new Set<string>();
+    for (const x of this.itens()) {
+      const b = (x.bairro ?? '').trim();
+      if (b) set.add(b);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  });
+
+  // Filtra por busca + filtros
+  filteredItems = computed<PreCadastro[]>(() => {
+    const term = this.normalize(this.searchTerm());
+    const st = this.filtroStatus();
+    const hasPhone = this.filtroHasPhone();
+    const hasEmail = this.filtroHasEmail();
+    const bairro = this.filtroBairro();
+    const dataIni = this.filtroDataIni();
+    const dataFim = this.filtroDataFim();
+
+    const dtIni = dataIni ? new Date(dataIni + 'T00:00:00') : null;
+    const dtFim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
+
+    return this.itens().filter(i => {
+      // busca por nome (ignora acentos/maiúsculas)
+      if (term) {
+        const nome = this.normalize(i.nomeCompleto ?? (i as any).nome ?? '');
+        if (!nome.includes(term)) return false;
+      }
+
+      // status
+      const statusAtual = (i.agendamentoStatus || 'nao_agendado') as 'nao_agendado' | 'agendado' | 'visitado';
+      if (st !== 'todos' && statusAtual !== st) return false;
+
+      // tem telefone?
+      const temTel = !!(i.telefone && this.onlyDigits(i.telefone).length >= 10);
+      if (hasPhone === 'sim' && !temTel) return false;
+      if (hasPhone === 'nao' && temTel) return false;
+
+      // tem e-mail?
+      const temEmail = !!((i.email ?? '').trim());
+      if (hasEmail === 'sim' && !temEmail) return false;
+      if (hasEmail === 'nao' && temEmail) return false;
+
+      // bairro
+      if (bairro && (i.bairro ?? '') !== bairro) return false;
+
+      // intervalo de datas (createdAt)
+      if (dtIni || dtFim) {
+        const created = this.toJSDate(i.createdAt);
+        if (!created) return false;
+        if (dtIni && created < dtIni) return false;
+        if (dtFim && created > dtFim) return false;
+      }
+
+      return true;
+    });
+  });
+
+  totalFiltrado = computed<number>(() => this.filteredItems().length);
+  totalGeral = computed<number>(() => this.itens().length);
+
+  totalPages = computed<number>(() => {
+    const n = Math.ceil(this.totalFiltrado() / this.pageSize());
+    return Math.max(1, n || 1);
+  });
+
+  pagedItems = computed<PreCadastro[]>(() => {
+    const p = this.page();
+    const ps = this.pageSize();
+    const arr = this.filteredItems();
+    const start = (p - 1) * ps;
+    return arr.slice(start, start + ps);
+  });
+
+  // paginação actions
+  setPageSize(n: number) {
+    this.pageSize.set(n);
+    this.page.set(1);
+  }
+  goFirst() { this.page.set(1); }
+  goPrev() { this.page.update(p => Math.max(1, p - 1)); }
+  goNext() { this.page.update(p => Math.min(this.totalPages(), p + 1)); }
+  goLast() { this.page.set(this.totalPages()); }
+  goTo(n: number) { this.page.set(Math.min(Math.max(1, n), this.totalPages())); }
+
+  // ===== Abertura/fechamento modais =====
   abrirVer(i: PreCadastro) { this.viewItem.set(i); this.modalVerAberto.set(true); }
 
   abrirEditar(i: PreCadastro) {
@@ -122,6 +260,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.agHora = '';
   }
 
+  // ===== CRUD =====
   async salvarEdicao() {
     const m = this.editModel();
     if (!m?.id) return;

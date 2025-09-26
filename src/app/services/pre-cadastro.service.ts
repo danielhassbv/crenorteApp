@@ -13,7 +13,7 @@ import {
   doc,
   getDoc,
   deleteDoc,
-  updateDoc, // <-- adicionado
+  updateDoc,
 } from '@angular/fire/firestore';
 import { Auth } from '@angular/fire/auth';
 import { PreCadastro } from '../models/pre-cadastro.model';
@@ -60,6 +60,26 @@ export class PreCadastroService {
   }
 
   /**
+   * Vincula/espelha o fluxo de caixa ao pré-cadastro (e marca timestamp).
+   * Se quiser manter histórico, pode criar subcoleção /fluxos e addDoc lá.
+   */
+  async salvarFluxoCaixa(
+    preCadastroId: string,
+    fluxoCaixa: any,
+    totais: { receita: number; custos: number; lucro: number }
+  ): Promise<void> {
+    await updateDoc(doc(this.db, 'pre_cadastros', preCadastroId), {
+      fluxoCaixa,
+      fluxoCaixaTotais: totais,
+      fluxoAtualizadoEm: serverTimestamp(),
+    });
+
+    // Histórico opcional:
+    // const versoes = collection(this.db, `pre_cadastros/${preCadastroId}/fluxos`);
+    // await addDoc(versoes, { fluxoCaixa, totais, createdAt: serverTimestamp() });
+  }
+
+  /**
    * Salva o feedback do CLIENTE em:
    * pre_cadastros/{id}/feedback_cliente
    */
@@ -91,7 +111,7 @@ export class PreCadastroService {
       );
       const snap = await getDocs(qy);
       return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
-    } catch (e: any) {
+    } catch {
       // fallback sem índice composto
       const qy = query(this.colRef, where('createdByUid', '==', useUid));
       const snap = await getDocs(qy);
@@ -99,8 +119,8 @@ export class PreCadastroService {
 
       const ms = (x: any) =>
         x?.toMillis ? x.toMillis() :
-          x?.toDate ? x.toDate().getTime() :
-            (typeof x === 'number' ? x : 0);
+        x?.toDate ? x.toDate().getTime() :
+        (typeof x === 'number' ? x : 0);
 
       rows.sort((a: any, b: any) => (ms(b.createdAt) - ms(a.createdAt)));
       return rows;
@@ -120,7 +140,6 @@ export class PreCadastroService {
    * Atualiza campos de um pré-cadastro.
    */
   async atualizar(id: string, patch: Partial<PreCadastro>): Promise<void> {
-    // remove undefined para não sobrescrever com undefined
     const clean: Record<string, any> = {};
     Object.entries(patch).forEach(([k, v]) => {
       if (v !== undefined) clean[k] = v;
@@ -129,7 +148,7 @@ export class PreCadastroService {
   }
 
   /**
-   * Remove um pré-cadastro pelo ID (apaga apenas o documento raiz).
+   * Remove um pré-cadastro pelo ID.
    */
   async remover(id: string): Promise<void> {
     await deleteDoc(doc(this.db, 'pre_cadastros', id));
@@ -137,7 +156,6 @@ export class PreCadastroService {
 
   /**
    * (Opcional) Remove um pré-cadastro e subcoleções conhecidas.
-   * Use com cautela: Firestore não tem delete recursivo no client.
    */
   async removerDeep(id: string, opts?: { feedbackCliente?: boolean }): Promise<void> {
     if (opts?.feedbackCliente) {
@@ -154,5 +172,4 @@ export class PreCadastroService {
       agendamentoId: agendamentoId ?? null,
     } as any);
   }
-
 }
