@@ -272,3 +272,92 @@
     padding-right: var(--space-7) !important;
   }
 }
+
+/* ======== PATCHES DE RESPONSIVIDADE ADICIONAIS ======== */
+
+/* Nada estoura pra direita */
+.triagem,
+.triagem * { max-width: 100%; }
+.triagem { overflow-x: hidden; }
+
+/* Corrige overflow quando há flex + truncamento */
+.triagem-layout,
+.triagem-content,
+.tc-row1,
+.tc-row2 { min-width: 0; }
+
+/* Identificação pode encolher; CTA não encolhe */
+.tc-id { flex: 1 1 auto; min-width: 0; }
+.tc-cta { flex: 0 0 auto; }
+
+/* Títulos longos: truncamento correto */
+.tc-id .min-w-0 { min-width: 0; }
+.tc-id .text-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Chips não empurram layout */
+.chips { flex-wrap: wrap; }
+.chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* Botões não quebram palavras estranhas */
+.tc-cta .btn, .tc-actions .btn { white-space: nowrap; }
+
+/* Container interno: sem padding extra + sem overflow */
+.no-overflow { padding-left: 0; padding-right: 0; overflow-x: hidden; }
+
+/* Sidebar e content limitados à viewport */
+.filters-sidebar, .triagem-content { max-width: 100%; }
+
+/* CTA desce no mobile sem criar scroll lateral */
+@media (max-width: 575.98px) {
+  .tc-cta { width: 100%; justify-content: flex-start; gap: var(--space-3); }
+}
+
+/* Toolbar mobile reforço */
+@media (max-width: 767.98px) {
+  .input-with-icon { min-width: 100%; }
+  .triagem-toolbar__controls { width: 100%; }
+}
+
+/* Chip de status (variações) */
+.chip-status { border-width: 1px; }
+
+.chip-status.is-apto {
+  background: #e8f6ef;
+  border-color: #18a85b;
+  color: #0f5132;
+}
+
+.chip-status.is-inapto {
+  background: #fdecec;
+  border-color: #dc3545;
+  color: #842029;
+}
+
+.chip-status.is-nao {
+  background: #f1f3f5;
+  border-color: #cfd4da;
+  color: #495057;
+}
+
+/* …todo o seu CSS anterior… */
+
+/* Cores dos chips de status */
+.chip--ok { background: #eaf7ee; border-color:#cdebd6; color:#0a7a3b; }
+.chip--bad { background: #fdecec; border-color:#f5c2c7; color:#b42318; }
+.chip--pending { background:#f7f7fb; border-color:#e5e7eb; color:#3d3d4e; }
+
+/* Paginação não estoura */
+.list-pager { overflow-x: auto; }
+
+
+/* Mídia embutida sempre responsiva */
+.triagem img, .triagem video, .triagem iframe { max-width: 100%; height: auto; display: block; }
+
+/* Qualquer coisa com width: max-content não quebra layout */
+.triagem [style*="max-content"] { max-width: 100% !important; }
+
+/* Evita estourar por elementos absolutos internos */
+.triagem .card { overflow: hidden; }
+
+/* Quando drawer aberto, bloqueia scroll para evitar "nudge" no iOS */
+.drawer-open { overflow: hidden; }

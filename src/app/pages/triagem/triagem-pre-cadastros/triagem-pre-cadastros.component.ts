@@ -17,6 +17,10 @@ import {
   collection,
   getDocs,
   where,
+  writeBatch,
+  orderBy,
+  startAfter,
+  limit as qLimit,
 } from 'firebase/firestore';
 
 /* =========================
@@ -35,22 +39,14 @@ function titleCase(s: string): string {
 
 // Sinônimos -> chave canônica
 const ORIGEM_SYNONYMS: Record<string, string> = {
-  // panfleto
   'panfleto': 'panfleto', 'panfletos': 'panfleto',
-  // online / site / formulário
   'online': 'online', 'on-line': 'online', 'site': 'online',
   'formulario': 'online', 'formulário': 'online',
-  // telefone/celular
   'telefone': 'telefone', 'tel': 'telefone', 'celular': 'telefone', 'cel': 'telefone',
-  // whatsapp
   'whatsapp': 'whatsapp', 'wpp': 'whatsapp', 'zap': 'whatsapp', 'wtz': 'whatsapp', 'whats': 'whatsapp',
-  // igreja
   'igreja': 'igreja',
-  // presencial / visita / cadastro presencial
   'presencial': 'presencial', 'visita': 'presencial', 'visita presencial': 'presencial', 'cadastro presencial': 'presencial',
-  // indicação
   'indicacao': 'indicacao', 'indicação': 'indicacao',
-  // próprio/própria
   'proprio': 'proprio', 'próprio': 'proprio', 'propria': 'proprio', 'própria': 'proprio',
 };
 
@@ -66,12 +62,30 @@ const ORIGEM_LABELS: Record<string, string> = {
   outros: 'Outros',
 };
 
+// status exibido no UI (chip)
+type StatusAprovacao = 'nao' | 'apto' | 'inapto';
+function coerceStatusToUi(x: any): StatusAprovacao {
+  const n = normalizeBasic(String(x || ''));
+  if (n.startsWith('apto')) return 'apto';
+  if (n.startsWith('ina')) return 'inapto';
+  return 'nao';
+}
+
+// status no Firestore (novo nó aprovacao.status)
+type AprovacaoStatus = 'nao_verificado' | 'apto' | 'inapto';
+function mapLegacyToNovo(x: any): AprovacaoStatus {
+  const n = normalizeBasic(String(x || ''));
+  if (n.startsWith('apto')) return 'apto';
+  if (n.startsWith('ina')) return 'inapto';
+  return 'nao_verificado';
+}
+
 function canonicalizeOrigem(raw: string): { key: string; label: string } {
   const n = normalizeBasic(raw);
 
   if (n in ORIGEM_SYNONYMS) {
     const key = ORIGEM_SYNONYMS[n];
-    return { key, label: ORIGEM_LABELS[key] || titleCase(key) };
+    return { key, label: ORIGEM_LABELS[key as keyof typeof ORIGEM_LABELS] || titleCase(key) };
   }
   if (/whats|zap|wpp/.test(n)) return { key: 'whatsapp', label: ORIGEM_LABELS['whatsapp'] };
   if (/on\s?-?\s?line|site|formul/.test(n)) return { key: 'online', label: ORIGEM_LABELS['online'] };
@@ -100,9 +114,11 @@ type PreCadastroRow = {
   bairro: string;
   rota: string;
 
-  origem: string;        // texto bruto
-  origemKey: string;     // chave canônica
-  origemLabel: string;   // rótulo canônico
+  origem: string;
+  origemKey: string;
+  origemLabel: string;
+
+  statusAprovacao?: StatusAprovacao;
 
   _path: string;
   _eDeAssessor?: boolean;
@@ -121,7 +137,7 @@ type Assessor = {
 };
 
 type PeriodoKey = 'todos' | 'hoje' | '7' | '30';
-type StatusKey  = 'todos' | 'enviados' | 'nao';
+type StatusKey = 'todos' | 'nao' | 'apto' | 'inapto';
 
 /* =========================
    Componente
@@ -168,8 +184,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
 
   // filtros
   busca = '';
-  filtroRota = ''; // opcional
-  somenteNaoDesignados = false; // espelha statusFilter = 'nao'
+  filtroRota = '';
+  somenteNaoDesignados = false; // mantido para compat, não usado no novo status
 
   // filtros agregados
   origens: Array<{ key: string; label: string; count: number }> = [];
@@ -186,6 +202,15 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   all: PreCadastroRow[] = [];
   view: PreCadastroRow[] = [];
 
+  // paginação
+  pageSize = 20;
+  currentPage = 1;
+  get totalItems() { return this.view.length; }
+  get totalPages() { return Math.max(1, Math.ceil(this.totalItems / this.pageSize)); }
+  get pageStart() { return this.totalItems ? (this.currentPage - 1) * this.pageSize : 0; }
+  get pageEnd() { return Math.min(this.pageStart + this.pageSize, this.totalItems); }
+  get pageItems() { return this.view.slice(this.pageStart, this.pageEnd); }
+
   // assessores / designação
   assessores: Assessor[] = [];
   selecaoAssessor: Record<string, string> = {};       // rowId -> uid
@@ -198,10 +223,16 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   assessorBusca = '';
   assessoresFiltrados: Assessor[] = [];
   rowSelecionado: PreCadastroRow | null = null;
+  selectedAssessorUid: string | null = null;
+
+  // Migração em massa
+  migrandoAprovacao = false;
+  migracaoTotal = 0;
+  migracaoProcessados = 0;
 
   async ngOnInit(): Promise<void> {
     this.loadFilterUI();
-    await this.carregarAssessores();
+    await this.carregarAssessores();   // TODOS os assessores/analistas/admin
     this.carregarTodos();
   }
   ngOnDestroy(): void { this.unsub?.(); }
@@ -224,6 +255,17 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
           const origemRaw = String(data?.origem ?? '').trim();
           const canon = canonicalizeOrigem(origemRaw);
 
+          // Preferir aprovacao.status (novo) e cair para o legado statusAprovacao
+          let uiStatus: StatusAprovacao = 'nao';
+          if (data?.aprovacao?.status) {
+            const novo = String(data.aprovacao.status);
+            uiStatus = (normalizeBasic(novo) === 'apto') ? 'apto'
+                     : (normalizeBasic(novo) === 'inapto') ? 'inapto'
+                     : 'nao';
+          } else {
+            uiStatus = coerceStatusToUi(data?.statusAprovacao);
+          }
+
           return {
             id: d.id,
             data: this.toDate(data?.createdAt ?? data?.criadoEm),
@@ -238,6 +280,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             origem: origemRaw,
             origemKey: canon.key,
             origemLabel: canon.label,
+
+            statusAprovacao: uiStatus,
 
             _path: path,
             _eDeAssessor: path.startsWith('colaboradores/'),
@@ -269,10 +313,17 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     );
   }
 
+  /**
+   * Carrega TODOS os usuários ativos com papel assessor/analista/admin.
+   */
   private async carregarAssessores() {
     try {
       const col = collection(db, 'colaboradores');
-      const q1 = query(col, where('status', '==', 'ativo'), where('papel', 'in', ['assessor', 'admin']));
+      const q1 = query(
+        col,
+        where('status', '==', 'ativo'),
+        where('papel', 'in', ['assessor', 'admin', 'analista'])
+      );
       const snap = await getDocs(q1);
 
       this.assessores = snap.docs
@@ -338,10 +389,33 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.aplicarFiltros();
   }
 
-  // status
+  // --- Helpers de status (para o template) ---
+  statusLabel(s?: StatusAprovacao | null): string {
+    switch (s) {
+      case 'apto':   return 'Apto';
+      case 'inapto': return 'Inapto';
+      default:       return 'Não verificado';
+    }
+  }
+  statusIcon(s?: StatusAprovacao | null): string {
+    switch (s) {
+      case 'apto':   return '✅';
+      case 'inapto': return '⛔';
+      default:       return '🕑';
+    }
+  }
+  statusChipClass(s?: StatusAprovacao | null) {
+    return {
+      'chip-status': true,
+      'is-apto':   s === 'apto',
+      'is-inapto': s === 'inapto',
+      'is-nao':    !s || (s !== 'apto' && s !== 'inapto'),
+    };
+  }
+
+  // status (filtro)
   setStatus(k: StatusKey) {
     this.statusFilter = (this.statusFilter === k ? 'todos' : k);
-    this.somenteNaoDesignados = this.statusFilter === 'nao';
     this.aplicarFiltros();
   }
   isStatusActive(k: StatusKey) { return this.statusFilter === k; }
@@ -362,7 +436,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     const map = new Map<string, { key: string; label: string; count: number }>();
     for (const r of this.all) {
       const key = r.origemKey || 'outros';
-      const label = r.origemLabel || ORIGEM_LABELS[key] || 'Outros';
+      const label = r.origemLabel || ORIGEM_LABELS[key as keyof typeof ORIGEM_LABELS] || 'Outros';
       const slot = map.get(key) || { key, label, count: 0 };
       slot.count++;
       map.set(key, slot);
@@ -396,8 +470,10 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (origemKey) list = list.filter(p => p.origemKey === origemKey);
     if (bairroSel) list = list.filter(p => titleCase(p.bairro || '') === bairroSel);
 
-    if (this.statusFilter === 'nao') list = list.filter(p => !this.isEnviado(p) && !p._eDeAssessor);
-    if (this.statusFilter === 'enviados') list = list.filter(p => this.isEnviado(p));
+    // filtro por status (novo conceito)
+    if (this.statusFilter !== 'todos') {
+      list = list.filter(p => (p.statusAprovacao || 'nao') === this.statusFilter);
+    }
 
     if (this.periodoFilter !== 'todos') {
       const now = new Date();
@@ -421,7 +497,17 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     }
 
     this.view = list;
+    this.currentPage = 1; // reset paginação
   }
+
+  /* ===== Paginação ===== */
+  onPageSizeChange(val: number) {
+    const n = Number(val) || 10;
+    this.pageSize = n;
+    this.currentPage = 1;
+  }
+  nextPage() { if (this.currentPage < this.totalPages) this.currentPage++; }
+  prevPage() { if (this.currentPage > 1) this.currentPage--; }
 
   /* ============ Enviar/Atualizar ============ */
   async designarParaAssessor(r: PreCadastroRow) {
@@ -434,7 +520,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     try {
       const colabRef = doc(db, 'colaboradores', uid);
       const colabSnap = await getDoc(colabRef);
-      if (!colabSnap.exists()) throw new Error('Colaborador (assessor) não encontrado.');
+      if (!colabSnap.exists()) throw new Error('Colaborador não encontrado.');
 
       const colab = colabSnap.data() as any;
       const assessorNome = colab?.nome ?? colab?.displayName ?? null;
@@ -468,11 +554,13 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.rowSelecionado = row;
     this.assessorBusca = '';
     this.filtrarAssessores();
+    this.selectedAssessorUid = this.selecaoAssessor[row.id] || null; // pré-seleção
     this.showAssessorModal = true;
   }
   fecharModalAssessor() {
     this.showAssessorModal = false;
     this.rowSelecionado = null;
+    this.selectedAssessorUid = null;
   }
   filtrarAssessores() {
     const t = this.normalize(this.assessorBusca);
@@ -489,7 +577,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (!this.rowSelecionado) return;
     this.selecaoAssessor[this.rowSelecionado.id] = a.uid;
     this.selecaoAssessorNome[this.rowSelecionado.id] = this.nomeAssessor(a);
-    this.fecharModalAssessor();
+    this.selectedAssessorUid = a.uid; // reflete no radio
   }
   async escolherEEnviar(a: Assessor) {
     if (!this.rowSelecionado) return;
@@ -499,4 +587,109 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.fecharModalAssessor();
     await this.designarParaAssessor(row);
   }
+  async enviarSelecionadoDoModal() {
+    if (!this.rowSelecionado || !this.selectedAssessorUid) return;
+    const aUid = this.selectedAssessorUid;
+    this.selecaoAssessor[this.rowSelecionado.id] = aUid;
+    this.selecaoAssessorNome[this.rowSelecionado.id] = this.resolveAssessorNome(aUid) || aUid;
+    const row = this.rowSelecionado;
+    this.fecharModalAssessor();
+    await this.designarParaAssessor(row);
+  }
+
+  /* ============ MIGRAÇÃO EM MASSA: aprovacao.status =========== */
+  /* ============ MIGRAÇÃO EM MASSA: aprovacao.status =========== */
+async migrarAprovacaoEmMassa() {
+  const ok = confirm(
+    'Isso vai verificar todos os pré-cadastros e gravar "aprovacao.status" quando estiver faltando.\n' +
+    'Deseja continuar?'
+  );
+  if (!ok) return;
+
+  this.migrandoAprovacao = true;
+  this.migracaoTotal = 0;
+  this.migracaoProcessados = 0;
+
+  // helper para montar query paginada sem colocar undefined nos constraints
+  const buildPageQuery = (afterDoc: any | null, size: number) => {
+    const constraints: any[] = [orderBy('__name__')];
+    if (afterDoc) constraints.push(startAfter(afterDoc));
+    constraints.push(qLimit(size));
+    return query(collectionGroup(db, 'pre_cadastros'), ...constraints);
+  };
+
+  try {
+    const pageSize = 300;
+    const batchMax = 450;
+    let last: any = null;
+
+    // --- estimativa para mostrar progresso ---
+    {
+      let _last: any = null, _total = 0;
+      while (true) {
+        const q = buildPageQuery(_last, pageSize);
+        const s = await getDocs(q);
+        _total += s.size;
+        if (s.size < pageSize) break;
+        _last = s.docs[s.docs.length - 1];
+      }
+      this.migracaoTotal = _total;
+    }
+
+    // --- migração efetiva ---
+    while (true) {
+      const q = buildPageQuery(last, pageSize);
+      const snap = await getDocs(q);
+      if (snap.empty) break;
+
+      let batch = writeBatch(db);
+      let writes = 0;
+
+      for (const d of snap.docs) {
+        const data = d.data() as any;
+
+        // já tem novo status válido?
+        const jaTemNovo = !!data?.aprovacao?.status &&
+          ['nao_verificado', 'apto', 'inapto'].includes(
+            normalizeBasic(String(data.aprovacao.status))
+          );
+
+        if (jaTemNovo) {
+          this.migracaoProcessados++;
+          continue;
+        }
+
+        const alvo = mapLegacyToNovo(data?.statusAprovacao);
+        const patch: any = {
+          aprovacao: {
+            ...(data?.aprovacao || {}),
+            status: alvo || 'nao_verificado',
+          }
+        };
+
+        batch.set(d.ref, patch, { merge: true });
+        writes++;
+        this.migracaoProcessados++;
+
+        if (writes >= batchMax) {
+          await batch.commit();
+          batch = writeBatch(db);
+          writes = 0;
+        }
+      }
+
+      if (writes > 0) await batch.commit();
+      if (snap.size < pageSize) break;
+      last = snap.docs[snap.docs.length - 1];
+    }
+
+    alert('Migração concluída! 🎉');
+  } catch (e) {
+    console.error('[Migração] Erro ao migrar aprovacao.status:', e);
+    alert('Falha na migração. Veja o console para detalhes.');
+  } finally {
+    this.migrandoAprovacao = false;
+  }
+}
+
 }

@@ -26,6 +26,8 @@
     "emailjs-com": "^3.2.0",
     "file-saver": "^2.0.5",
     "firebase": "11.10.0",
+    "jspdf": "^3.0.3",
+    "jspdf-autotable": "^5.0.2",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",
     "ngx-mask": "^20.0.3",

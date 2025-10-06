@@ -4,6 +4,7 @@ import { roleGuard } from './guards/role.guard';
 import type { Papel } from './models/colaborador.model';
 import { AgendamentosListaComponent } from './pages/agendamentos/agendamentos-lista/agendamentos-lista.component';
 import { ListagemAgendamentosComponent } from './pages/listagem-agendamentos/listagem-agendamentos.component';
+import { AprovacaoPreCadastroComponent } from './pages/aprovacao-pre-cadastro/aprovacao-pre-cadastro.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
@@ -40,6 +41,9 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/aprovacoes/aprovacoes.component').then(m => m.AprovacoesComponent),
   },
+
+    { path: 'aprovacao-pre-cadastro', component: AprovacaoPreCadastroComponent },
+
 
   // === PRÉ-CADASTRO ===
   {

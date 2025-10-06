@@ -41,6 +41,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   filtroDataIni = signal<string>(''); // yyyy-MM-dd
   filtroDataFim = signal<string>(''); // yyyy-MM-dd
 
+  
   // paginação
   pageSize = signal<number>(9);
   page = signal<number>(1);
@@ -98,7 +99,16 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
         this.currentUserUid = u.uid;
         this.currentUserNome = u.displayName || u.email || null;
 
-        const rows = await this.service.listarDoAssessor(u.uid);
+        // 🔎 Preferir listar itens da "caixa" do assessor (encaminhados + próprios).
+        // Se o service ainda não tiver listarParaCaixa, cai no fallback listarDoAssessor.
+        let rows: PreCadastro[] = [];
+        const svcAny = this.service as any;
+        if (typeof svcAny.listarParaCaixa === 'function') {
+          rows = await svcAny.listarParaCaixa(u.uid);
+        } else {
+          rows = await this.service.listarDoAssessor(u.uid);
+        }
+
         const norm = rows.map(r => ({
           agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
           ...r
@@ -140,6 +150,29 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     if (!d) return '';
     const core = d.startsWith('55') ? d : `55${d}`;
     return `https://wa.me/${core}`;
+  }
+
+  // ======= NOVOS HELPERS: aprovação & encaminhamento =======
+  aprovacaoStatus(i: PreCadastro): 'apto' | 'inapto' {
+    return ((i as any)?.aprovacao?.status === 'apto') ? 'apto' : 'inapto';
+  }
+  aprovacaoBadgeClass(i: PreCadastro) {
+    return this.aprovacaoStatus(i) === 'apto' ? 'text-bg-success' : 'text-bg-danger';
+  }
+  // "encaminhado para mim" = veio de analista e caiu na minha caixa
+  encaminhadoParaMim(i: PreCadastro): boolean {
+    const uid = this.currentUserUid;
+    const encUid = (i as any)?.encaminhamento?.assessorUid;
+    const caixa = (i as any)?.caixaUid;
+    const criador = (i as any)?.createdByUid;
+    return !!uid && (encUid === uid || caixa === uid) && criador !== uid;
+  }
+  encaminhadoPorNome(i: PreCadastro): string | null {
+    return ((i as any)?.aprovacao?.porNome) || ((i as any)?.encaminhamento?.porNome) || null;
+  }
+  encaminhadoQuando(i: PreCadastro): Date | null {
+    const ts = (i as any)?.encaminhamento?.em || (i as any)?.aprovacao?.em;
+    return this.toJSDate(ts);
   }
 
   // ===== Derived UI data =====
@@ -293,16 +326,10 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
   // ===== Atualização do fluxoCaixa (aninhado) =====
   onFluxoNumberChange(path: string, value: string | number) {
-    // path exemplos:
-    // 'faturamentoMensal'
-    // 'fixos.aluguel'
-    // 'variaveis.materiaPrima'
-    // 'variaveis.outros[3].valor'  (aqui cuidaremos via helpers específicos, ver mais abaixo)
     const m = this.editModel();
     if (!m) return;
     const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
 
-    // converte para número
     const num = typeof value === 'string' ? (value === '' ? 0 : Number(value)) : value;
 
     const setNested = (obj: any, p: string[], val: any) => {
@@ -342,7 +369,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
     const outros = [...(fluxo.variaveis?.outros ?? [])];
     if (!outros[index]) outros[index] = { nome: '', valor: 0 };
-    outros[index] = { ...outros[index], nome: value };
+    outros[index = index] = { ...outros[index], nome: value };
     fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }), outros };
     this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
   }
@@ -366,7 +393,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
     this.saving.set(true);
     try {
-      // Monta patch aderente ao SEU modelo
       const patch: Partial<PreCadastro> = {
         nomeCompleto: (m.nomeCompleto ?? '').trim(),
         cpf: (m.cpf ?? '').trim(),
@@ -424,7 +450,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       endereco: (pc as any)?.endereco ?? (pc as any)?.enderecoCompleto ?? '',
       preCadastroId: (pc as any)?.id ?? (pc as any)?.uid ?? '',
     };
-  }
+    }
 
   iniciarCadastro(pc: PreCadastro) {
     this.fecharModais();

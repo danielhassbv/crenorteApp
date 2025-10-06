@@ -1,3 +1,4 @@
+<!-- src/app/pages/pre-cadastro/pre-cadastro-lista/pre-cadastro-lista.component.html -->
 <app-header></app-header>
 
 <br><br><br><br><br><br>
@@ -132,8 +133,7 @@
               <div class="crn-field">
                 <span class="crn-label">Criado em</span>
                 <span class="crn-value">
-                  {{ i.createdAt?.toDate ? (i.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : (i.createdAt |
-                  date:'dd/MM/yyyy HH:mm') }}
+                  {{ (i.createdAt?.toDate ? i.createdAt.toDate() : i.createdAt) | date:'dd/MM/yyyy HH:mm' }}
                 </span>
               </div>
 
@@ -153,6 +153,38 @@
                 </span>
               </div>
 
+              <!-- Aprovação: 3 estados -->
+              <div class="crn-field">
+                <span class="crn-label">Aprovação</span>
+                <span class="crn-value">
+                  <span class="badge" [ngClass]="{
+                          'text-bg-secondary': (i.aprovacao?.status || 'nao_verificado')==='nao_verificado',
+                          'text-bg-danger':    (i.aprovacao?.status || 'nao_verificado')==='inapto',
+                          'text-bg-success':   (i.aprovacao?.status || 'nao_verificado')==='apto'
+                        }">
+                    {{
+                    (i.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
+                    (i.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
+                    }}
+                  </span>
+                  <small class="text-muted ms-2" *ngIf="$any(i)?.aprovacao?.porNome">
+                    por {{ $any(i).aprovacao.porNome }}
+                    <ng-container *ngIf="$any(i)?.aprovacao?.em as em">
+                      — {{ (em?.toDate ? em.toDate() : em) | date:'dd/MM/yyyy HH:mm' }}
+                    </ng-container>
+                  </small>
+                </span>
+              </div>
+
+              <!-- Encaminhado (se esse assessor for o destinatário) -->
+              <div class="crn-field" *ngIf="encaminhadoParaMim(i)">
+                <span class="crn-label">Encaminhado</span>
+                <span class="crn-value">
+                  por {{ encaminhadoPorNome(i) || 'Analista' }}
+                  <small class="text-muted" *ngIf="encaminhadoQuando(i)"> — {{ encaminhadoQuando(i) | date:'dd/MM/yyyy
+                    HH:mm' }}</small>
+                </span>
+              </div>
 
               <!-- Status de agendamento -->
               <div class="crn-field">
@@ -160,8 +192,8 @@
                 <span class="crn-value">
                   <span class="badge" [ngClass]="{
                       'text-bg-secondary': (i.agendamentoStatus || 'nao_agendado')==='nao_agendado',
-                      'text-bg-info': (i.agendamentoStatus || 'nao_agendado')==='agendado',
-                      'text-bg-success': (i.agendamentoStatus || 'nao_agendado')==='visitado'
+                      'text-bg-info':      (i.agendamentoStatus || 'nao_agendado')==='agendado',
+                      'text-bg-success':   (i.agendamentoStatus || 'nao_agendado')==='visitado'
                     }">
                     {{
                     (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
@@ -215,8 +247,9 @@
         </div>
       </div>
 
-      <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">Nenhum registro encontrado para os
-        filtros/busca.</div>
+      <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">
+        Nenhum registro encontrado para os filtros/busca.
+      </div>
     </div>
 
     <!-- Paginação -->
@@ -238,59 +271,6 @@
           <i class="bi bi-chevron-double-right"></i>
         </button>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- ===== MODAL: VER ===== -->
-<div *ngIf="modalVerAberto()" class="crn-modal" role="dialog" aria-modal="true">
-  <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
-  <div class="crn-modal__dialog" role="document" aria-labelledby="modalVerTitulo">
-    <div class="crn-modal__header">
-      <h5 id="modalVerTitulo" class="mb-0">Detalhes do Pré-cadastro</h5>
-      <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
-    </div>
-    <div class="crn-modal__body" *ngIf="viewItem() as v">
-      <div class="d-flex align-items-center gap-2 mb-3">
-        <div class="avatar-inicial avatar-lg">
-          {{ (v.nomeCompleto || '?').charAt(0) | uppercase }}
-        </div>
-        <div class="min-w-0">
-          <div class="fw-semibold truncate-2 text-crn-dark">{{ v.nomeCompleto || '—' }}</div>
-          <small class="text-muted">
-            {{ v.createdAt?.toDate ? (v.createdAt.toDate() | date:'dd/MM/yyyy HH:mm') : (v.createdAt | date:'dd/MM/yyyy
-            HH:mm') }}
-          </small>
-        </div>
-      </div>
-
-      <dl class="row mb-0">
-        <dt class="col-sm-3">CPF</dt>
-        <dd class="col-sm-9">{{ v.cpf || '—' }}</dd>
-
-        <dt class="col-sm-3">Telefone</dt>
-        <dd class="col-sm-9">{{ v.telefone || '—' }}</dd>
-
-        <dt class="col-sm-3">E-mail</dt>
-        <dd class="col-sm-9 text-break">{{ v.email || '—' }}</dd>
-
-        <dt class="col-sm-3">Endereço</dt>
-        <dd class="col-sm-9 text-break">{{ v.endereco || '—' }}</dd>
-
-        <dt class="col-sm-3">Bairro</dt>
-        <dd class="col-sm-9 text-break">{{ v.bairro || '—' }}</dd>
-
-        <dt class="col-sm-3">Valor solicitado</dt>
-        <dd class="col-sm-9">
-          <ng-container *ngIf="v?.valorSolicitado != null; else noValorVer">
-            {{ v.valorSolicitado | currency:'BRL':'symbol-narrow':'1.0-2':'pt-BR' }}
-          </ng-container>
-          <ng-template #noValorVer>—</ng-template>
-        </dd>
-      </dl>
-    </div>
-    <div class="crn-modal__footer">
-      <button class="btn btn-secondary" (click)="fecharModais()">Fechar</button>
     </div>
   </div>
 </div>

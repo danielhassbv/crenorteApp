@@ -72,7 +72,7 @@
             <small class="text-muted d-block">Registrar interessado</small>
           </a>
         </div>
-
+        <!-- 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/cadastro/novo" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-person-vcard"></i></div>
@@ -81,6 +81,8 @@
           </a>
         </div>
 
+      -->
+
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastro/minha-lista" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-clipboard2"></i></div>
@@ -88,6 +90,8 @@
             <small class="text-muted d-block">Pré-cadastros do seu usuário</small>
           </a>
         </div>
+
+
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/agendamentos" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-calendar-plus"></i></div>
@@ -96,6 +100,7 @@
           </a>
         </div>
 
+        <!-- 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/listagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-card-checklist"></i></div>
@@ -103,6 +108,7 @@
             <small class="text-muted d-block">Todos os Cadastros</small>
           </a>
         </div>
+      -->
 
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastros" class="card text-center shadow-sm p-3 text-decoration-none h-100">
@@ -112,7 +118,7 @@
           </a>
         </div>
 
-         <div class="col-10 col-sm-6 col-md-3">
+        <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/listagem-agendamentos" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-card-text"></i></div>
             <div class="mt-2 fw-bold text-dark">Listagem Agendamentos</div>
@@ -194,6 +200,15 @@
 
       <!-- ===================== VISÃO Operacional ===================== -->
       <ng-container *ngIf="hasAny(perfil?.papel, ['operacional', 'admin'])">
+
+        <div class="col-10 col-sm-6 col-md-3">
+          <a routerLink="/aprovacao-pre-cadastro" class="card text-center shadow-sm p-3 text-decoration-none h-100">
+            <div class="fs-1 text-success"><i class="bi bi-check-square"></i></div>
+            <div class="mt-2 fw-bold text-dark">Aprovação de Pré Cadastros</div>
+            <small class="text-muted d-block">Aprovar e encaminhar pré-cadastros aptos aos assessores</small>
+          </a>
+        </div>
+
         <div class="col-10 col-sm-6 col-md-3">
           <a routerLink="/pre-cadastro/triagem" class="card text-center shadow-sm p-3 text-decoration-none h-100">
             <div class="fs-1 text-success"><i class="bi bi-diagram-3-fill"></i></div>
@@ -201,6 +216,7 @@
             <small class="text-muted d-block">Vincular por rota/unidade</small>
           </a>
         </div>
+
       </ng-container>
 
     </div>
