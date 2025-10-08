@@ -148,7 +148,7 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
         const raw = (i as any)?.createdAt;
         const d: Date | null =
           raw?.toDate ? raw.toDate() :
-          (raw instanceof Date ? raw : (typeof raw === 'number' ? new Date(raw) : null));
+            (raw instanceof Date ? raw : (typeof raw === 'number' ? new Date(raw) : null));
         if (!d) return false;
         if (dtDe && d < dtDe) return false;
         if (dtAte && d > dtAte) return false;
@@ -158,8 +158,8 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
 
     const ms = (x: any) =>
       x?.toMillis ? x.toMillis() :
-      x?.toDate ? x.toDate().getTime() :
-      (typeof x === 'number' ? x : 0);
+        x?.toDate ? x.toDate().getTime() :
+          (typeof x === 'number' ? x : 0);
 
     return base.sort((a: any, b: any) => (ms(b.createdAt) - ms(a.createdAt)));
   });
@@ -322,6 +322,32 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
   }
 
   // ===== Nomes helpers =====
+
+  /** ===== Datas de aprovação e ordenação decrescente ===== */
+  private aprovOf(it: any): Date | null {
+    const raw = it?.aprovacao?.em;
+    if (raw?.toDate) return raw.toDate();
+    if (raw instanceof Date) return raw;
+    if (typeof raw === 'number') return new Date(raw);
+    // fallback: se não tiver aprovação, usa createdAt só para não "perder" o item
+    const c = it?.createdAt;
+    if (c?.toDate) return c.toDate();
+    if (c instanceof Date) return c;
+    if (typeof c === 'number') return new Date(c);
+    return null;
+  }
+
+  /** Ordena por aprovação (desc: mais recente primeiro) */
+  ordenarPorAprovDesc<T extends Record<string, any>>(arr: T[]): T[] {
+    return [...(arr || [])].sort((a, b) => {
+      const da = this.aprovOf(a)?.getTime() ?? 0;
+      const db = this.aprovOf(b)?.getTime() ?? 0;
+      return db - da;
+    });
+  }
+
+
+
   private setNome(uid: string, nome?: string) {
     if (!uid || !nome) return;
     this.nomePorUid.set(uid, nome);
@@ -524,7 +550,7 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
     docPdf.text(title, 40, 40);
 
     const filtros: string[] = [];
-    if (this.relFiltroAssessor() !== 'todos') filtros.push(`Assessor: ${this.nomeDoAssessor(this.relFiltroAssessor())}`);
+    if (this.relFiltroAssessor() !== 'todos' && this.relFiltroAssessor() !== '') filtros.push(`Assessor: ${this.nomeDoAssessor(this.relFiltroAssessor())}`);
     if (this.relFiltroDataDe()) filtros.push(`De: ${this.relFiltroDataDe()}`);
     if (this.relFiltroDataAte()) filtros.push(`Até: ${this.relFiltroDataAte()}`);
     if ((this.relFiltroNome() || '').trim()) filtros.push(`Nome contém: "${(this.relFiltroNome() || '').trim()}"`);
@@ -532,50 +558,63 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
     docPdf.setFontSize(10);
     docPdf.text((filtros.length ? `Filtros: ${filtros.join(' • ')}` : 'Sem filtros'), 40, 60);
 
+    // === NOVO: Resumo diário (Aptos x Inaptos) ===
+    autoTable(docPdf, {
+      startY: 80,
+      head: [['Resumo por dia']],
+      body: [],
+      theme: 'plain'
+    });
+    this.addResumoDiarioToPdf(docPdf);
+
+    // === Aptos pendentes (sem assessor) — já existia ===
     if (rel.pendentes.length) {
       autoTable(docPdf, {
-        startY: 80,
+        startY: (docPdf as any).lastAutoTable ? (docPdf as any).lastAutoTable.finalY + 16 : 80,
         head: [['Aptos pendentes (sem assessor)', '', '', '']],
         body: [],
         theme: 'plain'
       });
       autoTable(docPdf, {
-        head: [['Cliente', 'CPF', 'Criado em', 'Aprovado em']],
-        body: rel.pendentes.map(it => {
+        head: [['#', 'Cliente', 'CPF', 'Criado em', 'Aprovado em']],
+        body: this.ordenarPorAprovDesc(rel.pendentes).map((it, idx) => {
           const created = (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) as Date | undefined;
           const aprovEmRaw = (it as any)?.aprovacao?.em;
           const aprovEm = aprovEmRaw?.toDate ? aprovEmRaw.toDate() : aprovEmRaw;
           return [
+            String(idx + 1),
             it.nomeCompleto || '',
-            it.cpf || '',
+            this.cpfMask(it.cpf),
             created ? created.toLocaleString() : '—',
             aprovEm ? new Date(aprovEm).toLocaleString() : '—'
           ];
         }),
         styles: { fontSize: 9 }
       });
+
     }
 
+    // === Aptos por assessor — já existia ===
     let startY = (docPdf as any).lastAutoTable ? (docPdf as any).lastAutoTable.finalY + 12 : 80;
     for (const g of rel.grupos) {
       autoTable(docPdf, {
         startY,
-        head: [[`Assessor: ${g.assessorNome || g.assessorUid}  (${g.itens.length})`, '', '', '']],
+        head: [[`Aptos – Assessor: ${g.assessorNome || g.assessorUid}  (${g.itens.length})`, '', '', '']],
         body: [],
         theme: 'plain',
       });
       startY = (docPdf as any).lastAutoTable.finalY + 4;
 
       autoTable(docPdf, {
-        startY,
-        head: [['Cliente', 'CPF', 'Criado em', 'Encaminhado em']],
-        body: g.itens.map(it => {
+        head: [['#', 'Cliente', 'CPF', 'Criado em', 'Encaminhado em']],
+        body: this.ordenarPorAprovDesc(g.itens).map((it, idx) => {
           const created = (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) as Date | undefined;
           const encRaw = (it as any)?.encaminhamento?.em;
           const enc = encRaw?.toDate ? encRaw.toDate() : encRaw;
           return [
+            String(idx + 1),
             it.nomeCompleto || '',
-            it.cpf || '',
+            this.cpfMask(it.cpf),
             created ? created.toLocaleString() : '—',
             enc ? new Date(enc).toLocaleString() : '—'
           ];
@@ -583,13 +622,211 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
         styles: { fontSize: 9 }
       });
 
+
       startY = (docPdf as any).lastAutoTable.finalY + 16;
     }
 
+    // === NOVO: Seções de INAPTOS (pendentes e por assessor, se houver) ===
+    this.addInaptosToPdf(docPdf);
+
+    // Save
     const stamp = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const fname =
       `relatorio-aprovacao-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.pdf`;
     docPdf.save(fname);
   }
+
+  /** ==== Helpers de CPF + datas ==== **/
+  private digits(s: any): string { return String(s ?? '').replace(/\D+/g, ''); }
+
+  cpfMask(val?: string | null): string {
+    const d = this.digits(val);
+    if (d.length !== 11) return val ?? '';
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  }
+
+  private createdOf(it: any): Date | null {
+    const raw = it?.createdAt;
+    if (raw?.toDate) return raw.toDate();
+    if (raw instanceof Date) return raw;
+    if (typeof raw === 'number') return new Date(raw);
+    return null;
+  }
+
+  /** Ordena por criação (desc: mais recente primeiro) */
+  ordenarPorCriadoDesc<T extends Record<string, any>>(arr: T[]): T[] {
+    return [...(arr || [])].sort((a, b) => {
+      const da = this.createdOf(a)?.getTime() ?? 0;
+      const db = this.createdOf(b)?.getTime() ?? 0;
+      return db - da;
+    });
+  }
+  // Se quiser ascendente, troque para: return da - db;
+
+
+
+  /** ===================== NOVOS HELPERS ===================== **/
+  /** Data de decisão do status (aprovação reprovação); fallback createdAt */
+  private decisaoDate(it: any): Date | null {
+    const aprovRaw = it?.aprovacao?.em;
+    const d = aprovRaw?.toDate ? aprovRaw.toDate() : aprovRaw;
+    if (d instanceof Date) return d;
+    const created = it?.createdAt?.toDate ? it.createdAt.toDate() : it?.createdAt;
+    return created instanceof Date ? created : null;
+  }
+  /** Chave yyyy-MM-dd para agrupar por dia */
+  private dateKey(d: Date | null): string {
+    if (!d) return '—';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  /** ===================== INAPTOS (FILTRADOS) ===================== **/
+  inaptosFiltrados = computed(() => {
+    const de = this.relFiltroDataDe();
+    const ate = this.relFiltroDataAte();
+    const nomeTerm = (this.relFiltroNome() || '').trim().toLowerCase();
+
+    const dtDe = de ? new Date(de + 'T00:00:00') : null;
+    const dtAte = ate ? new Date(ate + 'T23:59:59') : null;
+
+    const statusIsInapto = (x: any) => (x?.aprovacao?.status ?? 'nao_verificado') === 'inapto';
+
+    const pass = (it: PreCadastro) => {
+      if (!statusIsInapto(it)) return false;
+      if (nomeTerm) {
+        const n = (it.nomeCompleto || '').toLowerCase();
+        if (!n.includes(nomeTerm)) return false;
+      }
+      if (dtDe || dtAte) {
+        const d = this.decisaoDate(it);
+        if (!d) return false;
+        if (dtDe && d < dtDe) return false;
+        if (dtAte && d > dtAte) return false;
+      }
+      return true;
+    };
+
+    const list = this.preCadastros().filter(pass);
+
+    // Inaptos pendentes (sem assessor) — por padrão, ao marcar inapto, você zera o encaminhamento
+    const pendentes = list.filter(it => !((it as any)?.encaminhamento?.assessorUid));
+
+    // (Opcional) Se algum fluxo seu deixar 'inapto' com assessor, agruparia assim:
+    const byAss = new Map<string, { assessorUid: string; assessorNome: string | null; itens: PreCadastro[] }>();
+    for (const it of list) {
+      const enc = (it as any)?.encaminhamento;
+      const uid = enc?.assessorUid;
+      if (!uid) continue;
+      const nome = enc?.assessorNome || this.nomesSignal()[uid] || null;
+      if (!byAss.has(uid)) byAss.set(uid, { assessorUid: uid, assessorNome: nome, itens: [] });
+      byAss.get(uid)!.itens.push(it);
+    }
+    const grupos = Array.from(byAss.values())
+      .sort((a, b) => (a.assessorNome || '').localeCompare(b.assessorNome || ''));
+
+    return { total: list.length, pendentes, grupos };
+  });
+
+  /** ===================== RESUMO POR DIA (APTOS X INAPTOS) ===================== **/
+  resumoDiario = computed(() => {
+    // Usa as listas já filtradas do modal:
+    const aptos = this.relatorioFiltrado().grupos.flatMap(g => g.itens)
+      .concat(this.relatorioFiltrado().pendentes); // todos aptos filtrados
+    const inaptos = this.inaptosFiltrados().pendentes
+      .concat(this.inaptosFiltrados().grupos.flatMap(g => g.itens)); // todos inaptos filtrados (em geral pendentes)
+
+    const map = new Map<string, { data: string; aptos: number; inaptos: number; itensAptos: any[]; itensInaptos: any[] }>();
+
+    const bump = (key: string, kind: 'apto' | 'inapto', it: any) => {
+      if (!map.has(key)) map.set(key, { data: key, aptos: 0, inaptos: 0, itensAptos: [], itensInaptos: [] });
+      const row = map.get(key)!;
+      if (kind === 'apto') { row.aptos++; row.itensAptos.push(it); }
+      else { row.inaptos++; row.itensInaptos.push(it); }
+    };
+
+    for (const it of aptos) bump(this.dateKey(this.decisaoDate(it)), 'apto', it);
+    for (const it of inaptos) bump(this.dateKey(this.decisaoDate(it)), 'inapto', it);
+
+    return Array.from(map.values())
+      .sort((a, b) => a.data.localeCompare(b.data)); // crescente por data
+  });
+
+  /** ===================== EXPORT PDF (ADICIONAR SEÇÕES) ===================== **/
+  private addResumoDiarioToPdf(docPdf: jsPDF) {
+    autoTable(docPdf, {
+      startY: (docPdf as any).lastAutoTable ? (docPdf as any).lastAutoTable.finalY + 16 : 80,
+      head: [['Data', 'Aptos', 'Inaptos', 'Total']],
+      body: this.resumoDiario().map(r => [r.data, String(r.aptos), String(r.inaptos), String(r.aptos + r.inaptos)]),
+      styles: { fontSize: 9 }
+    });
+  }
+
+  private addInaptosToPdf(docPdf: jsPDF) {
+    const ina = this.inaptosFiltrados();
+
+    if (ina.total) {
+      // Inaptos pendentes (sem assessor)
+      if (ina.pendentes.length) {
+        autoTable(docPdf, {
+          startY: (docPdf as any).lastAutoTable ? (docPdf as any).lastAutoTable.finalY + 16 : 80,
+          head: [['Inaptos (sem assessor)', '', '', '']],
+          body: [],
+          theme: 'plain'
+        });
+        autoTable(docPdf, {
+          head: [['#', 'Cliente', 'CPF', 'Criado em', 'Reprovado em']],
+          body: this.ordenarPorAprovDesc(ina.pendentes).map((it, idx) => {
+            const created = (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) as Date | undefined;
+            const emRaw = (it as any)?.aprovacao?.em;
+            const em = emRaw?.toDate ? emRaw.toDate() : emRaw;
+            return [
+              String(idx + 1),
+              it.nomeCompleto || '',
+              this.cpfMask(it.cpf),
+              created ? created.toLocaleString() : '—',
+              em ? new Date(em).toLocaleString() : '—'
+            ];
+          }),
+          styles: { fontSize: 9 }
+        });
+
+      }
+
+      // (Opcional) Inaptos por assessor (caso exista)
+      if (ina.grupos.length) {
+        for (const g of ina.grupos) {
+          autoTable(docPdf, {
+            startY: (docPdf as any).lastAutoTable ? (docPdf as any).lastAutoTable.finalY + 12 : 80,
+            head: [[`Inaptos – Assessor: ${g.assessorNome || g.assessorUid}  (${g.itens.length})`, '', '', '']],
+            body: [],
+            theme: 'plain',
+          });
+          autoTable(docPdf, {
+            head: [['#', 'Cliente', 'CPF', 'Criado em', 'Reprovado em']],
+            body: this.ordenarPorAprovDesc(g.itens).map((it, idx) => {
+              const created = (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) as Date | undefined;
+              const emRaw = (it as any)?.aprovacao?.em;
+              const em = emRaw?.toDate ? emRaw.toDate() : emRaw;
+              return [
+                String(idx + 1),
+                it.nomeCompleto || '',
+                this.cpfMask(it.cpf),
+                created ? created.toLocaleString() : '—',
+                em ? new Date(em).toLocaleString() : '—'
+              ];
+            }),
+            styles: { fontSize: 9 }
+          });
+
+        }
+      }
+    }
+  }
+
+
+
 }

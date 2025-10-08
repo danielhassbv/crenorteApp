@@ -6,7 +6,9 @@ import {
   signal,
   OnInit,
   ChangeDetectionStrategy,
+  OnDestroy
 } from '@angular/core';
+
 import { CommonModule } from '@angular/common';
 import { FormsModule, NgForm } from '@angular/forms';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
@@ -60,7 +62,13 @@ type FluxoTotais = { receita: number; custos: number; lucro: number };
   providers: [provideNgxMask()],
   changeDetection: ChangeDetectionStrategy.Default,
 })
-export class PreCadastroFormComponent implements OnInit {
+export class PreCadastroFormComponent implements OnInit, OnDestroy {
+  private _cpfCleanup?: () => void;
+
+  ngOnDestroy(): void {
+    this._cpfCleanup?.();
+  }
+
   private service = inject(PreCadastroService);
   public router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -209,33 +217,228 @@ export class PreCadastroFormComponent implements OnInit {
     }
   }
 
-  // ===== CPF =====
-  private cpfValido(cpf: string): boolean {
-    const s = (cpf || '').replace(/\D/g, '');
-    if (s.length !== 11) return false;
-    if (/^(\d)\1{10}$/.test(s)) return false;
+  /** ========= MÁSCARA/VALIDAÇÃO CPF (robusta) ========= */
+  private inicializarMascaraCPF(): () => void {
+    // Tenta encontrar o input imediatamente; se não achar, faz pequenas tentativas
+    let el = document.querySelector('input[name="cpf"]') as HTMLInputElement | null;
+    if (!el) {
+      const tries = 15; // ~1.5s de tentativas
+      let count = 0;
+      const iv = setInterval(() => {
+        el = document.querySelector('input[name="cpf"]') as HTMLInputElement | null;
+        if (el || ++count >= tries) {
+          clearInterval(iv);
+          if (el) this._cpfCleanup = this._wireCpf(el!);
+        }
+      }, 100);
+      // retorna cleanup que limpa depois (inclusive se wire acontecer assíncrono)
+      return () => {
+        /* noop, _wireCpf define o cleanup real */
+      };
+    } else {
+      return this._wireCpf(el);
+    }
+  }
 
-    const calcDV = (base: string, fatorInicial: number) => {
+  private _wireCpf(el: HTMLInputElement): () => void {
+    const normalizeUnicode = (v: string) =>
+      (v ?? '')
+        .toString()
+        .normalize('NFKD')
+        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '') // zero-width
+        .replace(/\u00A0/g, ' ') // NBSP
+        .trim();
+
+    const mapUnicodeDigit = (ch: string): string => {
+      const code = ch.charCodeAt(0);
+      if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660); // Arabic-Indic
+      if (code >= 0x06f0 && code <= 0x06f9) return String(code - 0x06f0); // Ext. Arabic-Indic
+      if (code >= 0xff10 && code <= 0xff19) return String(code - 0xff10); // Full-width
+      return ch;
+    };
+    const toAsciiDigits = (v: string) => Array.from(v).map(mapUnicodeDigit).join('');
+    const onlyDigits = (v: string) => toAsciiDigits(normalizeUnicode(v)).replace(/\D/g, '');
+
+    const formatCpf = (v: string) => {
+      const d = onlyDigits(v).slice(0, 11);
+      if (d.length <= 3) return d;
+      if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+      if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+      return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
+    };
+
+    const calcDV = (base: string, start: number) => {
       let soma = 0;
-      for (let i = 0; i < base.length; i++) {
-        soma += parseInt(base[i], 10) * (fatorInicial - i);
-      }
+      for (let i = 0; i < base.length; i++) soma += Number(base[i]) * (start - i);
       const resto = soma % 11;
       return resto < 2 ? 0 : 11 - resto;
     };
+    const allSame = (d: string) => /^(\d)\1{10}$/.test(d);
+    const isValid11 = (d: string) => {
+      if (d.length !== 11 || allSame(d)) return false;
+      const dv1 = calcDV(d.slice(0, 9), 10);
+      const dv2 = calcDV(d.slice(0, 10), 11);
+      return dv1 === Number(d[9]) && dv2 === Number(d[10]);
+    };
 
-    const dv1 = calcDV(s.substring(0, 9), 10);
-    if (dv1 !== parseInt(s[9], 10)) return false;
-    const dv2 = calcDV(s.substring(0, 10), 11);
-    if (dv2 !== parseInt(s[10], 10)) return false;
-    return true;
+    // Leniente: tenta validar mesmo se vier com ruído (usado para blur)
+    const validarLeniente = (v: string) => {
+      const digitsAll = onlyDigits(v);
+      if (digitsAll.length === 11) return isValid11(digitsAll);
+      if (digitsAll.length > 11) {
+        const right11 = digitsAll.slice(-11);
+        if (isValid11(right11)) return true;
+        for (let i = 0; i <= digitsAll.length - 11; i++) {
+          const win = digitsAll.slice(i, i + 11);
+          if (isValid11(win)) return true;
+        }
+        return false;
+      }
+      return false; // incompleto: não marca válido
+    };
+
+    const onInput = () => {
+      const masked = formatCpf(el.value);
+      if (el.value !== masked) {
+        el.value = masked;
+        const evt = new Event('input', { bubbles: true });
+        el.dispatchEvent(evt); // mantém [(ngModel)] sincronizado
+      }
+    };
+
+    const onBlur = () => {
+      const ok = validarLeniente(el.value);
+      const hasDigits = onlyDigits(el.value).length > 0;
+      el.classList.toggle('is-invalid', !ok && hasDigits);
+      el.classList.toggle('is-valid', ok);
+      // Força o model a armazenar já formatado e limpinho
+      if (ok) {
+        const masked = formatCpf(el.value);
+        if (el.value !== masked) {
+          el.value = masked;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    };
+
+    // Normaliza valor inicial (ex.: vindo do model)
+    el.value = formatCpf(el.value);
+    el.addEventListener('input', onInput);
+    el.addEventListener('blur', onBlur);
+
+    // cleanup
+    return () => {
+      el.removeEventListener('input', onInput);
+      el.removeEventListener('blur', onBlur);
+    };
   }
+
+  /** ✅ Validação final no submit (leniente por padrão; troque para strict = true se quiser) */
+  onSubmit(): void {
+    if (!this.cpfValido(this.model.cpf /*, true*/)) {
+      this.showMsg('danger', 'CPF inválido!', 6000);
+      return;
+    }
+    this.showMsg('success', 'CPF válido! ✅', 2500);
+  }
+
+  /**
+   * Validador de CPF robusto.
+   * - strict=false (padrão): tolerante a ruídos. Se houver >11 dígitos, tenta janelas de 11 até achar válido.
+   * - strict=true: exige exatamente 11 dígitos limpos.
+   */
+  /** Validador de CPF ultra-tolerante.
+ * - strict=false: procura QUALQUER janela de 11 dígitos válida dentro do texto.
+ * - strict=true: exige exatamente 11 dígitos limpos.
+ */
+private cpfValido(cpf: unknown, strict = false): boolean {
+  // 1) Normaliza unicode e remove espaços invisíveis
+  const normalizeUnicode = (v: string) =>
+    (v ?? '')
+      .toString()
+      .normalize('NFKD')
+      .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '') // zero-width
+      .replace(/\u00A0/g, ' ') // NBSP
+      .trim();
+
+  // 2) Converte dígitos unicode para ASCII
+  const mapUnicodeDigit = (ch: string): string => {
+    const code = ch.charCodeAt(0);
+    if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660); // Arabic-Indic
+    if (code >= 0x06f0 && code <= 0x06f9) return String(code - 0x06f0); // Ext. Arabic-Indic
+    if (code >= 0xff10 && code <= 0xff19) return String(code - 0xff10); // Full-width
+    return ch;
+  };
+  const toAsciiDigits = (v: string) => Array.from(v).map(mapUnicodeDigit).join('');
+
+  // 3) Texto normalizado
+  const raw = toAsciiDigits(normalizeUnicode(String(cpf ?? '')));
+
+  // Helpers
+  const allSame = (d: string) => /^(\d)\1{10}$/.test(d);
+  const calcDV = (base: string, start: number) => {
+    let soma = 0;
+    for (let i = 0; i < base.length; i++) soma += Number(base[i]) * (start - i);
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  const isValid11 = (d: string) => {
+    if (d.length !== 11 || allSame(d)) return false;
+    const dv1 = calcDV(d.slice(0, 9), 10);
+    const dv2 = calcDV(d.slice(0, 10), 11);
+    return dv1 === Number(d[9]) && dv2 === Number(d[10]);
+  };
+
+  // 4) STRIP total de não dígitos
+  const onlyDigits = raw.replace(/\D/g, '');
+
+  if (strict) {
+    // Exige exatamente 11 dígitos
+    return isValid11(onlyDigits);
+  }
+
+  // LENIENTE:
+  // a) Se tiver 11 dígitos exatos
+  if (onlyDigits.length === 11) return isValid11(onlyDigits);
+
+  // b) Se tiver MAIS que 11 dígitos: tente janelas válidas
+  if (onlyDigits.length > 11) {
+    // 1º tentativa: os 11 da direita (caso comum de colagem)
+    const right11 = onlyDigits.slice(-11);
+    if (isValid11(right11)) return true;
+
+    // Varre TODAS as janelas de 11
+    for (let i = 0; i <= onlyDigits.length - 11; i++) {
+      const win = onlyDigits.slice(i, i + 11);
+      if (isValid11(win)) return true;
+    }
+    console.log('DEBUG CPF RAW:', this.model.cpf);
+console.log('DEBUG PASSA?', this.cpfValido(this.model.cpf), this.cpfValido(this.model.cpf, true));
+    return false;
+  }
+
+  // c) Se tiver MENOS que 11, ainda podemos ter “texto” com números misturados;
+  // tenta achar substrings de 11 dígitos dentro do raw original (com pontuação/máscara)
+  // Ex.: "CPF: 765.210.362-20 OK"
+  const matches = raw.match(/\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d/g);
+  if (matches) {
+    for (const m of matches) {
+      const dig = m.replace(/\D/g, '');
+      if (dig.length === 11 && isValid11(dig)) return true;
+    }
+  }
+
+  return false;
+}
 
   // ===== Init =====
   async ngOnInit() {
     this.atualizarParcelasLabels();
     this.atualizarResumo();
     this.recalcularTotaisFromFluxoCaixa();
+
+    // Inicia máscara/validação CPF (com retry se o input ainda não existir)
+    this._cpfCleanup = this.inicializarMascaraCPF();
 
     this.route.queryParamMap.subscribe(async (qp) => {
       this.editMode = qp.get('edit') === 'true';
@@ -284,6 +487,12 @@ export class PreCadastroFormComponent implements OnInit {
         this.recalcularTotaisFromFluxoCaixa();
 
         this.lastPreCadastroId = snap.id;
+
+        // Se já veio CPF no model (edição), reformatar o input (se já estiver na tela)
+        setTimeout(() => {
+          const el = document.querySelector('input[name="cpf"]') as HTMLInputElement | null;
+          if (el) el.dispatchEvent(new Event('input', { bubbles: true }));
+        }, 0);
       } catch (e: any) {
         console.error('[PreCadastro] Erro ao carregar doc para edição:', e);
         this.showMsg('danger', e?.message || 'Erro ao carregar o pré-cadastro para edição.', 7000);
@@ -299,7 +508,6 @@ export class PreCadastroFormComponent implements OnInit {
   }
 
   onValorChange(raw: any) {
-    // igual ao cadastro-form
     this.valorSolicitadoNumber = this.parseMoedaBR(raw);
     this.atualizarParcelasLabels();
     this.atualizarResumo();
@@ -335,7 +543,6 @@ export class PreCadastroFormComponent implements OnInit {
 
   // ===== Parcela Sugerida + Cores (iguais ao cadastro) =====
   private getOutrasRendasNumber(): number {
-    // pré-cadastro não tem outras rendas declaradas: 0
     return 0;
   }
   computeParcelaSugerida() {
@@ -377,7 +584,7 @@ export class PreCadastroFormComponent implements OnInit {
     return 'bg-danger-subtle text-dark border';
   }
 
-  // ===== Totais do modal (em tempo real, como no cadastro) =====
+  // ===== Totais do modal =====
   totalReceita(): number {
     return this.fluxoForm.faturamentoMensal || 0;
   }
@@ -483,9 +690,7 @@ export class PreCadastroFormComponent implements OnInit {
       },
     };
 
-    // Atualiza os totais “oficiais” usados pela parcela sugerida
     this.recalcularTotaisFromFluxoCaixa();
-    // Atualiza labels de parcelas/sugerida/resumo
     this.atualizarParcelasLabels();
     this.atualizarResumo();
 
@@ -544,7 +749,7 @@ export class PreCadastroFormComponent implements OnInit {
       bairro: this.limpar(this.model.bairro),
     };
 
-    if (!form.valid || (payloadBase.cpf && !this.cpfValido(payloadBase.cpf))) {
+    if (!form.valid || (payloadBase.cpf && !this.cpfValido(payloadBase.cpf /*, true*/))) {
       this.showMsg('danger', 'Preencha os campos corretamente (CPF inválido).', 6000);
       return;
     }

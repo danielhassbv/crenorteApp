@@ -9,8 +9,7 @@
       <!-- Filtro: Assessor (autor) -->
       <div class="input-group">
         <span class="input-group-text">Assessor</span>
-        <select class="form-select" [value]="filtroAssessor()" #selAss
-                (change)="onFiltroAssessorChange(selAss.value)">
+        <select class="form-select" [value]="filtroAssessor()" #selAss (change)="onFiltroAssessorChange(selAss.value)">
           <option value="todos">Todos</option>
           <option *ngFor="let a of autoresOptions()" [value]="a.uid">{{ a.nome }}</option>
         </select>
@@ -20,17 +19,16 @@
       <div class="input-group">
         <span class="input-group-text">De</span>
         <input type="date" class="form-control" [value]="filtroDataDe() || ''"
-               (input)="onFiltroDataDeChange($any($event.target).value)">
+          (input)="onFiltroDataDeChange($any($event.target).value)">
         <span class="input-group-text">Até</span>
         <input type="date" class="form-control" [value]="filtroDataAte() || ''"
-               (input)="onFiltroDataAteChange($any($event.target).value)">
+          (input)="onFiltroDataAteChange($any($event.target).value)">
       </div>
 
       <!-- Filtro: Status -->
       <div class="input-group">
         <span class="input-group-text">Aprovação</span>
-        <select class="form-select" [value]="filtroAprovacao()" #selAprov
-                (change)="onChangeAprovacao(selAprov.value)">
+        <select class="form-select" [value]="filtroAprovacao()" #selAprov (change)="onChangeAprovacao(selAprov.value)">
           <option value="todos">Todos</option>
           <option value="nao_verificado">Não verificados</option>
           <option value="apto">Aptos</option>
@@ -53,8 +51,7 @@
 
   <!-- PAGINAÇÃO (topo) -->
   <nav *ngIf="!loading() && filtrados().length"
-       class="px-2 py-2 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2"
-       aria-label="Paginação">
+    class="px-2 py-2 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2" aria-label="Paginação">
     <div class="small text-muted">
       Mostrando {{ pageStart + 1 }}–{{ pageEnd }} de {{ totalItems }}
     </div>
@@ -100,15 +97,14 @@
           <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
             <span class="fw-semibold">Status aprovação:</span>
 
-            <span class="badge"
-                  [ngClass]="{
+            <span class="badge" [ngClass]="{
                     'text-bg-secondary': (item.aprovacao?.status || 'nao_verificado')==='nao_verificado',
                     'text-bg-danger':    (item.aprovacao?.status || 'nao_verificado')==='inapto',
                     'text-bg-success':   (item.aprovacao?.status || 'nao_verificado')==='apto'
                   }">
               {{
-                (item.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
-                (item.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
+              (item.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
+              (item.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
               }}
             </span>
 
@@ -133,15 +129,13 @@
         <!-- DIREITA: ações -->
         <div class="text-end">
           <div class="d-flex justify-content-end gap-2 mb-2">
-            <button class="btn btn-outline-success"
-                    [disabled]="(item.aprovacao?.status || 'nao_verificado')==='apto'"
-                    (click)="marcarApto(item)">
+            <button class="btn btn-outline-success" [disabled]="(item.aprovacao?.status || 'nao_verificado')==='apto'"
+              (click)="marcarApto(item)">
               Aprovar (Apto)
             </button>
 
-            <button class="btn btn-outline-danger"
-                    [disabled]="(item.aprovacao?.status || 'nao_verificado')==='inapto'"
-                    (click)="abrirModalInapto(item)">
+            <button class="btn btn-outline-danger" [disabled]="(item.aprovacao?.status || 'nao_verificado')==='inapto'"
+              (click)="abrirModalInapto(item)">
               Marcar Inapto
             </button>
           </div>
@@ -152,16 +146,13 @@
 
   <!-- PAGINAÇÃO (base) -->
   <nav *ngIf="!loading() && filtrados().length"
-       class="px-2 py-2 mt-2 d-flex flex-wrap align-items-center justify-content-between gap-2"
-       aria-label="Paginação">
+    class="px-2 py-2 mt-2 d-flex flex-wrap align-items-center justify-content-between gap-2" aria-label="Paginação">
     <div class="small text-muted">
       Mostrando {{ pageStart + 1 }}–{{ pageEnd }} de {{ totalItems }}
     </div>
     <div class="d-flex align-items-center gap-2">
       <label class="small text-muted me-1">por página</label>
-      <select class="form-select form-select-sm w-auto"
-              [ngModel]="pageSize"
-              (ngModelChange)="onPageSizeChange($event)">
+      <select class="form-select form-select-sm w-auto" [ngModel]="pageSize" (ngModelChange)="onPageSizeChange($event)">
         <option [ngValue]="10">10</option>
         <option [ngValue]="20">20</option>
         <option [ngValue]="30">30</option>
@@ -185,9 +176,9 @@
 
 <!-- ===== Modal: Marcar Inapto ===== -->
 <div *ngIf="inaptoAberto()" class="position-fixed top-0 start-0 w-100 h-100"
-     style="background: rgba(0,0,0,.35); z-index:1055;">
+  style="background: rgba(0,0,0,.35); z-index:1055;">
   <div class="bg-white shadow rounded-3 position-absolute top-50 start-50 translate-middle"
-       style="width:min(560px, 96vw);">
+    style="width:min(560px, 96vw);">
     <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
       <h5 class="mb-0">Motivo da inaptidão</h5>
       <button class="btn btn-sm btn-outline-secondary" (click)="fecharModalInapto()">Fechar</button>
@@ -196,14 +187,13 @@
     <div class="p-3">
       <label class="form-label">Descreva o motivo / observação</label>
       <textarea #txtMotivo class="form-control" rows="4"
-                placeholder="Ex.: Documento divergente, cliente negativado, dados inconsistentes, etc."></textarea>
+        placeholder="Ex.: Documento divergente, cliente negativado, dados inconsistentes, etc."></textarea>
       <small class="text-muted">Essa observação ficará registrada no histórico da aprovação.</small>
     </div>
 
     <div class="p-3 border-top d-flex justify-content-end gap-2">
       <button class="btn btn-light" (click)="fecharModalInapto()">Cancelar</button>
-      <button class="btn btn-danger"
-              (click)="confirmarInapto(txtMotivo.value)">
+      <button class="btn btn-danger" (click)="confirmarInapto(txtMotivo.value)">
         Confirmar Inapto
       </button>
     </div>
@@ -212,9 +202,9 @@
 
 <!-- ===== Modal: Relatório de Aprovação ===== -->
 <div *ngIf="relatorioAberto()" class="position-fixed top-0 start-0 w-100 h-100"
-     style="background: rgba(0,0,0,.35); z-index:1055;">
+  style="background: rgba(0,0,0,.35); z-index:1055;">
   <div class="bg-white shadow rounded-3 position-absolute top-50 start-50 translate-middle"
-       style="width:min(980px, 96vw); max-height:86vh; overflow:auto;">
+    style="width:min(980px, 96vw); max-height:86vh; overflow:auto;">
     <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
       <h5 class="mb-0">Relatório de Aprovação</h5>
       <div class="d-flex gap-2">
@@ -229,7 +219,7 @@
         <div class="col-12 col-md-4">
           <label class="form-label">Assessor</label>
           <select class="form-select" [value]="relFiltroAssessor()" #relAssSel
-                  (change)="onRelFiltroAssessorChange(relAssSel.value)">
+            (change)="onRelFiltroAssessorChange(relAssSel.value)">
             <option value="">Todos</option>
             <option *ngFor="let a of assessores()" [value]="a.uid || a.id">{{ a.nome }}</option>
           </select>
@@ -237,23 +227,20 @@
 
         <div class="col-6 col-md-3">
           <label class="form-label">De</label>
-          <input type="date" class="form-control"
-                 [value]="relFiltroDataDe() || ''"
-                 (input)="onRelFiltroDataDeChange($any($event.target).value)">
+          <input type="date" class="form-control" [value]="relFiltroDataDe() || ''"
+            (input)="onRelFiltroDataDeChange($any($event.target).value)">
         </div>
 
         <div class="col-6 col-md-3">
           <label class="form-label">Até</label>
-          <input type="date" class="form-control"
-                 [value]="relFiltroDataAte() || ''"
-                 (input)="onRelFiltroDataAteChange($any($event.target).value)">
+          <input type="date" class="form-control" [value]="relFiltroDataAte() || ''"
+            (input)="onRelFiltroDataAteChange($any($event.target).value)">
         </div>
 
         <div class="col-12 col-md-2">
           <label class="form-label">Cliente</label>
-          <input type="text" class="form-control" placeholder="Nome"
-                 [value]="relFiltroNome() || ''"
-                 (input)="onRelFiltroNomeChange($any($event.target).value)">
+          <input type="text" class="form-control" placeholder="Nome" [value]="relFiltroNome() || ''"
+            (input)="onRelFiltroNomeChange($any($event.target).value)">
         </div>
       </div>
     </div>
@@ -265,6 +252,32 @@
         <strong>Total de aptos:</strong> {{ relatorio().total }}
       </p>
 
+      <!-- Resumo por dia (Aptos x Inaptos) -->
+      <div class="mb-4" *ngIf="resumoDiario().length">
+        <h6 class="mb-2">Resumo por dia</h6>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th class="text-end">Aptos</th>
+                <th class="text-end">Inaptos</th>
+                <th class="text-end">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of resumoDiario()">
+                <td>{{ r.data }}</td>
+                <td class="text-end">{{ r.aptos }}</td>
+                <td class="text-end">{{ r.inaptos }}</td>
+                <td class="text-end">{{ r.aptos + r.inaptos }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+
       <!-- Aptos pendentes -->
       <div class="mb-4" *ngIf="relatorio().pendentes.length">
         <h6 class="mb-2">Aptos pendentes (sem assessor)</h6>
@@ -272,6 +285,7 @@
           <table class="table table-sm align-middle">
             <thead>
               <tr>
+                <th class="text-center" style="width:48px">#</th>
                 <th>Cliente</th>
                 <th>CPF</th>
                 <th>Criado em</th>
@@ -279,9 +293,10 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let it of relatorio().pendentes">
+              <tr *ngFor="let it of ordenarPorAprovDesc(relatorio().pendentes); let idx = index">
+                <td class="text-center">{{ idx + 1 }}</td>
                 <td>{{ it.nomeCompleto }}</td>
-                <td>{{ it.cpf }}</td>
+                <td>{{ cpfMask(it.cpf) }}</td>
                 <td>{{ (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) | date:'dd/MM/yyyy HH:mm' }}</td>
                 <td>
                   <ng-container *ngIf="$any(it)?.aprovacao?.em as aem">
@@ -292,6 +307,7 @@
               </tr>
             </tbody>
           </table>
+
         </div>
       </div>
 
@@ -305,6 +321,7 @@
           <table class="table table-sm align-middle">
             <thead>
               <tr>
+                <th class="text-center" style="width:48px">#</th>
                 <th>Cliente</th>
                 <th>CPF</th>
                 <th>Criado em</th>
@@ -312,9 +329,10 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let it of g.itens">
+              <tr *ngFor="let it of ordenarPorAprovDesc(g.itens); let idx = index">
+                <td class="text-center">{{ idx + 1 }}</td>
                 <td>{{ it.nomeCompleto }}</td>
-                <td>{{ it.cpf }}</td>
+                <td>{{ cpfMask(it.cpf) }}</td>
                 <td>{{ (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) | date:'dd/MM/yyyy HH:mm' }}</td>
                 <td>
                   <ng-container *ngIf="$any(it)?.encaminhamento?.em as eem">
@@ -325,8 +343,88 @@
               </tr>
             </tbody>
           </table>
+
         </div>
       </div>
+
+      <!-- INAPTOS -->
+      <div class="mb-4">
+        <h6 class="mb-2">Inaptos</h6>
+
+        <!-- Inaptos pendentes (sem assessor) -->
+        <div class="mb-3" *ngIf="inaptosFiltrados().pendentes.length">
+          <h6 class="mb-2">Inaptos pendentes (sem assessor)</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th class="text-center" style="width:48px">#</th>
+                  <th>Cliente</th>
+                  <th>CPF</th>
+                  <th>Criado em</th>
+                  <th>Reprovado em</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let it of ordenarPorAprovDesc(inaptosFiltrados().pendentes); let idx = index">
+                  <td class="text-center">{{ idx + 1 }}</td>
+                  <td>{{ it.nomeCompleto }}</td>
+                  <td>{{ cpfMask(it.cpf) }}</td>
+                  <td>{{ (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) | date:'dd/MM/yyyy HH:mm' }}</td>
+                  <td>
+                    <ng-container *ngIf="$any(it)?.aprovacao?.em as iem">
+                      {{ (iem?.toDate ? iem.toDate() : iem) | date:'dd/MM/yyyy HH:mm' }}
+                    </ng-container>
+                    <ng-container *ngIf="!$any(it)?.aprovacao?.em">—</ng-container>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+          </div>
+        </div>
+
+        <!-- Inaptos por assessor (caso exista algum com assessor vinculado) -->
+        <div *ngFor="let g of inaptosFiltrados().grupos" class="mb-3">
+          <h6 class="mb-2">
+            Inaptos – Assessor: {{ g.assessorNome || g.assessorUid }}
+            <span class="text-muted">({{ g.itens.length }})</span>
+          </h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th class="text-center" style="width:48px">#</th>
+                  <th>Cliente</th>
+                  <th>CPF</th>
+                  <th>Criado em</th>
+                  <th>Reprovado em</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let it of ordenarPorAprovDesc(g.itens); let idx = index">
+                  <td class="text-center">{{ idx + 1 }}</td>
+                  <td>{{ it.nomeCompleto }}</td>
+                  <td>{{ cpfMask(it.cpf) }}</td>
+                  <td>{{ (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) | date:'dd/MM/yyyy HH:mm' }}</td>
+                  <td>
+                    <ng-container *ngIf="$any(it)?.aprovacao?.em as iem">
+                      {{ (iem?.toDate ? iem.toDate() : iem) | date:'dd/MM/yyyy HH:mm' }}
+                    </ng-container>
+                    <ng-container *ngIf="!$any(it)?.aprovacao?.em">—</ng-container>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+          </div>
+        </div>
+
+        <div *ngIf="!inaptosFiltrados().total" class="text-muted">
+          Nenhum pré-cadastro inapto dentro dos filtros.
+        </div>
+      </div>
+
 
       <div *ngIf="!relatorio().total" class="text-muted">
         Nenhum pré-cadastro apto até o momento.
