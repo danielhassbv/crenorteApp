@@ -40,6 +40,15 @@
       <div *ngIf="!carregando() && !erro() && !view.length" class="alert alert-light mb-4">
         Nenhum pré-cadastro encontrado.
       </div>
+      <div class="small text-muted mb-2" *ngIf="filtroCriadorUid || filtroDistribuidoUid">
+        <ng-container *ngIf="filtroCriadorUid">
+          Criado por: <strong>{{ resolveAssessorNome(filtroCriadorUid) || filtroCriadorUid }}</strong>
+        </ng-container>
+        <ng-container *ngIf="filtroCriadorUid && filtroDistribuidoUid"> • </ng-container>
+        <ng-container *ngIf="filtroDistribuidoUid">
+          Distribuído para: <strong>{{ resolveAssessorNome(filtroDistribuidoUid) || filtroDistribuidoUid }}</strong>
+        </ng-container>
+      </div>
 
       <!-- LISTA EM CARDS -->
       <div class="container no-overflow" *ngIf="!carregando() && !erro() && view.length">
@@ -227,6 +236,52 @@
       </div>
     </div>
 
+    <!-- Criado por (assessor) -->
+    <div class="filters-group mb-4">
+      <button class="filters-group__header" type="button" (click)="toggleGroup('criador')"
+        [attr.aria-expanded]="isOpen('criador')">
+        <span>Criado por (assessor)</span>
+        <i class="bi" [ngClass]="isOpen('criador') ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+      <div class="filters-group__body pt-2" *ngIf="isOpen('criador')">
+        <div class="d-flex align-items-center gap-2">
+          <select class="form-select" [ngModel]="filtroCriadorUid" (ngModelChange)="onFiltroCriadorChange($event)">
+            <option value="">Todos</option>
+            <option *ngFor="let a of assessores" [value]="a.uid">
+              {{ a.nome || a.email || a.uid }}
+            </option>
+          </select>
+          <button class="btn btn-link p-0" (click)="limparFiltroCriador()" *ngIf="filtroCriadorUid">Limpar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Distribuído para (assessor) -->
+    <div class="filters-group mb-4">
+      <button class="filters-group__header" type="button" (click)="toggleGroup('destino')"
+        [attr.aria-expanded]="isOpen('destino')">
+        <span>Distribuído para (assessor)</span>
+        <i class="bi" [ngClass]="isOpen('destino') ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+      <div class="filters-group__body pt-2" *ngIf="isOpen('destino')">
+        <div class="d-flex align-items-center gap-2">
+          <select class="form-select" [ngModel]="filtroDistribuidoUid"
+            (ngModelChange)="onFiltroDistribuidoChange($event)">
+            <option value="">Todos</option>
+            <option *ngFor="let a of assessores" [value]="a.uid">
+              {{ a.nome || a.email || a.uid }}
+            </option>
+          </select>
+          <button class="btn btn-link p-0" (click)="limparFiltroDistribuido()"
+            *ngIf="filtroDistribuidoUid">Limpar</button>
+        </div>
+        <div class="form-text mt-2">
+          Considera apenas itens com <code>designadoEm</code> e <code>designadoPara</code> preenchidos.
+        </div>
+      </div>
+    </div>
+
+
     <div class="filters-group mb-3">
       <button class="filters-group__header" type="button" (click)="toggleGroup('bairros')"
         [attr.aria-expanded]="isOpen('bairros')">
@@ -319,9 +374,9 @@
 
 <!-- ===== Modal: Relatório de Distribuição ===== -->
 <div *ngIf="showRelatorioDist" class="position-fixed top-0 start-0 w-100 h-100"
-     style="background: rgba(0,0,0,.35); z-index:1055;">
+  style="background: rgba(0,0,0,.35); z-index:1055;">
   <div class="bg-white shadow rounded-3 position-absolute top-50 start-50 translate-middle"
-       style="width:min(980px, 96vw); max-height:86vh; overflow:auto;">
+    style="width:min(980px, 96vw); max-height:86vh; overflow:auto;">
     <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
       <h5 class="mb-0">Relatório de Distribuição</h5>
       <div class="d-flex gap-2">
@@ -374,19 +429,19 @@
       <div class="table-responsive mb-4">
         <table class="table table-sm align-middle">
           <thead>
-          <tr>
-            <th>Dia</th>
-            <th class="text-end">Distribuições</th>
-          </tr>
+            <tr>
+              <th>Dia</th>
+              <th class="text-end">Distribuições</th>
+            </tr>
           </thead>
           <tbody>
-          <tr *ngFor="let r of distPorDia()">
-            <td>{{ r.label }}</td>
-            <td class="text-end fw-semibold">{{ r.total }}</td>
-          </tr>
-          <tr *ngIf="!distPorDia().length">
-            <td colspan="2" class="text-muted">Nenhuma distribuição encontrada.</td>
-          </tr>
+            <tr *ngFor="let r of distPorDia()">
+              <td>{{ r.label }}</td>
+              <td class="text-end fw-semibold">{{ r.total }}</td>
+            </tr>
+            <tr *ngIf="!distPorDia().length">
+              <td colspan="2" class="text-muted">Nenhuma distribuição encontrada.</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -395,19 +450,19 @@
       <div class="table-responsive">
         <table class="table table-sm align-middle">
           <thead>
-          <tr>
-            <th>Assessor</th>
-            <th class="text-end">Distribuições</th>
-          </tr>
+            <tr>
+              <th>Assessor</th>
+              <th class="text-end">Distribuições</th>
+            </tr>
           </thead>
           <tbody>
-          <tr *ngFor="let a of distPorAssessor()">
-            <td>{{ a.nome }}</td>
-            <td class="text-end fw-semibold">{{ a.total }}</td>
-          </tr>
-          <tr *ngIf="!distPorAssessor().length">
-            <td colspan="2" class="text-muted">Nenhuma distribuição encontrada.</td>
-          </tr>
+            <tr *ngFor="let a of distPorAssessor()">
+              <td>{{ a.nome }}</td>
+              <td class="text-end fw-semibold">{{ a.total }}</td>
+            </tr>
+            <tr *ngIf="!distPorAssessor().length">
+              <td colspan="2" class="text-muted">Nenhuma distribuição encontrada.</td>
+            </tr>
           </tbody>
         </table>
       </div>

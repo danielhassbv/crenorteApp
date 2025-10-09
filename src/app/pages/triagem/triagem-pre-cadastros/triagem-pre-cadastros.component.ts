@@ -50,7 +50,7 @@ const ORIGEM_SYNONYMS: Record<string, string> = {
   'igreja': 'igreja',
   'presencial': 'presencial', 'visita': 'presencial', 'visita presencial': 'presencial', 'cadastro presencial': 'presencial',
   'indicacao': 'indicacao', 'indicação': 'indicacao',
-  'proprio': 'proprio', 'próprio': 'proprio', 'propria': 'proprio', 'própria': 'proprio',
+  'proprio': 'proprio', 'próprio': 'proprio', 'própria': 'proprio'
 };
 
 const ORIGEM_LABELS: Record<string, string> = {
@@ -149,6 +149,9 @@ type StatusKey = 'todos' | 'nao' | 'apto' | 'inapto';
 type DistRow = { key: string; dt: Date | null; label: string; aptos: number; inaptos: number; nao: number; total: number; };
 type DistGroup = { key: string; label: string; dt: Date | null; itens: PreCadastroRow[] };
 
+// 🔹 NOVO: chaves válidas dos grupos de filtros (inclui criador/destino)
+type FilterGroupKey = 'status' | 'periodo' | 'origem' | 'bairros' | 'criador' | 'destino';
+
 /* =========================
    Componente
    ========================= */
@@ -173,22 +176,22 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   openFilters() { this.showFilters = true; try { document.body.classList.add('no-scroll'); } catch { } }
   closeFilters() { this.showFilters = false; try { document.body.classList.remove('no-scroll'); } catch { } }
 
-  // Estado de colapso por grupo
-  filterOpen: Record<'status' | 'periodo' | 'origem' | 'bairros', boolean> = {
-    status: true, periodo: false, origem: true, bairros: false
+  // Estado de colapso por grupo (agora com criador/destino)
+  filterOpen: Record<FilterGroupKey, boolean> = {
+    status: true, periodo: false, origem: true, bairros: false, criador: false, destino: false
   };
-  toggleGroup(k: 'status' | 'periodo' | 'origem' | 'bairros') {
+  toggleGroup(k: FilterGroupKey) {
     this.filterOpen[k] = !this.filterOpen[k];
     this.persistFilterUI();
   }
-  isOpen(k: 'status' | 'periodo' | 'origem' | 'bairros') { return this.filterOpen[k]; }
+  isOpen(k: FilterGroupKey) { return this.filterOpen[k]; }
   private persistFilterUI() {
     try { localStorage.setItem('triagemFilterOpen', JSON.stringify(this.filterOpen)); } catch { }
   }
   private loadFilterUI() {
     try {
       const raw = localStorage.getItem('triagemFilterOpen');
-      if (raw) this.filterOpen = { ...this.filterOpen, ...JSON.parse(raw) };
+      if (raw) this.filterOpen = { ...this.filterOpen, ...(JSON.parse(raw) as Partial<Record<FilterGroupKey, boolean>>) };
     } catch { }
   }
 
@@ -200,6 +203,10 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   // filtros agregados
   origens: Array<{ key: string; label: string; count: number }> = [];
   filtroOrigemKey = '';
+
+  // Filtros por assessor (criador e distribuído)
+  filtroCriadorUid: string = '';
+  filtroDistribuidoUid: string = '';
 
   topBairros: Array<{ label: string; count: number }> = [];
   filtroBairro = '';
@@ -374,7 +381,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   initial(s: string): string {
     const t = (s ?? '').toString().trim();
     return t ? t.charAt(0).toUpperCase() : '?';
-    }
+  }
   nomeAssessor(a: Assessor | undefined): string { return (a?.nome || a?.email || a?.uid || '').toString(); }
   resolveAssessorNome(uid: string): string {
     const a = this.assessores.find((x) => x.uid === uid);
@@ -399,10 +406,33 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.busca = '';
     this.filtroRota = '';
     this.filtroOrigemKey = '';
-       this.filtroBairro = '';
+    this.filtroBairro = '';
     this.statusFilter = 'todos';
     this.periodoFilter = 'todos';
     this.somenteNaoDesignados = false;
+
+    // NOVOS
+    this.filtroCriadorUid = '';
+    this.filtroDistribuidoUid = '';
+
+    this.aplicarFiltros();
+  }
+
+  onFiltroCriadorChange(uid: string) {
+    this.filtroCriadorUid = (uid || '').trim();
+    this.aplicarFiltros();
+  }
+  limparFiltroCriador() {
+    this.filtroCriadorUid = '';
+    this.aplicarFiltros();
+  }
+
+  onFiltroDistribuidoChange(uid: string) {
+    this.filtroDistribuidoUid = (uid || '').trim();
+    this.aplicarFiltros();
+  }
+  limparFiltroDistribuido() {
+    this.filtroDistribuidoUid = '';
     this.aplicarFiltros();
   }
 
@@ -487,6 +517,21 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (origemKey) list = list.filter(p => p.origemKey === origemKey);
     if (bairroSel) list = list.filter(p => titleCase(p.bairro || '') === bairroSel);
 
+    // Filtrar por "Criado por (assessor)"
+    if (this.filtroCriadorUid) {
+      list = list.filter(p => (p.createdByUid || '') === this.filtroCriadorUid);
+    }
+
+    // Filtrar por "Distribuído para (assessor)"
+    if (this.filtroDistribuidoUid) {
+      // Considera apenas registros efetivamente distribuídos
+      list = list.filter(p =>
+        !!p.designadoEm &&
+        !!p.designadoParaUid &&
+        p.designadoParaUid === this.filtroDistribuidoUid
+      );
+    }
+
     // filtro por status (novo conceito)
     if (this.statusFilter !== 'todos') {
       list = list.filter(p => (p.statusAprovacao || 'nao') === this.statusFilter);
@@ -534,7 +579,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.designando[r.id] = true;
     this.errDesignado[r.id] = false;
 
-    try {
+       try {
       const colabRef = doc(db, 'colaboradores', uid);
       const colabSnap = await getDoc(colabRef);
       if (!colabSnap.exists()) throw new Error('Colaborador não encontrado.');
@@ -725,7 +770,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   cpfMask(val?: string | null): string {
     const d = this.digits(val);
     if (d.length !== 11) return val ?? '';
-    return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   }
 
   // Base: só itens distribuídos (respeita filtros atuais -> this.view)
@@ -759,7 +804,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     const map = new Map<string, DistGroup>();
     for (const r of this.distBase()) {
       const d0 = this.dayStart(r.designadoEm || null);
-      const key = d0 ? `${d0.getFullYear()}-${this.two(d0.getMonth()+1)}-${this.two(d0.getDate())}` : '—';
+      const key = d0 ? `${d0.getFullYear()}-${this.two(d0.getMonth() + 1)}-${this.two(d0.getDate())}` : '—';
       let g = map.get(key);
       if (!g) {
         g = { key, label: d0 ? d0.toLocaleDateString('pt-BR') : '—', dt: d0, itens: [] };
@@ -808,8 +853,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (!grupos.length) {
       docPdf.text('Nenhuma distribuição encontrada para os filtros atuais.', 40, startY);
       const ts = new Date();
-      const pad = (n:number)=>String(n).padStart(2,'0');
-      const fname = `relatorio-distribuicao-${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.pdf`;
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const fname = `relatorio-distribuicao-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.pdf`;
       docPdf.save(fname);
       return;
     }
@@ -849,8 +894,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     }
 
     const ts = new Date();
-    const pad = (n:number)=>String(n).padStart(2,'0');
-    const fname = `relatorio-distribuicao-${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.pdf`;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fname = `relatorio-distribuicao-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.pdf`;
     docPdf.save(fname);
   }
 }
