@@ -127,6 +127,28 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
       .sort((a, b) => a.nome.localeCompare(b.nome));
   });
 
+  /** Apenas a data de aprovação (sem fallback para createdAt) */
+  private aprovacaoEmOf(it: any): Date | null {
+    const raw = it?.aprovacao?.em;
+    if (raw?.toDate) return raw.toDate();
+    if (raw instanceof Date) return raw;
+    if (typeof raw === 'number') return new Date(raw);
+    return null;
+  }
+
+  /** Data de aprovação com fallback para criação (para ordenação apenas) */
+  private aprovOf(it: any): Date | null {
+    const raw = it?.aprovacao?.em;
+    if (raw?.toDate) return raw.toDate();
+    if (raw instanceof Date) return raw;
+    if (typeof raw === 'number') return new Date(raw);
+    const c = it?.createdAt;
+    if (c?.toDate) return c.toDate();
+    if (c instanceof Date) return c;
+    if (typeof c === 'number') return new Date(c);
+    return null;
+  }
+
   filtrados = computed(() => {
     const list = [...this.preCadastros()];
     const f = this.filtroAprovacao();
@@ -141,27 +163,23 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
     if (f !== 'todos') base = base.filter(i => statusOf(i) === f);
     if (assUid !== 'todos') base = base.filter(i => (i as any)?.createdByUid === assUid);
 
+    // ==== FILTRO POR DATA USANDO APROVAÇÃO (aprovacao.em) ====
     const dtDe = de ? new Date(de + 'T00:00:00') : null;
     const dtAte = ate ? new Date(ate + 'T23:59:59') : null;
     if (dtDe || dtAte) {
       base = base.filter(i => {
-        const raw = (i as any)?.createdAt;
-        const d: Date | null =
-          raw?.toDate ? raw.toDate() :
-            (raw instanceof Date ? raw : (typeof raw === 'number' ? new Date(raw) : null));
-        if (!d) return false;
+        const d = this.aprovacaoEmOf(i);       // <-- somente data de aprovação
+        if (!d) return false;                  // sem aprovação, não entra no filtro de data
         if (dtDe && d < dtDe) return false;
         if (dtAte && d > dtAte) return false;
         return true;
       });
     }
 
-    const ms = (x: any) =>
-      x?.toMillis ? x.toMillis() :
-        x?.toDate ? x.toDate().getTime() :
-          (typeof x === 'number' ? x : 0);
-
-    return base.sort((a: any, b: any) => (ms(b.createdAt) - ms(a.createdAt)));
+    // Ordena por aprovação desc (fallback: createdAt para quem não tem)
+    return base.sort((a, b) =>
+      (this.aprovOf(b)?.getTime() ?? 0) - (this.aprovOf(a)?.getTime() ?? 0)
+    );
   });
 
   // Relatório (antes de filtros do modal)
@@ -207,11 +225,12 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
         const n = (it.nomeCompleto || '').toLowerCase();
         if (!n.includes(nomeTerm)) return false;
       }
+      // ==== AQUI passa a filtrar por aprovacao.em (não mais createdAt) ====
       if (dtDe || dtAte) {
-        const created = (it.createdAt?.toDate ? it.createdAt.toDate() : it.createdAt) as Date | undefined;
-        if (!created) return false;
-        if (dtDe && created < dtDe) return false;
-        if (dtAte && created > dtAte) return false;
+        const d = this.aprovacaoEmOf(it);
+        if (!d) return false;
+        if (dtDe && d < dtDe) return false;
+        if (dtAte && d > dtAte) return false;
       }
       return true;
     };
@@ -323,30 +342,14 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
 
   // ===== Nomes helpers =====
 
-  /** ===== Datas de aprovação e ordenação decrescente ===== */
-  private aprovOf(it: any): Date | null {
-    const raw = it?.aprovacao?.em;
-    if (raw?.toDate) return raw.toDate();
-    if (raw instanceof Date) return raw;
-    if (typeof raw === 'number') return new Date(raw);
-    // fallback: se não tiver aprovação, usa createdAt só para não "perder" o item
-    const c = it?.createdAt;
-    if (c?.toDate) return c.toDate();
-    if (c instanceof Date) return c;
-    if (typeof c === 'number') return new Date(c);
-    return null;
-  }
-
   /** Ordena por aprovação (desc: mais recente primeiro) */
   ordenarPorAprovDesc<T extends Record<string, any>>(arr: T[]): T[] {
     return [...(arr || [])].sort((a, b) => {
-      const da = this.aprovOf(a)?.getTime() ?? 0;
-      const db = this.aprovOf(b)?.getTime() ?? 0;
+      const da = this.aprovacaoEmOf(a)?.getTime() ?? 0;
+      const db = this.aprovacaoEmOf(b)?.getTime() ?? 0;
       return db - da;
     });
   }
-
-
 
   private setNome(uid: string, nome?: string) {
     if (!uid || !nome) return;
@@ -558,7 +561,7 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
     docPdf.setFontSize(10);
     docPdf.text((filtros.length ? `Filtros: ${filtros.join(' • ')}` : 'Sem filtros'), 40, 60);
 
-    // === NOVO: Resumo diário (Aptos x Inaptos) ===
+    // === Resumo diário (Aptos x Inaptos) ===
     autoTable(docPdf, {
       startY: 80,
       head: [['Resumo por dia']],
@@ -567,7 +570,7 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
     });
     this.addResumoDiarioToPdf(docPdf);
 
-    // === Aptos pendentes (sem assessor) — já existia ===
+    // === Aptos pendentes (sem assessor) ===
     if (rel.pendentes.length) {
       autoTable(docPdf, {
         startY: (docPdf as any).lastAutoTable ? (docPdf as any).lastAutoTable.finalY + 16 : 80,
@@ -591,10 +594,9 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
         }),
         styles: { fontSize: 9 }
       });
-
     }
 
-    // === Aptos por assessor — já existia ===
+    // === Aptos por assessor ===
     let startY = (docPdf as any).lastAutoTable ? (docPdf as any).lastAutoTable.finalY + 12 : 80;
     for (const g of rel.grupos) {
       autoTable(docPdf, {
@@ -622,11 +624,10 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
         styles: { fontSize: 9 }
       });
 
-
       startY = (docPdf as any).lastAutoTable.finalY + 16;
     }
 
-    // === NOVO: Seções de INAPTOS (pendentes e por assessor, se houver) ===
+    // === INAPTOS ===
     this.addInaptosToPdf(docPdf);
 
     // Save
@@ -654,20 +655,8 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
     return null;
   }
 
-  /** Ordena por criação (desc: mais recente primeiro) */
-  ordenarPorCriadoDesc<T extends Record<string, any>>(arr: T[]): T[] {
-    return [...(arr || [])].sort((a, b) => {
-      const da = this.createdOf(a)?.getTime() ?? 0;
-      const db = this.createdOf(b)?.getTime() ?? 0;
-      return db - da;
-    });
-  }
-  // Se quiser ascendente, troque para: return da - db;
-
-
-
   /** ===================== NOVOS HELPERS ===================== **/
-  /** Data de decisão do status (aprovação reprovação); fallback createdAt */
+  /** Data de decisão do status (aprovação/reprovação); fallback createdAt */
   private decisaoDate(it: any): Date | null {
     const aprovRaw = it?.aprovacao?.em;
     const d = aprovRaw?.toDate ? aprovRaw.toDate() : aprovRaw;
@@ -712,10 +701,10 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
 
     const list = this.preCadastros().filter(pass);
 
-    // Inaptos pendentes (sem assessor) — por padrão, ao marcar inapto, você zera o encaminhamento
+    // Inaptos pendentes (sem assessor)
     const pendentes = list.filter(it => !((it as any)?.encaminhamento?.assessorUid));
 
-    // (Opcional) Se algum fluxo seu deixar 'inapto' com assessor, agruparia assim:
+    // (Opcional) Inaptos por assessor (caso exista)
     const byAss = new Map<string, { assessorUid: string; assessorNome: string | null; itens: PreCadastro[] }>();
     for (const it of list) {
       const enc = (it as any)?.encaminhamento;
@@ -737,7 +726,7 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
     const aptos = this.relatorioFiltrado().grupos.flatMap(g => g.itens)
       .concat(this.relatorioFiltrado().pendentes); // todos aptos filtrados
     const inaptos = this.inaptosFiltrados().pendentes
-      .concat(this.inaptosFiltrados().grupos.flatMap(g => g.itens)); // todos inaptos filtrados (em geral pendentes)
+      .concat(this.inaptosFiltrados().grupos.flatMap(g => g.itens)); // todos inaptos filtrados
 
     const map = new Map<string, { data: string; aptos: number; inaptos: number; itensAptos: any[]; itensInaptos: any[] }>();
 
@@ -793,7 +782,6 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
           }),
           styles: { fontSize: 9 }
         });
-
       }
 
       // (Opcional) Inaptos por assessor (caso exista)
@@ -821,12 +809,9 @@ export class AprovacaoPreCadastroComponent implements OnInit, OnDestroy {
             }),
             styles: { fontSize: 9 }
           });
-
         }
       }
     }
   }
-
-
 
 }
