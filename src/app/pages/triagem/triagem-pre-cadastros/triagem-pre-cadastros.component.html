@@ -116,8 +116,15 @@
                   <span class="chip" *ngIf="r.data" title="Data do pré-cadastro">
                     🗓 {{ r.data | date:'dd/MM/yyyy HH:mm' }}
                   </span>
-                  <span class="chip" *ngIf="r.bairro" title="Bairro">📍 {{ r.bairro }}</span>
-                  <span class="chip" *ngIf="r.origemLabel" title="Origem">📌 {{ r.origemLabel }}</span>
+                  <span class="chip" *ngIf="r.cidade || r.uf" title="Localidade">
+                    📍 {{ r.cidade || '—' }}<span *ngIf="r.uf">/{{ r.uf }}</span>
+                  </span>
+                  <span class="chip" *ngIf="r.bairro" title="Bairro">
+                    🏘 {{ r.bairro }}
+                  </span>
+                  <span class="chip" *ngIf="r.origemLabel" title="Origem">
+                    📌 {{ r.origemLabel }}
+                  </span>
 
                   <!-- STATUS -->
                   <span class="chip" [ngClass]="statusChipClass(r.statusAprovacao)"
@@ -125,6 +132,7 @@
                     {{ statusIcon(r.statusAprovacao) }} {{ statusLabel(r.statusAprovacao) }}
                   </span>
                 </div>
+
 
                 <div class="tc-actions gap-2 gap-md-3">
                   <button type="button" class="btn btn-outline-secondary btn-sm px-3" (click)="abrirModalAssessor(r)">

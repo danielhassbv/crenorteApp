@@ -10,7 +10,7 @@ import {
   getCountFromServer,
   deleteDoc,
   doc,
-  Timestamp,
+  updateDoc,           // <<<<<< ADICIONADO
 } from 'firebase/firestore';
 
 import jsPDF from 'jspdf';
@@ -94,21 +94,48 @@ export class ListagemPreCadastrosComponent implements OnInit {
   sortField: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro' = 'createdAt';
   sortDir: SortDir = 'desc';
 
+  // =================== Modal de Edição ===================
+  editOpen = false;
+  editSaving = false;
+  editItem: PreCadastroList | null = null;
+  ufsBrasil = [
+    'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
+  ];
+  editModel: {
+    nomeCompleto: string;
+    cpf: string;
+    telefone: string;
+    email: string;
+    endereco: string;
+    bairro: string;
+    cidade: string;
+    uf: string;
+    origem: string;
+  } = {
+    nomeCompleto: '',
+    cpf: '',
+    telefone: '',
+    email: '',
+    endereco: '',
+    bairro: '',
+    cidade: '',
+    uf: '',
+    origem: '',
+  };
+
   // =================== Ciclo de vida ===================
   async ngOnInit(): Promise<void> {
     await this.recarregarTudo();
   }
 
   // =================== Carrega TUDO (sem índice, sem collectionGroup) ===================
-  /** Lê TODAS as coleções de topo "pre_cadastros" e "pre-cadastros".
-   *  Zero orderBy / where → sem índices. Ordenação e filtros apenas no front. */
   private async carregarTudoTopLevel(): Promise<void> {
     this.carregando = true;
     this.erroCarregar = '';
     this.presAll = [];
 
     try {
-      // Contagem estimada (somamos as duas coleções de topo, se existirem)
+      // Contagem estimada
       this.totalEstimado = 0;
       for (const colName of ['pre_cadastros', 'pre-cadastros']) {
         try {
@@ -212,7 +239,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
     return v || '—';
   }
 
-  /** Converte aprovação (legado/novo) para código canônico. */
   private getAprovacaoCode(c: any): 'apto' | 'inapto' | 'pendente' | 'desconhecido' {
     const cand =
       c?.aprovacao?.status ??
@@ -226,25 +252,24 @@ export class ListagemPreCadastrosComponent implements OnInit {
     if (!raw) return 'desconhecido';
     const n = this.normalize(raw);
 
-    // ---------- NEGATIVO primeiro (evita "inapto" cair como "apto") ----------
+    // NEGATIVO primeiro
     if (/\binapto\b/.test(n) || /reprov/.test(n) || /neg/.test(n) ||
         /\bnao[_-]?apto\b/.test(n) || /\bnão[_-]?apto\b/.test(n)) {
       return 'inapto';
     }
     if (['false', '0', 'nao', 'não', 'no'].includes(n)) return 'inapto';
 
-    // ---------- POSITIVO depois ----------
+    // POSITIVO
     if (/\bapto\b/.test(n) || /aprov/.test(n)) return 'apto';
     if (['true', '1', 'sim', 'yes'].includes(n)) return 'apto';
 
-    // ---------- PENDENTE / não verificado ----------
+    // PENDENTE
     if (/pend/.test(n) || /analise/.test(n) || /em anal/.test(n) || /nao_verificado/.test(n) || /não_verificado/.test(n))
       return 'pendente';
 
     return 'desconhecido';
   }
 
-  /** Rótulo exibido na UI. */
   public getAprovacaoStatus(c: any): string {
     const code = this.getAprovacaoCode(c);
     if (code === 'apto') return 'Apto';
@@ -306,7 +331,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
     this.assessoresDisponiveis = this.uniqSorted(this.presAll.map(c => this.getAssessorNome(c)).filter(a => a !== '(sem assessor)'));
     this.agStatusDisponiveis   = this.uniqSorted(this.presAll.map(c => this.getAgendaStatus(c)));
 
-    // Opções de aprovação SEMPRE incluem os 3 rótulos
     const vistos = new Set(['Apto', 'Inapto', 'Pendente']);
     this.presAll.forEach(c => {
       const rotulo = this.getAprovacaoStatus(c);
@@ -338,17 +362,15 @@ export class ListagemPreCadastrosComponent implements OnInit {
 
     if (this.filtro.agStatus) arr = arr.filter(c => this.normalize(this.getAgendaStatus(c)) === this.normalize(this.filtro.agStatus));
 
-    // ===== Aprovação filtrada pelo CÓDIGO canônico =====
     if (this.filtro.aprovStatus) {
       const n = this.normalize(this.filtro.aprovStatus);
       const alvo =
         n.includes('inapto') ? 'inapto' :
         n.includes('apto')   ? 'apto'   :
-        'pendente'; // cobre "pendente" e "não verificado"
+        'pendente';
       arr = arr.filter(c => this.getAprovacaoCode(c) === alvo);
     }
 
-    // período do agendamento (exige existir data)
     if (this.filtro.agDataDe || this.filtro.agDataAte) {
       const d0 = this.filtro.agDataDe ? new Date(this.filtro.agDataDe + 'T00:00:00') : null;
       const d1 = this.filtro.agDataAte ? new Date(this.filtro.agDataAte + 'T23:59:59.999') : null;
@@ -361,7 +383,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
       });
     }
 
-    // período de criação (LOCAL)
     if (this.filtro.dataDe || this.filtro.dataAte) {
       const c0 = this.filtro.dataDe ? new Date(this.filtro.dataDe + 'T00:00:00') : null;
       const c1 = this.filtro.dataAte ? new Date(this.filtro.dataAte + 'T23:59:59.999') : null;
@@ -374,7 +395,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
       });
     }
 
-    // ordenar e preparar resumos
     this.presFiltrados  = this.ordenarArray(arr, this.sortField, this.sortDir);
     this.relPorOrigem   = this.contarPor(this.presFiltrados, c => this.getOrigem(c));
     this.relPorStatus   = this.contarPor(this.presFiltrados, c => (this.isAgendado(c) ? (this.getAgendaStatus(c) || '—') : '—'));
@@ -438,11 +458,73 @@ export class ListagemPreCadastrosComponent implements OnInit {
   pages(): number[] { return Array.from({ length: this.totalPaginas }, (_, i) => i + 1); }
   trackById(_i: number, c: PreCadastroList) { return c._path || c.id; }
 
-  // =================== Editar / remover ===================
-  editarPreCadastro(item: PreCadastroList) {
-    const url = `/pre-cadastro/novo?edit=true&id=${encodeURIComponent(item.id)}&path=${encodeURIComponent(item._path)}`;
-    window.location.href = url;
+  // =================== Editar (AGORA VIA MODAL) ===================
+  abrirEdicao(item: PreCadastroList) {
+    this.editItem = item;
+    this.editModel = {
+      nomeCompleto: (item.nomeCompleto || '').toString(),
+      cpf: (item.cpf || '').toString(),
+      telefone: this.getPhone(item),
+      email: (item.email || '').toString(),
+      endereco: (item.endereco || (item as any).enderecoCompleto || '').toString(),
+      bairro: this.getBairro(item).replace(/^—$/, ''),
+      cidade: this.getCidade(item).replace(/^—$/, ''),
+      uf: this.getUF(item).replace(/^—$/, ''),
+      origem: this.getOrigem(item).replace(/^—$/, ''),
+    };
+    this.editOpen = true;
   }
+  fecharEdicao() {
+    this.editOpen = false;
+    this.editItem = null;
+  }
+
+  private patchLocalItem(path: string, updates: Partial<PreCadastroList>) {
+    const idx = this.presAll.findIndex(c => (c._path || `pre_cadastros/${c.id}`) === path);
+    if (idx >= 0) {
+      this.presAll[idx] = { ...this.presAll[idx], ...updates } as any;
+    }
+  }
+
+  async salvarEdicao() {
+    if (!this.editItem) return;
+    this.editSaving = true;
+
+    const path = this.editItem._path || `pre_cadastros/${this.editItem.id}`;
+    const ref = doc(db, path);
+
+    const payload = {
+      nomeCompleto: (this.editModel.nomeCompleto || '').trim(),
+      cpf: (this.editModel.cpf || '').trim(),
+      telefone: (this.editModel.telefone || '').trim(),
+      email: (this.editModel.email || '').trim(),
+      endereco: (this.editModel.endereco || '').trim(),
+      bairro: (this.editModel.bairro || '').trim(),
+      cidade: (this.editModel.cidade || '').trim(),
+      uf: (this.editModel.uf || '').trim().toUpperCase(),
+      origem: (this.editModel.origem || '').trim(),
+      atualizadoEm: new Date(),
+    };
+
+    try {
+      await updateDoc(ref, payload);
+
+      // Atualiza localmente e refaz filtros/combos
+      this.patchLocalItem(path, payload as any);
+      this.recalcularOpcoesDinamicas();
+      this.aplicarFiltrosLocais();
+
+      this.fecharEdicao();
+      alert('Pré-cadastro atualizado com sucesso!');
+    } catch (e) {
+      console.error(e);
+      alert('Falha ao salvar as alterações.');
+    } finally {
+      this.editSaving = false;
+    }
+  }
+
+  // =================== Remover ===================
   async removerPreCadastro(item: PreCadastroList) {
     const ok = window.confirm('Tem certeza que deseja remover este pré-cadastro?'); if (!ok) return;
     try {

@@ -59,8 +59,8 @@
         <div class="col-md-4">
           <label class="form-label">Buscar por nome</label>
           <div class="input-group">
-            <input type="text" class="form-control" placeholder="Digite o nome"
-                   [(ngModel)]="filtro.nome" (ngModelChange)="onFiltroNomeChange($event)" />
+            <input type="text" class="form-control" placeholder="Digite o nome" [(ngModel)]="filtro.nome"
+              (ngModelChange)="onFiltroNomeChange($event)" />
             <button class="btn btn-success" (click)="aplicarFiltrosLocais(true)">
               <i class="fas fa-search"></i>
             </button>
@@ -140,7 +140,8 @@
         </div>
         <div class="col-md-3">
           <label class="form-label">Até</label>
-          <input type="date" class="form-control" [(ngModel)]="filtro.agDataAte" (change)="aplicarFiltrosLocais(true)" />
+          <input type="date" class="form-control" [(ngModel)]="filtro.agDataAte"
+            (change)="aplicarFiltrosLocais(true)" />
         </div>
 
         <!-- Status do agendamento -->
@@ -186,6 +187,7 @@
     </div>
   </div>
 
+
   <!-- ===================== Cards responsivos ===================== -->
   <div *ngIf="visualizacao==='cards'">
     <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-lg-3">
@@ -196,8 +198,7 @@
               <h6 class="mb-0 fw-bold text-success-emphasis text-truncate" [title]="displayName(c.nomeCompleto)">
                 {{ displayName(c.nomeCompleto) || '—' }}
               </h6>
-              <span class="badge"
-                    [ngClass]="{
+              <span class="badge" [ngClass]="{
                       'text-bg-success': getAprovacaoStatus(c)==='Apto',
                       'text-bg-danger':  getAprovacaoStatus(c)==='Inapto',
                       'text-bg-secondary': getAprovacaoStatus(c)==='Pendente' || getAprovacaoStatus(c)==='—'
@@ -226,7 +227,8 @@
             </div>
 
             <div class="d-flex justify-content-end gap-2 mt-2">
-              <button class="btn btn-outline-success btn-sm" (click)="editarPreCadastro(c)">
+              <!-- EDITAR inline (abre modal) -->
+              <button class="btn btn-outline-success btn-sm" (click)="abrirEdicao(c)">
                 <i class="fas fa-edit"></i>
               </button>
               <button class="btn btn-outline-danger btn-sm" (click)="removerPreCadastro(c)">
@@ -245,7 +247,7 @@
     </div>
   </div>
 
-  <!-- ===================== Tabela padrão (opcional) ===================== -->
+  <!-- ===================== Tabela ===================== -->
   <div *ngIf="visualizacao==='tabela'" class="table-responsive shadow-sm rounded-4 border">
     <table class="table table-hover align-middle mb-0">
       <thead class="sticky-top" style="z-index:1;background:#eaf6ef">
@@ -302,8 +304,7 @@
           <td class="text-truncate" style="max-width: 200px;">{{ getBairro(c) }}</td>
           <td class="text-truncate" style="max-width: 160px;">{{ getOrigem(c) }}</td>
           <td>
-            <span class="badge"
-                  [ngClass]="{
+            <span class="badge" [ngClass]="{
                     'text-bg-success': getAprovacaoStatus(c)==='Apto',
                     'text-bg-danger':  getAprovacaoStatus(c)==='Inapto',
                     'text-bg-secondary': getAprovacaoStatus(c)==='Pendente' || getAprovacaoStatus(c)==='—'
@@ -313,7 +314,8 @@
           </td>
           <td class="text-nowrap">
             <div class="btn-group">
-              <button class="btn btn-sm btn-outline-success" (click)="editarPreCadastro(c)">
+              <!-- EDITAR inline (abre modal) -->
+              <button class="btn btn-sm btn-outline-success" (click)="abrirEdicao(c)">
                 <i class="fas fa-edit"></i>
               </button>
               <button class="btn btn-sm btn-outline-danger" (click)="removerPreCadastro(c)">
@@ -346,9 +348,8 @@
 </div>
 
 <!-- ======================= MODAL DE RELATÓRIO ======================= -->
-<div class="modal fade show" tabindex="-1" role="dialog"
-     *ngIf="relatorioAberto"
-     style="display:block; background: rgba(0,0,0,.35);">
+<div class="modal fade show" tabindex="-1" role="dialog" *ngIf="relatorioAberto"
+  style="display:block; background: rgba(0,0,0,.35);">
   <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
     <div class="modal-content rounded-4">
       <div class="modal-header">
@@ -362,10 +363,30 @@
       <div class="modal-body">
         <!-- KPIs -->
         <div class="row g-3 mb-3">
-          <div class="col-6 col-md-3"><div class="border rounded-3 p-3"><div class="text-muted">Carregados</div><div class="fs-4 fw-bold">{{ kpiCarregados }}</div></div></div>
-          <div class="col-6 col-md-3"><div class="border rounded-3 p-3"><div class="text-muted">Após filtros</div><div class="fs-4 fw-bold">{{ kpiFiltrados }}</div></div></div>
-          <div class="col-6 col-md-3"><div class="border rounded-3 p-3"><div class="text-muted">Agendados</div><div class="fs-4 fw-bold">{{ kpiAgendados }}</div></div></div>
-          <div class="col-6 col-md-3"><div class="border rounded-3 p-3"><div class="text-muted">Sem agendamento</div><div class="fs-4 fw-bold">{{ kpiSemAgendamento }}</div></div></div>
+          <div class="col-6 col-md-3">
+            <div class="border rounded-3 p-3">
+              <div class="text-muted">Carregados</div>
+              <div class="fs-4 fw-bold">{{ kpiCarregados }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="border rounded-3 p-3">
+              <div class="text-muted">Após filtros</div>
+              <div class="fs-4 fw-bold">{{ kpiFiltrados }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="border rounded-3 p-3">
+              <div class="text-muted">Agendados</div>
+              <div class="fs-4 fw-bold">{{ kpiAgendados }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="border rounded-3 p-3">
+              <div class="text-muted">Sem agendamento</div>
+              <div class="fs-4 fw-bold">{{ kpiSemAgendamento }}</div>
+            </div>
+          </div>
         </div>
 
         <!-- Resumo filtros -->
@@ -416,6 +437,81 @@
         <button class="btn btn-success" (click)="gerarRelatorioPDF()">
           <i class="fa-solid fa-file-pdf me-1"></i> Baixar PDF
         </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= MODAL DE EDIÇÃO ======================= -->
+<div class="modal fade show" tabindex="-1" role="dialog" *ngIf="editOpen"
+  style="display:block; background: rgba(0,0,0,.35);">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+    <div class="modal-content rounded-4">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          Editar Pré-cadastro
+          <small *ngIf="editItem" class="text-muted d-block fs-6">{{ displayName(editItem?.nomeCompleto) }}</small>
+        </h5>
+        <button type="button" class="btn-close" aria-label="Close" (click)="fecharEdicao()"></button>
+      </div>
+
+      <div class="modal-body">
+        <form (ngSubmit)="salvarEdicao()">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">Nome completo</label>
+              <input class="form-control" [(ngModel)]="editModel.nomeCompleto" name="ed_nome" required />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">CPF</label>
+              <input class="form-control" [(ngModel)]="editModel.cpf" name="ed_cpf" />
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Telefone</label>
+              <input class="form-control" [(ngModel)]="editModel.telefone" name="ed_tel" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">E-mail</label>
+              <input type="email" class="form-control" [(ngModel)]="editModel.email" name="ed_mail" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Origem</label>
+              <input class="form-control" [(ngModel)]="editModel.origem" name="ed_origem" />
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label">Endereço</label>
+              <input class="form-control" [(ngModel)]="editModel.endereco" name="ed_endereco" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Bairro</label>
+              <input class="form-control" [(ngModel)]="editModel.bairro" name="ed_bairro" />
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Cidade</label>
+              <input class="form-control" [(ngModel)]="editModel.cidade" name="ed_cidade" />
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">UF</label>
+              <select class="form-select" [(ngModel)]="editModel.uf" name="ed_uf">
+                <option [ngValue]="''">—</option>
+                <option *ngFor="let u of ufsBrasil" [ngValue]="u">{{ u }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 mt-4">
+            <button type="button" class="btn btn-light" (click)="fecharEdicao()"
+              [disabled]="editSaving">Cancelar</button>
+            <button type="submit" class="btn btn-success" [disabled]="editSaving">
+              <span *ngIf="!editSaving">Salvar alterações</span>
+              <span *ngIf="editSaving" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+              <span *ngIf="editSaving" class="ms-2">Salvando…</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

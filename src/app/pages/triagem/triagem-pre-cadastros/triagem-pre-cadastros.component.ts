@@ -116,6 +116,8 @@ type PreCadastroRow = {
   endereco: string;
   bairro: string;
   rota: string;
+  cidade?: string;
+  uf?: string;
 
   origem: string;
   origemKey: string;
@@ -294,6 +296,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             endereco: String(data?.endereco ?? data?.enderecoCompleto ?? '').trim(),
             bairro: String(data?.bairro ?? '').trim(),
             rota: String(data?.rota ?? '').trim(),
+            cidade: String(data?.cidade ?? '').trim(),        // ✅ novo
+            uf: String(data?.uf ?? data?.estado ?? '').trim(), // ✅ novo
 
             origem: origemRaw,
             origemKey: canon.key,
@@ -579,7 +583,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.designando[r.id] = true;
     this.errDesignado[r.id] = false;
 
-       try {
+    try {
       const colabRef = doc(db, 'colaboradores', uid);
       const colabSnap = await getDoc(colabRef);
       if (!colabSnap.exists()) throw new Error('Colaborador não encontrado.');
