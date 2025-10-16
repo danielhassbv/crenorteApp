@@ -1,3 +1,4 @@
+// src/app/pages/pre-cadastro/pre-cadastro-lista/pre-cadastro-lista.component.ts
 import { Component, inject, signal, computed, effect, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
@@ -8,7 +9,17 @@ import { Subscription } from 'rxjs';
 import { PreCadastro, FluxoCaixa } from '../../../models/pre-cadastro.model';
 import { HeaderComponent } from '../../shared/header/header.component';
 import { AgendamentoService } from '../../../services/agendamento.service';
-import { Timestamp } from '@angular/fire/firestore';
+import {
+  Timestamp,
+  Firestore,
+  doc,
+  getDoc,
+  collection,
+  query as fsQuery,
+  where,
+  getDocs,
+  limit
+} from '@angular/fire/firestore';
 
 type PreCadastroEdit = PreCadastro & { id: string };
 
@@ -25,6 +36,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   private auth = inject(Auth);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private afs = inject(Firestore); // 🔹 Firestore para buscar nome do perfil
 
   loading = signal(true);
   itens = signal<PreCadastro[]>([]);
@@ -41,7 +53,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   filtroDataIni = signal<string>(''); // yyyy-MM-dd
   filtroDataFim = signal<string>(''); // yyyy-MM-dd
 
-  
   // paginação
   pageSize = signal<number>(9);
   page = signal<number>(1);
@@ -67,6 +78,9 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   currentUserUid: string | null = null;
   currentUserNome: string | null = null;
 
+  // cache simples para evitar leituras repetidas do mesmo uid
+  private nomeCache = new Map<string, string>();
+
   constructor() {
     // sempre que busca/filtros mudarem, voltar para a primeira página
     effect(() => {
@@ -81,7 +95,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnInit(): void {
+  async ngOnInit(): Promise<void> {
     this.route.queryParamMap.subscribe(pm => {
       const hId = pm.get('highlightId');
       const flash = pm.get('highlightFlash');
@@ -97,7 +111,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       try {
         if (!u) { this.itens.set([]); return; }
         this.currentUserUid = u.uid;
-        this.currentUserNome = u.displayName || u.email || null;
+        this.currentUserNome = await this.resolveUserName(u.uid); // 🔹 nome de perfil
 
         // 🔎 Preferir listar itens da "caixa" do assessor (encaminhados + próprios).
         // Se o service ainda não tiver listarParaCaixa, cai no fallback listarDoAssessor.
@@ -109,10 +123,23 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
           rows = await this.service.listarDoAssessor(u.uid);
         }
 
-        const norm = rows.map(r => ({
-          agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
-          ...r
-        } as PreCadastro));
+        // Normalização local:
+        // - agendamentoStatus default 'nao_agendado'
+        // - formalizacao.status default 'nao_formalizado' (sem gravar automaticamente no DB)
+        const norm = rows.map(r => {
+          const formalizacao = (r as any).formalizacao || {};
+          return {
+            agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
+            formalizacao: {
+              status: (formalizacao.status as any) || 'nao_formalizado',
+              porUid: formalizacao.porUid,
+              porNome: formalizacao.porNome,
+              em: formalizacao.em
+            },
+            ...r
+          } as PreCadastro;
+        });
+
         this.itens.set(norm);
       } catch (err) {
         console.error('[PreCadastro] Erro ao listar:', err);
@@ -152,7 +179,57 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     return `https://wa.me/${core}`;
   }
 
-  // ======= NOVOS HELPERS: aprovação & encaminhamento =======
+  // 🔹 Resolve nome do usuário a partir do perfil (coleção "colaboradores")
+  private async resolveUserName(uid: string): Promise<string> {
+    if (this.nomeCache.has(uid)) return this.nomeCache.get(uid)!;
+
+    let nome: string | null = null;
+
+    // 1) tenta documento exato em colaboradores/{uid}
+    try {
+      const snap = await getDoc(doc(this.afs, 'colaboradores', uid));
+      if (snap.exists()) {
+        const data: any = snap.data();
+        if (data?.nome) nome = String(data.nome);
+      }
+    } catch (e) {
+      console.warn('[NomePerfil] doc direto falhou:', e);
+    }
+
+    // 2) se não achou, tenta query por campo uid
+    if (!nome) {
+      try {
+        const q = fsQuery(collection(this.afs, 'colaboradores'), where('uid', '==', uid), limit(1));
+        const qs = await getDocs(q);
+        qs.forEach(d => {
+          const data: any = d.data();
+          if (!nome && data?.nome) nome = String(data.nome);
+        });
+      } catch (e) {
+        console.warn('[NomePerfil] query por uid falhou:', e);
+      }
+    }
+
+    // 3) fallback para displayName
+    if (!nome) nome = this.auth.currentUser?.displayName || null;
+
+    // 4) fallback para "nome amigável" do e-mail
+    if (!nome) {
+      const email = this.auth.currentUser?.email || '';
+      if (email) {
+        const local = email.split('@')[0].replace(/[._-]+/g, ' ');
+        nome = local.replace(/\b\w/g, c => c.toUpperCase());
+      }
+    }
+
+    // 5) último recurso
+    if (!nome) nome = 'Usuário';
+
+    this.nomeCache.set(uid, nome);
+    return nome;
+  }
+
+  // ======= NOVOS HELPERS: aprovação & encaminhamento & formalização =======
   aprovacaoStatus(i: PreCadastro): 'apto' | 'inapto' {
     return ((i as any)?.aprovacao?.status === 'apto') ? 'apto' : 'inapto';
   }
@@ -173,6 +250,15 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   encaminhadoQuando(i: PreCadastro): Date | null {
     const ts = (i as any)?.encaminhamento?.em || (i as any)?.aprovacao?.em;
     return this.toJSDate(ts);
+  }
+
+  // Formalização
+  formalizacaoStatus(i: PreCadastro): 'formalizado' | 'nao_formalizado' {
+    const st = (i as any)?.formalizacao?.status;
+    return st === 'formalizado' ? 'formalizado' : 'nao_formalizado';
+  }
+  formalizacaoBadgeClass(i: PreCadastro) {
+    return this.formalizacaoStatus(i) === 'formalizado' ? 'text-bg-success' : 'text-bg-secondary';
   }
 
   // ===== Derived UI data =====
@@ -369,7 +455,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
     const outros = [...(fluxo.variaveis?.outros ?? [])];
     if (!outros[index]) outros[index] = { nome: '', valor: 0 };
-    outros[index = index] = { ...outros[index], nome: value };
+    outros[index] = { ...outros[index], nome: value };
     fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }), outros };
     this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
   }
@@ -450,7 +536,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       endereco: (pc as any)?.endereco ?? (pc as any)?.enderecoCompleto ?? '',
       preCadastroId: (pc as any)?.id ?? (pc as any)?.uid ?? '',
     };
-    }
+  }
 
   iniciarCadastro(pc: PreCadastro) {
     this.fecharModais();
@@ -567,6 +653,57 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     } catch (e) {
       console.error('[Agendamento] erro ao cancelar:', e);
       alert('Não foi possível cancelar o agendamento.');
+    }
+  }
+
+  // ===== NOVO: Marcar/Desfazer FORMALIZAÇÃO =====
+  async marcarFormalizado(i: PreCadastro) {
+    if (!i?.id) return;
+    if (!this.currentUserUid) { alert('Usuário não autenticado.'); return; }
+
+    try {
+      const patch: Partial<PreCadastro> = {
+        formalizacao: {
+          status: 'formalizado',
+          porUid: this.currentUserUid!,
+          porNome: this.currentUserNome || undefined, // 🔹 nome de perfil (não e-mail)
+          em: Timestamp.now()
+        }
+      };
+      await this.service.atualizar(i.id, patch as any);
+      this.itens.update(list => list.map(x =>
+        x.id === i.id ? { ...x, formalizacao: patch.formalizacao } as PreCadastro : x
+      ));
+      this.toastVisivel.set(true);
+      setTimeout(() => this.toastVisivel.set(false), 2000);
+    } catch (e) {
+      console.error('[Formalização] erro ao marcar:', e);
+      alert('Não foi possível marcar como formalizado.');
+    }
+  }
+
+  async desfazerFormalizacao(i: PreCadastro) {
+    if (!i?.id) return;
+    if (!this.currentUserUid) { alert('Usuário não autenticado.'); return; }
+
+    try {
+      const patch: Partial<PreCadastro> = {
+        formalizacao: {
+          status: 'nao_formalizado',
+          porUid: this.currentUserUid!,
+          porNome: this.currentUserNome || undefined, // 🔹 nome de perfil
+          em: Timestamp.now()
+        }
+      };
+      await this.service.atualizar(i.id, patch as any);
+      this.itens.update(list => list.map(x =>
+        x.id === i.id ? { ...x, formalizacao: patch.formalizacao } as PreCadastro : x
+      ));
+      this.toastVisivel.set(true);
+      setTimeout(() => this.toastVisivel.set(false), 2000);
+    } catch (e) {
+      console.error('[Formalização] erro ao desfazer:', e);
+      alert('Não foi possível desfazer a formalização.');
     }
   }
 }

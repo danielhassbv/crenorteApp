@@ -202,6 +202,22 @@
                   </span>
                 </span>
               </div>
+
+              <!-- NOVO: Status de Formalização -->
+              <div class="crn-field">
+                <span class="crn-label">Formalização</span>
+                <span class="crn-value">
+                  <span class="badge" [ngClass]="formalizacaoBadgeClass(i)">
+                    {{ formalizacaoStatus(i) === 'formalizado' ? 'Formalizado' : 'Não formalizado' }}
+                  </span>
+                  <small class="text-muted ms-2" *ngIf="$any(i)?.formalizacao?.porNome">
+                    por {{ $any(i).formalizacao.porNome }}
+                    <ng-container *ngIf="$any(i)?.formalizacao?.em as emFml">
+                      — {{ (emFml?.toDate ? emFml.toDate() : emFml) | date:'dd/MM/yyyy HH:mm' }}
+                    </ng-container>
+                  </small>
+                </span>
+              </div>
             </div>
 
             <!-- Ações -->
@@ -240,6 +256,21 @@
                 <button type="button" class="btn btn-outline-danger flex-fill"
                   *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'" (click)="cancelarAgendamento(i)">
                   <i class="bi bi-x-circle me-1"></i> Cancelar agendamento
+                </button>
+              </div>
+
+              <!-- NOVAS AÇÕES: Formalização -->
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-primary flex-fill"
+                        *ngIf="formalizacaoStatus(i) === 'nao_formalizado'"
+                        (click)="marcarFormalizado(i)">
+                  <i class="bi bi-file-check me-1"></i> Marcar formalizado
+                </button>
+
+                <button type="button" class="btn btn-outline-secondary flex-fill"
+                        *ngIf="formalizacaoStatus(i) === 'formalizado'"
+                        (click)="desfazerFormalizacao(i)">
+                  <i class="bi bi-arrow-counterclockwise me-1"></i> Desfazer formalização
                 </button>
               </div>
             </div>
@@ -433,7 +464,8 @@
 
     <div class="crn-modal__footer">
       <button class="btn btn-light" (click)="fecharModais()">Cancelar</button>
-      <button class="btn btn-success" (click)="salvarEdicao()" [disabled]="saving()">
+      <button class="btn btn-success" (click)="salvarEdicao()"
+              [disabled]="saving()">
         <i class="bi bi-check2 me-1"></i> Salvar alterações
       </button>
     </div>
