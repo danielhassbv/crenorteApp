@@ -101,7 +101,16 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
   private docPath: string | null = null;
   private docId: string | null = null;
 
-  model: Omit<PreCadastro, 'id' | 'createdAt' | 'createdByUid' | 'createdByNome'> = {
+  // NOVO: lista de UFs para o select
+  ufsBrasil: string[] = [
+    'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
+  ];
+
+  // NOVO: acrescentei cidade e uf ao model
+  model: Omit<PreCadastro, 'id' | 'createdAt' | 'createdByUid' | 'createdByNome'> & {
+    cidade?: string;
+    uf?: string;
+  } = {
     nomeCompleto: '',
     cpf: '',
     endereco: '',
@@ -109,6 +118,8 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     email: '',
     bairro: '',
     origem: '',
+    cidade: '',
+    uf: '',
   };
 
   private lastPreCadastroId: string | null = null;
@@ -219,10 +230,9 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
 
   /** ========= MÁSCARA/VALIDAÇÃO CPF (robusta) ========= */
   private inicializarMascaraCPF(): () => void {
-    // Tenta encontrar o input imediatamente; se não achar, faz pequenas tentativas
     let el = document.querySelector('input[name="cpf"]') as HTMLInputElement | null;
     if (!el) {
-      const tries = 15; // ~1.5s de tentativas
+      const tries = 15;
       let count = 0;
       const iv = setInterval(() => {
         el = document.querySelector('input[name="cpf"]') as HTMLInputElement | null;
@@ -231,10 +241,7 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
           if (el) this._cpfCleanup = this._wireCpf(el!);
         }
       }, 100);
-      // retorna cleanup que limpa depois (inclusive se wire acontecer assíncrono)
-      return () => {
-        /* noop, _wireCpf define o cleanup real */
-      };
+      return () => {};
     } else {
       return this._wireCpf(el);
     }
@@ -245,15 +252,15 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
       (v ?? '')
         .toString()
         .normalize('NFKD')
-        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '') // zero-width
-        .replace(/\u00A0/g, ' ') // NBSP
+        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
+        .replace(/\u00A0/g, ' ')
         .trim();
 
     const mapUnicodeDigit = (ch: string): string => {
       const code = ch.charCodeAt(0);
-      if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660); // Arabic-Indic
-      if (code >= 0x06f0 && code <= 0x06f9) return String(code - 0x06f0); // Ext. Arabic-Indic
-      if (code >= 0xff10 && code <= 0xff19) return String(code - 0xff10); // Full-width
+      if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660);
+      if (code >= 0x06f0 && code <= 0x06f9) return String(code - 0x06f0);
+      if (code >= 0xff10 && code <= 0xff19) return String(code - 0xff10);
       return ch;
     };
     const toAsciiDigits = (v: string) => Array.from(v).map(mapUnicodeDigit).join('');
@@ -281,7 +288,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
       return dv1 === Number(d[9]) && dv2 === Number(d[10]);
     };
 
-    // Leniente: tenta validar mesmo se vier com ruído (usado para blur)
     const validarLeniente = (v: string) => {
       const digitsAll = onlyDigits(v);
       if (digitsAll.length === 11) return isValid11(digitsAll);
@@ -294,7 +300,7 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
         }
         return false;
       }
-      return false; // incompleto: não marca válido
+      return false;
     };
 
     const onInput = () => {
@@ -302,7 +308,7 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
       if (el.value !== masked) {
         el.value = masked;
         const evt = new Event('input', { bubbles: true });
-        el.dispatchEvent(evt); // mantém [(ngModel)] sincronizado
+        el.dispatchEvent(evt);
       }
     };
 
@@ -311,7 +317,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
       const hasDigits = onlyDigits(el.value).length > 0;
       el.classList.toggle('is-invalid', !ok && hasDigits);
       el.classList.toggle('is-valid', ok);
-      // Força o model a armazenar já formatado e limpinho
       if (ok) {
         const masked = formatCpf(el.value);
         if (el.value !== masked) {
@@ -321,19 +326,16 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
       }
     };
 
-    // Normaliza valor inicial (ex.: vindo do model)
     el.value = formatCpf(el.value);
     el.addEventListener('input', onInput);
     el.addEventListener('blur', onBlur);
 
-    // cleanup
     return () => {
       el.removeEventListener('input', onInput);
       el.removeEventListener('blur', onBlur);
     };
   }
 
-  /** ✅ Validação final no submit (leniente por padrão; troque para strict = true se quiser) */
   onSubmit(): void {
     if (!this.cpfValido(this.model.cpf /*, true*/)) {
       this.showMsg('danger', 'CPF inválido!', 6000);
@@ -342,48 +344,27 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     this.showMsg('success', 'CPF válido! ✅', 2500);
   }
 
-  /**
-   * Validador de CPF robusto.
-   * - strict=false (padrão): tolerante a ruídos. Se houver >11 dígitos, tenta janelas de 11 até achar válido.
-   * - strict=true: exige exatamente 11 dígitos limpos.
-   */
-  /** Validador de CPF ultra-tolerante.
- * - strict=false: procura QUALQUER janela de 11 dígitos válida dentro do texto.
- * - strict=true: exige exatamente 11 dígitos limpos.
- */
-
   private cpfValido(cpf: unknown, strict = false): boolean {
     try {
-      console.log('[CPF][IN] raw:', cpf, 'strict:', strict);
-
-      // 1) Normaliza unicode e remove espaços invisíveis
       const normalizeUnicode = (v: string) =>
         (v ?? '')
           .toString()
           .normalize('NFKD')
-          .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '') // zero-widths
-          .replace(/\u00A0/g, ' ')                     // NBSP
+          .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
+          .replace(/\u00A0/g, ' ')
           .trim();
 
-      // 2) Converte dígitos unicode para ASCII
       const mapUnicodeDigit = (ch: string): string => {
         const code = ch.charCodeAt(0);
-        if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660); // Arabic-Indic
-        if (code >= 0x06F0 && code <= 0x06F9) return String(code - 0x06F0); // Ext. Arabic-Indic
-        if (code >= 0xFF10 && code <= 0xFF19) return String(code - 0xFF10); // Full-width
+        if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660);
+        if (code >= 0x06F0 && code <= 0x06F9) return String(code - 0x06F0);
+        if (code >= 0xFF10 && code <= 0xFF19) return String(code - 0xFF10);
         return ch;
       };
       const toAsciiDigits = (v: string) => Array.from(v).map(mapUnicodeDigit).join('');
-
       const rawNorm = normalizeUnicode(String(cpf ?? ''));
       const rawAscii = toAsciiDigits(rawNorm);
       const onlyDigits = rawAscii.replace(/\D/g, '');
-
-      console.log('[CPF][STEP] rawNorm:', JSON.stringify(rawNorm));
-      console.log('[CPF][STEP] rawAscii:', JSON.stringify(rawAscii));
-      console.log('[CPF][STEP] onlyDigits:', onlyDigits, 'len:', onlyDigits.length);
-
-      // Helpers
       const allSame = (d: string) => /^(\d)\1{10}$/.test(d);
       const calcDV = (base: string, start: number) => {
         let soma = 0;
@@ -392,76 +373,33 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
         return resto < 2 ? 0 : 11 - resto;
       };
       const isValid11 = (d: string) => {
-        if (d.length !== 11) {
-          console.log('[CPF][CHK] tamanho diferente de 11:', d.length);
-          return false;
-        }
-        if (allSame(d)) {
-          console.log('[CPF][CHK] todos dígitos iguais:', d);
-          return false;
-        }
+        if (d.length !== 11 || allSame(d)) return false;
         const dv1 = calcDV(d.slice(0, 9), 10);
         const dv2 = calcDV(d.slice(0, 10), 11);
-        const ok = dv1 === Number(d[9]) && dv2 === Number(d[10]);
-        console.log('[CPF][DVs]', { d, dv1, dv2, d9: Number(d[9]), d10: Number(d[10]), ok });
-        return ok;
+        return dv1 === Number(d[9]) && dv2 === Number(d[10]);
       };
 
-      if (strict) {
-        const res = isValid11(onlyDigits);
-        console.log('[CPF][OUT][strict]', res);
-        return res;
-      }
-
-      // LENIENTE:
-      if (onlyDigits.length === 11) {
-        const res = isValid11(onlyDigits);
-        console.log('[CPF][OUT][lenient][11 exatos]', res);
-        return res;
-      }
-
+      if (strict) return isValid11(onlyDigits);
+      if (onlyDigits.length === 11) return isValid11(onlyDigits);
       if (onlyDigits.length > 11) {
         const right11 = onlyDigits.slice(-11);
-        console.log('[CPF][TRY] right11:', right11);
-        if (isValid11(right11)) {
-          console.log('[CPF][OUT][lenient] válido em right11');
-          return true;
-        }
+        if (isValid11(right11)) return true;
         for (let i = 0; i <= onlyDigits.length - 11; i++) {
           const win = onlyDigits.slice(i, i + 11);
-          const ok = isValid11(win);
-          console.log('[CPF][TRY] janela', i, '-', i + 10, ':', win, '->', ok);
-          if (ok) {
-            console.log('[CPF][OUT][lenient] válido em janela:', win);
-            return true;
-          }
+          if (isValid11(win)) return true;
         }
-        console.log('[CPF][OUT][lenient] inválido após varrer janelas (>11 dígitos)');
         return false;
       }
-
-      // Menos de 11: tenta achar 11 dígitos intercalados no texto original (com pontuação)
-      // Ex.: "CPF: 765.210.362-20"
       const pattern = /\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d[^0-9]*\d/g;
       const matches = rawAscii.match(pattern);
-      console.log('[CPF][TRY] pattern matches:', matches);
       if (matches) {
         for (const m of matches) {
           const dig = m.replace(/\D/g, '');
-          const ok = dig.length === 11 && isValid11(dig);
-          console.log('[CPF][TRY] match ->', m, 'digits:', dig, 'ok:', ok);
-          if (ok) {
-            console.log('[CPF][OUT][lenient] válido em match:', dig);
-            return true;
-          }
+          if (dig.length === 11 && isValid11(dig)) return true;
         }
       }
-
-      console.log('[CPF][OUT][lenient] inválido (menos de 11 e sem match).');
       return false;
-
-    } catch (err) {
-      console.error('[CPF][ERROR]', err);
+    } catch {
       return false;
     }
   }
@@ -472,7 +410,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     this.atualizarResumo();
     this.recalcularTotaisFromFluxoCaixa();
 
-    // Inicia máscara/validação CPF (com retry se o input ainda não existir)
     this._cpfCleanup = this.inicializarMascaraCPF();
 
     this.route.queryParamMap.subscribe(async (qp) => {
@@ -500,6 +437,19 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
 
         const data = snap.data() as any;
 
+        // NOVO: popular cidade/uf a partir de vários nomes possíveis
+        const cidade =
+          data.cidade ??
+          data.enderecoCidade ??
+          data.addressCidade ??
+          '';
+        const ufRaw =
+          data.uf ??
+          data.enderecoUF ??
+          data.addressUF ??
+          '';
+        const uf = (ufRaw || '').toString().trim().toUpperCase();
+
         this.model = {
           nomeCompleto: data.nomeCompleto ?? '',
           cpf: data.cpf ?? '',
@@ -508,6 +458,8 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
           email: data.email ?? '',
           bairro: data.bairro ?? '',
           origem: data.origem ?? '',
+          cidade: cidade || '',
+          uf: uf || '',
         };
 
         this.valorSolicitadoNumber = Number(data?.valorSolicitado || 0);
@@ -523,7 +475,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
 
         this.lastPreCadastroId = snap.id;
 
-        // Se já veio CPF no model (edição), reformatar o input (se já estiver na tela)
         setTimeout(() => {
           const el = document.querySelector('input[name="cpf"]') as HTMLInputElement | null;
           if (el) el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -576,7 +527,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     return this.calcularParcela(this.valorSolicitadoNumber, n, this.jurosMes);
   }
 
-  // ===== Parcela Sugerida + Cores (iguais ao cadastro) =====
   private getOutrasRendasNumber(): number {
     return 0;
   }
@@ -679,7 +629,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     }
   }
 
-  // ======= Handlers do modal =======
   onFaturamentoChange(digits: string) {
     const n = Number(digits || 0);
     this.faturamento = n;
@@ -705,7 +654,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     this.fluxoForm.variaveis.outros.splice(i, 1);
   }
 
-  // Salvar do modal -> grava no objeto principal e atualiza sugerida/resumo
   salvarFluxo() {
     this.fluxoCaixa = {
       faturamentoMensal: this.fluxoForm.faturamentoMensal || 0,
@@ -757,7 +705,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     this.fluxoCaixaTotais = this.recalcFrom(this.fluxoCaixa);
   }
 
-  // ================== FEEDBACK ==================
   private abrirFeedbackModal() {
     if (!this.feedbackModalRef) return;
     this.feedbackModal = new bootstrap.Modal(this.feedbackModalRef.nativeElement, { backdrop: 'static' });
@@ -771,32 +718,34 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
   }
 
   // ================== SALVAR ==================
-async salvar(form: NgForm) {
-  if (this.loading()) return;
+  async salvar(form: NgForm) {
+    if (this.loading()) return;
 
-  const payloadBase = {
-    nomeCompleto: this.limpar(this.model.nomeCompleto),
-    cpf: this.limpar(this.model.cpf),
-    endereco: this.limpar(this.model.endereco),
-    telefone: this.limpar(this.model.telefone),
-    email: this.limpar(this.model.email),
-    origem: this.limpar(this.model.origem),
-    bairro: this.limpar(this.model.bairro),
-  };
+    const payloadBase = {
+      nomeCompleto: this.limpar(this.model.nomeCompleto),
+      cpf: this.limpar(this.model.cpf),
+      endereco: this.limpar(this.model.endereco),
+      telefone: this.limpar(this.model.telefone),
+      email: this.limpar(this.model.email),
+      origem: this.limpar(this.model.origem),
+      bairro: this.limpar(this.model.bairro),
+      // NOVO: cidade/uf
+      cidade: this.limpar(this.model.cidade || ''),
+      uf: (this.model.uf || '').toString().trim().toUpperCase(),
+    };
 
-  // 1) Valide o CPF separadamente e DÊ a mensagem correta
-  if (payloadBase.cpf && !this.cpfValido(payloadBase.cpf, true)) {
-    this.showMsg('danger', 'CPF inválido.', 6000);
-    return;
-  }
+    if (payloadBase.cpf && !this.cpfValido(payloadBase.cpf, true)) {
+      this.showMsg('danger', 'CPF inválido.', 6000);
+      return;
+    }
 
-  // 2) Se o restante do form estiver inválido, diga quais campos travaram
-  if (!form.valid) {
-    const invalids = Object.keys(form.controls).filter(k => form.controls[k]?.invalid);
-    const msgCampos = invalids.length ? `Campos inválidos/obrigatórios: ${invalids.join(', ')}` : 'Revise os campos obrigatórios.';
-    this.showMsg('danger', msgCampos, 7000);
-    return;
-  }
+    if (!form.valid) {
+      const invalids = Object.keys(form.controls).filter(k => form.controls[k]?.invalid);
+      const msgCampos = invalids.length ? `Campos inválidos/obrigatórios: ${invalids.join(', ')}` : 'Revise os campos obrigatórios.';
+      this.showMsg('danger', msgCampos, 7000);
+      return;
+    }
+
     const parcelaSelecionada = Number(this.parcelasSelecionadas || 0) || 0;
     const valorParcela = this.getParcelaEscolhidaNumber();
     const valorParcelaFormatado = this.formatBRN(valorParcela);
@@ -843,12 +792,14 @@ async salvar(form: NgForm) {
 
         form.resetForm();
 
-        // limpa UI
         this.valorSolicitadoMasked = '';
         this.valorSolicitadoNumber = 0;
         this.parcelasSelecionadas = null;
         this.parcelasComValor = [];
         this.resumoParcela = '';
+
+        this.model.cidade = '';
+        this.model.uf = '';
 
         this.fluxoCaixa = {
           faturamentoMensal: 0,
@@ -869,24 +820,21 @@ async salvar(form: NgForm) {
   }
 
   private debugOut(msg: string, obj?: any) {
-  try {
-    // tenta console
-    console.log(msg, obj ?? '');
-  } catch (_) {
-    // fallback: joga na tela discretamente
-    const id = '__cpf_debug_toast__';
-    let el = document.getElementById(id);
-    if (!el) {
-      el = document.createElement('div');
-      el.id = id;
-      el.style.cssText = 'position:fixed;bottom:8px;right:8px;max-width:60vw;background:#111;color:#0f0;padding:8px 12px;font:12px/1.4 monospace;z-index:99999;border-radius:6px;opacity:.9';
-      document.body.appendChild(el);
+    try {
+      console.log(msg, obj ?? '');
+    } catch (_) {
+      const id = '__cpf_debug_toast__';
+      let el = document.getElementById(id);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.style.cssText = 'position:fixed;bottom:8px;right:8px;max-width:60vw;background:#111;color:#0f0;padding:8px 12px;font:12px/1.4 monospace;z-index:99999;border-radius:6px;opacity:.9';
+        document.body.appendChild(el);
+      }
+      el.textContent = `${msg} ${obj ? JSON.stringify(obj) : ''}`;
+      setTimeout(() => { if (el && el.parentElement) el.parentElement.removeChild(el); }, 4000);
     }
-    el.textContent = `${msg} ${obj ? JSON.stringify(obj) : ''}`;
-    setTimeout(() => { if (el && el.parentElement) el.parentElement.removeChild(el); }, 4000);
   }
-}
-
 
   // ================== FEEDBACK: salvar ==================
   async salvarFeedbackCliente() {
