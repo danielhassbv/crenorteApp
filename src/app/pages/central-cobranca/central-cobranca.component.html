@@ -1,0 +1,304 @@
+<div class="container py-4">
+
+  <!-- Header -->
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+      <h3 class="fw-bold text-success mb-0">
+        <i class="bi bi-cash-coin me-2"></i>Central de Cobrança (Grupos)
+      </h3>
+      <small class="text-muted">Cobrança por grupo. Filtre, visualize a tabela-resumo e expanda para ver detalhes.</small>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <button class="btn btn-success rounded-3" (click)="openCreateModal()">
+        <i class="bi bi-plus-lg me-1"></i> Criar Grupo de Cobrança
+      </button>
+      <span *ngIf="saving()" class="text-muted small">carregando…</span>
+      <span *ngIf="msg()" class="text-muted small">{{ msg() }}</span>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="card shadow-sm rounded-4 mb-3">
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-3">
+          <label class="form-label mb-1">Cidade</label>
+          <input type="text" class="form-control" placeholder="ex.: Belém"
+                 [(ngModel)]="filtroCidade" name="fCidade">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1">Venc. de</label>
+          <input type="date" class="form-control"
+                 [(ngModel)]="dataIni" name="fIni">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1">Venc. até</label>
+          <input type="date" class="form-control"
+                 [(ngModel)]="dataFim" name="fFim">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label mb-1">Buscar</label>
+          <input type="text" class="form-control" placeholder="Contrato, nome, operador…"
+                 [(ngModel)]="textoBusca" name="fBusca">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================
+       TABELA DE GRUPOS (RESUMO)
+       ========================= -->
+  <div class="card shadow-sm rounded-4 mb-3">
+    <div class="card-header bg-white border-0 pt-3 d-flex align-items-center justify-content-between">
+      <div>
+        <h6 class="mb-0 fw-semibold"><i class="bi bi-table me-2"></i>Tabela de Grupos</h6>
+        <small class="text-muted">Resumo com cidade/UF, liberação e totais de parcelas.</small>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 140px;">Contrato</th>
+              <th>Nome do Grupo</th>
+              <th>Cidade/UF</th>
+              <th>Liberação</th>
+              <th class="text-end">Parcelas</th>
+              <th class="text-end">Em aberto</th>
+              <th style="width: 140px;">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngIf="gruposFiltrados().length === 0">
+              <td colspan="7" class="text-center text-muted py-3">
+                <i class="bi bi-inboxes me-2"></i>Nenhum grupo encontrado.
+              </td>
+            </tr>
+
+            <tr *ngFor="let g of gruposFiltrados()">
+              <td><span class="fw-semibold">#{{ g.numeroContrato }}</span></td>
+              <td>{{ g.nomeGrupo || '—' }}</td>
+              <td>{{ g.cidade || '—' }}/{{ g.uf || '—' }}</td>
+              <td>
+                <ng-container *ngIf="g.dataLiberacao; else noLib">
+                  {{ g.dataLiberacao.toDate() | date:'dd/MM/yyyy' }}
+                </ng-container>
+                <ng-template #noLib>—</ng-template>
+              </td>
+              <td class="text-end">{{ (g.parcelas?.length || 0) }}</td>
+              <td class="text-end">
+                <ng-container *ngIf="kpiGrupo(g) as k">{{ k.emAberto }}</ng-container>
+              </td>
+              <td>
+                <button class="btn btn-outline-primary btn-sm" (click)="toggle(g.id)">
+                  Ver detalhes
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================
+       CARDS EXPANSÍVEIS POR GRUPO
+       ========================= -->
+  <div class="row g-3">
+    <div class="col-12" *ngFor="let g of gruposFiltrados()">
+      <div class="card shadow-sm rounded-4">
+        <div class="card-body">
+
+          <!-- Cabeçalho do card -->
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div class="d-flex flex-column">
+              <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0 fw-semibold">
+                  Grupo {{ g.numeroContrato }}
+                  <span *ngIf="g.nomeGrupo">— {{ g.nomeGrupo }}</span>
+                </h5>
+                <span class="badge text-bg-light">{{ g.cidade || '—' }}/{{ g.uf || '—' }}</span>
+              </div>
+              <small class="text-muted">
+                Liberação:
+                <ng-container *ngIf="g.dataLiberacao; else semLib">
+                  {{ g.dataLiberacao.toDate() | date:'dd/MM/yyyy' }}
+                </ng-container>
+                <ng-template #semLib>—</ng-template>
+                • Operador: {{ g.operador || '—' }}
+              </small>
+            </div>
+
+            <!-- KPIs e toggler -->
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <ng-container *ngIf="kpiGrupo(g) as k">
+                <span class="badge rounded-pill text-bg-warning">D-15: {{ k.d15 }}</span>
+                <span class="badge rounded-pill text-bg-warning">D-7: {{ k.d7 }}</span>
+                <span class="badge rounded-pill text-bg-danger">Hoje: {{ k.d0 }}</span>
+                <span class="badge rounded-pill text-bg-danger">Atraso: {{ k.atraso }}</span>
+                <span class="badge rounded-pill text-bg-secondary">Aberto: {{ k.emAberto }}</span>
+              </ng-container>
+              <button class="btn btn-outline-secondary btn-sm" (click)="toggle(g.id)">
+                <i class="bi" [ngClass]="{'bi-chevron-down': !expanded()[g.id], 'bi-chevron-up': expanded()[g.id]}"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Conteúdo expandido -->
+          <div class="mt-3" *ngIf="expanded()[g.id]">
+
+            <div class="row g-3">
+              <!-- Integrantes -->
+              <div class="col-12 col-lg-5">
+                <div class="border rounded-3 p-3 h-100">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <h6 class="mb-0 fw-semibold"><i class="bi bi-person-lines-fill me-2"></i>Integrantes</h6>
+                    <small class="text-muted">{{ g.integrantes?.length || 0 }}</small>
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                      <thead class="table-light">
+                        <tr><th>Nome</th><th>Telefone</th><th class="text-end">Valor</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngIf="!g.integrantes || g.integrantes.length===0">
+                          <td colspan="3" class="text-center text-muted py-3">Sem integrantes.</td>
+                        </tr>
+                        <tr *ngFor="let i of g.integrantes">
+                          <td>{{ i.nome }}</td>
+                          <td>{{ i.telefone1 || '-' }}</td>
+                          <td class="text-end">
+                            <ng-container *ngIf="i.valorIndividual!=null; else dash">R$ {{ i.valorIndividual }}</ng-container>
+                            <ng-template #dash>-</ng-template>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Parcelas -->
+              <div class="col-12 col-lg-7">
+                <div class="border rounded-3 p-3 h-100">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <h6 class="mb-0 fw-semibold"><i class="bi bi-clipboard2-check me-2"></i>Parcelas</h6>
+                    <small class="text-muted">{{ g.parcelas?.length || 0 }}</small>
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                      <thead class="table-light">
+                        <tr>
+                          <th>#</th>
+                          <th>Vencimento</th>
+                          <th class="text-end">Valor</th>
+                          <th>Status</th>
+                          <th style="width: 170px">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngIf="!g.parcelas || g.parcelas.length===0">
+                          <td colspan="5" class="text-center text-muted py-3">Sem parcelas.</td>
+                        </tr>
+                        <tr *ngFor="let p of g.parcelas">
+                          <td>{{ p.parcela }}</td>
+                          <td>{{ p.vencimento.toDate() | date:'dd/MM/yyyy' }}</td>
+                          <td class="text-end">R$ {{ p.valorParcela }}</td>
+                          <td>
+                            <span class="badge" [ngClass]="{'text-bg-success': p.pago, 'text-bg-secondary': !p.pago}">
+                              {{ p.pago ? 'Pago' : 'Não' }}
+                            </span>
+                          </td>
+                          <td class="d-flex gap-2">
+                            <button class="btn btn-outline-primary btn-sm"
+                                    [disabled]="p.pago"
+                                    (click)="openPayModal(g.id, (p.id || (''+p.parcela)), 'Parcela ' + p.parcela)">
+                              Marcar pago
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="small text-muted mt-2">
+                    Avisos automáticos: D-15, D-7, no dia e atraso (consolidados nos KPIs do grupo).
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /expand -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Criar Grupo de Cobrança -->
+  <div class="modal fade show d-block" tabindex="-1" *ngIf="showCreateModal()" style="background: rgba(0,0,0,.5);">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content rounded-4">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-people-fill me-2"></i>Criar Grupo de Cobrança</h5>
+          <button type="button" class="btn-close" (click)="closeCreateModal()"></button>
+        </div>
+        <div class="modal-body">
+          <form class="row g-3" #fGrupo="ngForm" (ngSubmit)="salvarGrupo()">
+            <div class="col-12 col-md-4">
+              <label class="form-label">Número do Contrato *</label>
+              <input type="text" class="form-control" name="numeroContrato" [(ngModel)]="numeroContrato" required />
+            </div>
+            <div class="col-12 col-md-8">
+              <label class="form-label">Nome do Grupo</label>
+              <input type="text" class="form-control" name="nomeGrupo" [(ngModel)]="nomeGrupo" />
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label">Data de Liberação</label>
+              <input type="date" class="form-control" name="dataLiberacaoInput" [(ngModel)]="dataLiberacaoInput" />
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label">Operador</label>
+              <input type="text" class="form-control" name="operador" [(ngModel)]="operador" />
+            </div>
+            <div class="col-8 col-md-3">
+              <label class="form-label">Cidade</label>
+              <input type="text" class="form-control" name="cidade" [(ngModel)]="cidade" />
+            </div>
+            <div class="col-4 col-md-1">
+              <label class="form-label">UF</label>
+              <select class="form-select" name="uf" [(ngModel)]="uf">
+                <option value="">–</option>
+                <option *ngFor="let s of ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO']" [value]="s">{{ s }}</option>
+              </select>
+            </div>
+            <div class="col-12 d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-light" (click)="closeCreateModal()">Cancelar</button>
+              <button class="btn btn-success" [disabled]="!fGrupo.form.valid">Salvar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Confirmar Pagamento -->
+  <div class="modal fade show d-block" tabindex="-1" *ngIf="showPayModal()" style="background: rgba(0,0,0,.5);">
+    <div class="modal-dialog">
+      <div class="modal-content rounded-4">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-check2-square me-2"></i>Confirmar pagamento</h5>
+          <button type="button" class="btn-close" (click)="closePayModal()"></button>
+        </div>
+        <div class="modal-body">
+          Deseja marcar como paga <b>{{ payParcelaLabel() }}</b>?
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-light" (click)="closePayModal()">Cancelar</button>
+          <button class="btn btn-primary" (click)="confirmarPagamento()">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

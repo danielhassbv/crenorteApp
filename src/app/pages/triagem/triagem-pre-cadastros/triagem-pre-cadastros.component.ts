@@ -1,4 +1,3 @@
-// src/app/pages/triagem/triagem-pre-cadastros/triagem-pre-cadastros.component.ts
 import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -40,7 +39,6 @@ function titleCase(s: string): string {
   return (s || '').toLowerCase().replace(/(^|\s)\S/g, (t) => t.toUpperCase());
 }
 
-// Sinônimos -> chave canônica
 const ORIGEM_SYNONYMS: Record<string, string> = {
   'panfleto': 'panfleto', 'panfletos': 'panfleto',
   'online': 'online', 'on-line': 'online', 'site': 'online',
@@ -125,7 +123,7 @@ type PreCadastroRow = {
 
   statusAprovacao?: 'nao' | 'apto' | 'inapto';
 
-  // === Distribuição ===
+  // === Distribuição REAL ===
   designadoEm?: Date | null;
   designadoParaUid?: string | null;
   designadoParaNome?: string | null;
@@ -133,6 +131,7 @@ type PreCadastroRow = {
   _path: string;
   _eDeAssessor?: boolean;
 
+  // Quem criou (NÃO MUDA)
   createdByUid?: string | null;
   createdByNome?: string | null;
 };
@@ -148,10 +147,7 @@ type Assessor = {
 
 type PeriodoKey = 'todos' | 'hoje' | '7' | '30';
 type StatusKey = 'todos' | 'nao' | 'apto' | 'inapto';
-type DistRow = { key: string; dt: Date | null; label: string; aptos: number; inaptos: number; nao: number; total: number; };
 type DistGroup = { key: string; label: string; dt: Date | null; itens: PreCadastroRow[] };
-
-// 🔹 NOVO: chaves válidas dos grupos de filtros (inclui criador/destino)
 type FilterGroupKey = 'status' | 'periodo' | 'origem' | 'bairros' | 'criador' | 'destino';
 
 /* =========================
@@ -178,7 +174,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   openFilters() { this.showFilters = true; try { document.body.classList.add('no-scroll'); } catch { } }
   closeFilters() { this.showFilters = false; try { document.body.classList.remove('no-scroll'); } catch { } }
 
-  // Estado de colapso por grupo (agora com criador/destino)
+  // Collapses
   filterOpen: Record<FilterGroupKey, boolean> = {
     status: true, periodo: false, origem: true, bairros: false, criador: false, destino: false
   };
@@ -200,13 +196,13 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   // filtros
   busca = '';
   filtroRota = '';
-  somenteNaoDesignados = false; // mantido para compat, não usado no novo status
+  somenteNaoDesignados = false;
 
-  // filtros agregados
+  // agregados
   origens: Array<{ key: string; label: string; count: number }> = [];
   filtroOrigemKey = '';
 
-  // Filtros por assessor (criador e distribuído)
+  // filtros por assessor
   filtroCriadorUid: string = '';
   filtroDistribuidoUid: string = '';
 
@@ -227,12 +223,12 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   get totalItems() { return this.view.length; }
   get totalPages() { return Math.max(1, Math.ceil(this.totalItems / this.pageSize)); }
   get pageStart() { return this.totalItems ? (this.currentPage - 1) * this.pageSize : 0; }
-  get pageEnd() { return Math.min(this.pageStart + this.pageSize, this.totalItems); }
+  get pageEnd() { return Math.min(this.pageStart + this.pageSize, this.pageSize * this.currentPage); }
   get pageItems() { return this.view.slice(this.pageStart, this.pageEnd); }
 
   // assessores / designação
   assessores: Assessor[] = [];
-  selecaoAssessor: Record<string, string> = {};       // rowId -> uid
+  selecaoAssessor: Record<string, string> = {};       // rowId -> uid selecionado p/ distribuir
   selecaoAssessorNome: Record<string, string> = {};   // rowId -> nome exibido
   designando: Record<string, boolean> = {};
   errDesignado: Record<string, boolean> = {};
@@ -251,7 +247,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     this.loadFilterUI();
-    await this.carregarAssessores();   // TODOS os assessores/analistas/admin
+    await this.carregarAssessores();
     this.carregarTodos();
   }
   ngOnDestroy(): void { this.unsub?.(); }
@@ -274,16 +270,22 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
           const origemRaw = String(data?.origem ?? '').trim();
           const canon = canonicalizeOrigem(origemRaw);
 
-          // Preferir aprovacao.status (novo) e cair para o legado statusAprovacao
+          // Status
           let uiStatus: StatusAprovacao = 'nao';
           if (data?.aprovacao?.status) {
             const novo = String(data.aprovacao.status);
-            uiStatus = (normalizeBasic(novo) === 'apto') ? 'apto'
-              : (normalizeBasic(novo) === 'inapto') ? 'inapto'
-                : 'nao';
+            const n = normalizeBasic(novo);
+            uiStatus = n === 'apto' ? 'apto' : (n === 'inapto' ? 'inapto' : 'nao');
           } else {
             uiStatus = coerceStatusToUi(data?.statusAprovacao);
           }
+
+          // 🔴 MAPEAMENTO: NUNCA usar createdBy* como fallback para designado*
+          const designadoParaUid: string | null =
+            (data?.designadoParaUid ?? data?.designadoPara ?? null) || null;
+
+          const designadoParaNome: string | null =
+            (data?.designadoParaNome ?? null) || null;
 
           return {
             id: d.id,
@@ -296,8 +298,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             endereco: String(data?.endereco ?? data?.enderecoCompleto ?? '').trim(),
             bairro: String(data?.bairro ?? '').trim(),
             rota: String(data?.rota ?? '').trim(),
-            cidade: String(data?.cidade ?? '').trim(),        // ✅ novo
-            uf: String(data?.uf ?? data?.estado ?? '').trim(), // ✅ novo
+            cidade: String(data?.cidade ?? '').trim(),
+            uf: String(data?.uf ?? data?.estado ?? '').trim(),
 
             origem: origemRaw,
             origemKey: canon.key,
@@ -305,25 +307,29 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
 
             statusAprovacao: uiStatus,
 
-            // === campos de distribuição ===
             designadoEm: this.toDate(data?.designadoEm) ?? null,
-            designadoParaUid: (data?.designadoPara ?? data?.createdByUid) ?? null,
-            designadoParaNome: (data?.createdByNome ?? null),
+            designadoParaUid,
+            designadoParaNome,
 
             _path: path,
             _eDeAssessor: path.startsWith('colaboradores/'),
+
+            // Quem CRIOU (não muda!)
             createdByUid: data?.createdByUid ?? null,
             createdByNome: data?.createdByNome ?? null,
           };
-
         });
 
         rows.sort((a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0));
 
+        // preseleção: SOMENTE se já está distribuído
         rows.forEach((r) => {
-          if (r.createdByUid) {
-            this.selecaoAssessor[r.id] = r.createdByUid!;
-            this.selecaoAssessorNome[r.id] = r.createdByNome || this.resolveAssessorNome(r.createdByUid!);
+          if (r.designadoParaUid) {
+            this.selecaoAssessor[r.id] = r.designadoParaUid;
+            this.selecaoAssessorNome[r.id] = r.designadoParaNome || this.resolveAssessorNome(r.designadoParaUid);
+          } else {
+            this.selecaoAssessor[r.id] = '';
+            this.selecaoAssessorNome[r.id] = '';
           }
         });
 
@@ -341,9 +347,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     );
   }
 
-  /**
-   * Carrega TODOS os usuários ativos com papel assessor/analista/admin.
-   */
   private async carregarAssessores() {
     try {
       const col = collection(db, 'colaboradores');
@@ -393,13 +396,21 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   }
   trackById = (_: number, r: PreCadastroRow) => r._path || r.id;
 
-  isEnviado(r: PreCadastroRow): boolean { return !!(r.createdByUid && String(r.createdByUid).trim()); }
+  // Nome “bonito” pra distribuído
+  nomeDistribuido(r: PreCadastroRow): string {
+    return r.designadoParaNome
+      || (r.designadoParaUid ? this.resolveAssessorNome(r.designadoParaUid) : '')
+      || '';
+  }
+
+  // Enviado = só quando realmente distribuído
+  isEnviado(r: PreCadastroRow): boolean { return !!(r.designadoParaUid && r.designadoEm); }
   actionLabel(r: PreCadastroRow): string { return this.isEnviado(r) ? 'Atualizar' : 'Enviar'; }
   isEnviarDisabled(r: PreCadastroRow): boolean {
     const sel = this.selecaoAssessor[r.id];
     if (!sel) return true;
     if (this.designando[r.id]) return true;
-    if (this.isEnviado(r) && sel === r.createdByUid) return true;
+    if (this.isEnviado(r) && sel === r.designadoParaUid) return true;
     return false;
   }
 
@@ -414,11 +425,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.statusFilter = 'todos';
     this.periodoFilter = 'todos';
     this.somenteNaoDesignados = false;
-
-    // NOVOS
     this.filtroCriadorUid = '';
     this.filtroDistribuidoUid = '';
-
     this.aplicarFiltros();
   }
 
@@ -440,7 +448,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.aplicarFiltros();
   }
 
-  // --- Helpers de status (para o template) ---
   statusLabel(s?: StatusAprovacao | null): string {
     switch (s) {
       case 'apto': return 'Apto';
@@ -464,22 +471,18 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     };
   }
 
-  // status (filtro)
   setStatus(k: StatusKey) {
     this.statusFilter = (this.statusFilter === k ? 'todos' : k);
     this.aplicarFiltros();
   }
   isStatusActive(k: StatusKey) { return this.statusFilter === k; }
 
-  // período
   setPeriodo(k: PeriodoKey) { this.periodoFilter = (this.periodoFilter === k ? 'todos' : k); this.aplicarFiltros(); }
   isPeriodoActive(k: PeriodoKey) { return this.periodoFilter === k; }
 
-  // origem canônica
   setOrigem(key: string) { this.filtroOrigemKey = (this.filtroOrigemKey === key ? '' : key); this.aplicarFiltros(); }
   isOrigemActive(key: string) { return this.filtroOrigemKey === key; }
 
-  // bairros
   setBairro(label: string) { this.filtroBairro = (this.filtroBairro === label ? '' : label); this.aplicarFiltros(); }
   isBairroActive(label: string) { return this.filtroBairro === label; }
 
@@ -521,14 +524,11 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (origemKey) list = list.filter(p => p.origemKey === origemKey);
     if (bairroSel) list = list.filter(p => titleCase(p.bairro || '') === bairroSel);
 
-    // Filtrar por "Criado por (assessor)"
     if (this.filtroCriadorUid) {
       list = list.filter(p => (p.createdByUid || '') === this.filtroCriadorUid);
     }
 
-    // Filtrar por "Distribuído para (assessor)"
     if (this.filtroDistribuidoUid) {
-      // Considera apenas registros efetivamente distribuídos
       list = list.filter(p =>
         !!p.designadoEm &&
         !!p.designadoParaUid &&
@@ -536,7 +536,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       );
     }
 
-    // filtro por status (novo conceito)
     if (this.statusFilter !== 'todos') {
       list = list.filter(p => (p.statusAprovacao || 'nao') === this.statusFilter);
     }
@@ -563,7 +562,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     }
 
     this.view = list;
-    this.currentPage = 1; // reset paginação
+    this.currentPage = 1;
   }
 
   /* ===== Paginação ===== */
@@ -593,16 +592,27 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
 
       const srcRef = doc(db, r._path);
       const patch = {
-        createdByUid: uid,
-        createdByNome: assessorNome,
+        // NÃO alterar createdBy* aqui
+        designadoParaUid: uid,
+        designadoPara: uid,            // compat legado
+        designadoParaNome: assessorNome || null,
         designadoEm: serverTimestamp(),
-        designadoPara: uid,
+
+        // ajuda a “cair na caixa” do assessor
+        caixaAtual: 'assessor',
+        caixaUid: uid,
       };
       await setDoc(srcRef, patch, { merge: true });
 
+      // atualiza local
       const idx = this.all.findIndex((x) => x.id === r.id && x._path === r._path);
       if (idx >= 0) {
-        this.all[idx] = { ...this.all[idx], createdByUid: uid, createdByNome: assessorNome };
+        this.all[idx] = {
+          ...this.all[idx],
+          designadoParaUid: uid,
+          designadoParaNome: assessorNome || this.resolveAssessorNome(uid),
+          designadoEm: new Date(),
+        };
         this.selecaoAssessorNome[r.id] = assessorNome || this.resolveAssessorNome(uid);
         this.aplicarFiltros();
       }
@@ -620,7 +630,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.rowSelecionado = row;
     this.assessorBusca = '';
     this.filtrarAssessores();
-    this.selectedAssessorUid = this.selecaoAssessor[row.id] || null; // pré-seleção
+    this.selectedAssessorUid = this.selecaoAssessor[row.id] || null;
     this.showAssessorModal = true;
   }
   fecharModalAssessor() {
@@ -643,7 +653,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (!this.rowSelecionado) return;
     this.selecaoAssessor[this.rowSelecionado.id] = a.uid;
     this.selecaoAssessorNome[this.rowSelecionado.id] = this.nomeAssessor(a);
-    this.selectedAssessorUid = a.uid; // reflete no radio
+    this.selectedAssessorUid = a.uid;
   }
   async escolherEEnviar(a: Assessor) {
     if (!this.rowSelecionado) return;
@@ -663,7 +673,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     await this.designarParaAssessor(row);
   }
 
-  /* ============ MIGRAÇÃO EM MASSA: aprovacao.status =========== */
+  /* ===== Migração em massa (aprovacao.status) ===== */
   async migrarAprovacaoEmMassa() {
     const ok = confirm(
       'Isso vai verificar todos os pré-cadastros e gravar "aprovacao.status" quando estiver faltando.\n' +
@@ -675,7 +685,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.migracaoTotal = 0;
     this.migracaoProcessados = 0;
 
-    // helper para montar query paginada sem colocar undefined nos constraints
     const buildPageQuery = (afterDoc: any | null, size: number) => {
       const constraints: any[] = [orderBy('__name__')];
       if (afterDoc) constraints.push(startAfter(afterDoc));
@@ -688,7 +697,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       const batchMax = 450;
       let last: any = null;
 
-      // --- estimativa para mostrar progresso ---
+      // estimativa
       {
         let _last: any = null, _total = 0;
         while (true) {
@@ -701,7 +710,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
         this.migracaoTotal = _total;
       }
 
-      // --- migração efetiva ---
+      // migração efetiva
       while (true) {
         const q = buildPageQuery(last, pageSize);
         const snap = await getDocs(q);
@@ -713,7 +722,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
         for (const d of snap.docs) {
           const data = d.data() as any;
 
-          // já tem novo status válido?
           const jaTemNovo = !!data?.aprovacao?.status &&
             ['nao_verificado', 'apto', 'inapto'].includes(
               normalizeBasic(String(data.aprovacao.status))
@@ -757,12 +765,11 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     }
   }
 
-  // ===== Relatório de Distribuição (modal) =====
+  // ===== Relatório de Distribuição =====
   showRelatorioDist = false;
   abrirRelatorioDist() { this.showRelatorioDist = true; try { document.body.classList.add('no-scroll'); } catch { } }
   fecharRelatorioDist() { this.showRelatorioDist = false; try { document.body.classList.remove('no-scroll'); } catch { } }
 
-  // helpers
   private two(n: number) { return (n < 10 ? '0' : '') + n; }
   private dayStart(d: Date | null): Date | null {
     if (!d) return null;
@@ -777,33 +784,22 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   }
 
-  // Base: só itens distribuídos (respeita filtros atuais -> this.view)
+  // Base: distribuídos + período aplicado em designadoEm
   private distBase() {
-    return (this.view || []).filter(r => !!r.designadoEm && !!r.designadoParaUid);
-  }
-
-  // Distribuições por dia (ordem desc) – apenas totais
-  distPorDia(): Array<{ key: string; label: string; total: number; dt: Date | null }> {
-    const map = new Map<string, { key: string; label: string; total: number; dt: Date | null }>();
-    for (const r of this.distBase()) {
-      const d0 = this.dayStart(r.designadoEm || null);
-      const key = d0 ? `${d0.getFullYear()}-${this.two(d0.getMonth() + 1)}-${this.two(d0.getDate())}` : '—';
-      let slot = map.get(key);
-      if (!slot) {
-        slot = { key, label: d0 ? d0.toLocaleDateString('pt-BR') : '—', total: 0, dt: d0 };
-        map.set(key, slot);
+    let arr = (this.view || []).filter(r => !!r.designadoEm && !!r.designadoParaUid);
+    if (this.periodoFilter !== 'todos') {
+      if (this.periodoFilter === 'hoje') {
+        const start = new Date(); start.setHours(0, 0, 0, 0);
+        arr = arr.filter(r => r.designadoEm && r.designadoEm >= start);
+      } else {
+        const days = Number(this.periodoFilter);
+        const min = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        arr = arr.filter(r => r.designadoEm && r.designadoEm >= min);
       }
-      slot.total++;
     }
-    return Array.from(map.values()).sort((a, b) => (b.dt?.getTime() ?? -1) - (a.dt?.getTime() ?? -1));
+    return arr;
   }
 
-  // Ordenação por distribuição desc
-  ordenarPorDistribuicaoDesc<T extends { designadoEm?: Date | null }>(arr: T[]): T[] {
-    return [...(arr || [])].sort((a, b) => (b.designadoEm?.getTime() ?? 0) - (a.designadoEm?.getTime() ?? 0));
-  }
-
-  // Agrupar por dia com itens
   gruposDistPorDia(): DistGroup[] {
     const map = new Map<string, DistGroup>();
     for (const r of this.distBase()) {
@@ -825,7 +821,25 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return grupos;
   }
 
-  // Distribuições por assessor (ordem por total desc, depois nome)
+  ordenarPorDistribuicaoDesc<T extends { designadoEm?: Date | null }>(arr: T[]): T[] {
+    return [...(arr || [])].sort((a, b) => (b.designadoEm?.getTime() ?? 0) - (a.designadoEm?.getTime() ?? 0));
+  }
+
+  distPorDia(): Array<{ key: string; label: string; total: number; dt: Date | null }> {
+    const map = new Map<string, { key: string; label: string; total: number; dt: Date | null }>();
+    for (const r of this.distBase()) {
+      const d0 = this.dayStart(r.designadoEm || null);
+      const key = d0 ? `${d0.getFullYear()}-${this.two(d0.getMonth() + 1)}-${this.two(d0.getDate())}` : '—';
+      let slot = map.get(key);
+      if (!slot) {
+        slot = { key, label: d0 ? d0.toLocaleDateString('pt-BR') : '—', total: 0, dt: d0 };
+        map.set(key, slot);
+      }
+      slot.total++;
+    }
+    return Array.from(map.values()).sort((a, b) => (b.dt?.getTime() ?? -1) - (a.dt?.getTime() ?? -1));
+  }
+
   distPorAssessor(): Array<{ uid: string; nome: string; total: number }> {
     const map = new Map<string, { uid: string; nome: string; total: number }>();
     for (const r of this.distBase()) {
@@ -839,20 +853,35 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
   }
 
-  // Total geral de distribuições (após filtros)
   distTotal(): number { return this.distBase().length; }
+  
+  
 
-  // ===== Exportar PDF – Relatório de Distribuição =====
   exportarRelatorioDistribuicaoPDF() {
     const grupos = this.gruposDistPorDia();
+    const totaisPorAssessor = this.distPorAssessor();
     const docPdf = new jsPDF({ orientation: 'p', unit: 'pt' });
 
     docPdf.setFontSize(14);
     docPdf.text('Relatório de Distribuição – Pré-cadastros', 40, 40);
+
     docPdf.setFontSize(10);
     docPdf.text(`Total de distribuições (após filtros): ${this.distTotal()}`, 40, 58);
 
     let startY = 80;
+
+    // Resumo por assessor (sempre com NOME resolvido)
+    autoTable(docPdf, {
+      startY,
+      head: [['Assessor', 'Distribuições']],
+      body: totaisPorAssessor.map(a => [a.nome, String(a.total)]),
+      styles: { fontSize: 10 },
+      columnStyles: {
+        0: { cellWidth: 360 },
+        1: { halign: 'right', cellWidth: 120 },
+      }
+    });
+    startY = (docPdf as any).lastAutoTable.finalY + 16;
 
     if (!grupos.length) {
       docPdf.text('Nenhuma distribuição encontrada para os filtros atuais.', 40, startY);
@@ -878,12 +907,13 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
         head: [['#', 'Cliente', 'CPF', 'Distribuído em', 'Assessor']],
         body: g.itens.map((it, idx) => {
           const dt = it.designadoEm ? it.designadoEm : null;
+          const assessorNome = it.designadoParaNome || (it.designadoParaUid ? this.resolveAssessorNome(it.designadoParaUid) : '') || (it.designadoParaUid || '');
           return [
             String(idx + 1),
             it.nome || '',
             this.cpfMask(it.cpf),
             dt ? dt.toLocaleString() : '—',
-            it.designadoParaNome || it.designadoParaUid || ''
+            assessorNome
           ];
         }),
         styles: { fontSize: 9 },

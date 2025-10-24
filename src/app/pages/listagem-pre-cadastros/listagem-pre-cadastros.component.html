@@ -450,7 +450,8 @@
       <div class="modal-header">
         <h5 class="modal-title">
           Editar Pré-cadastro
-          <small *ngIf="editItem" class="text-muted d-block fs-6">{{ displayName(editItem?.nomeCompleto) }}</small>
+          <!-- FIX: remover optional chaining pois *ngIf="editItem" garante não-nulo -->
+          <small *ngIf="editItem" class="text-muted d-block fs-6">{{ displayName(editItem.nomeCompleto) }}</small>
         </h5>
         <button type="button" class="btn-close" aria-label="Close" (click)="fecharEdicao()"></button>
       </div>

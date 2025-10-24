@@ -1,5 +1,5 @@
 <div class="container py-4 px-5 triagem" [class.is-compact]="density==='compact'" [class.drawer-open]="showFilters">
-  <!-- ===================== STICKY TOOLBAR ===================== -->
+  <!-- Toolbar -->
   <div class="triagem-toolbar py-4 px-2">
     <div class="triagem-toolbar__row align-items-end mb-3 px-4">
       <h2 class="mb-0">Central de Triagem</h2>
@@ -9,13 +9,11 @@
           <input class="form-control form-control" placeholder="Buscar nome, CPF, telefone, e-mail, endereço..."
             [(ngModel)]="busca" (ngModelChange)="onBusca($event)" aria-label="Campo de busca geral" />
         </div>
-        <!-- Botão do Relatório de Distribuição -->
+        
         <button type="button" class="btn btn-primary mb-3 ms-lg-2" (click)="abrirRelatorioDist()">
           <i class="bi bi-graph-up"></i>
           Relatório
         </button>
-
-        <!-- Filtros (abre drawer no mobile) -->
         <button type="button" class="btn btn-outline-secondary btn-filtros d-lg-none mb-3" (click)="toggleFilters()"
           [attr.aria-expanded]="showFilters" aria-controls="filtersDrawerPanel">
           <i class="bi bi-sliders"></i>
@@ -25,16 +23,12 @@
     </div>
   </div>
 
-  <!-- ===================== LAYOUT: SIDEBAR + CONTENT ===================== -->
   <div class="triagem-layout mt-3 gap-4">
-    <!-- Sidebar fixa (desktop) -->
     <aside class="filters-sidebar d-none d-lg-block px-2 py-4" style="border-radius: 10px;">
       <ng-container *ngTemplateOutlet="filtersContent"></ng-container>
     </aside>
 
-    <!-- Conteúdo -->
     <main class="triagem-content">
-      <!-- STATES -->
       <div *ngIf="carregando()" class="alert alert-light mb-4">Carregando…</div>
       <div *ngIf="!carregando() && erro()" class="alert alert-danger mb-4">{{ erro() }}</div>
       <div *ngIf="!carregando() && !erro() && !view.length" class="alert alert-light mb-4">
@@ -50,9 +44,8 @@
         </ng-container>
       </div>
 
-      <!-- LISTA EM CARDS -->
       <div class="container no-overflow" *ngIf="!carregando() && !erro() && view.length">
-        <!-- PAGINAÇÃO (topo) -->
+        <!-- Paginação topo -->
         <nav class="list-pager px-2 py-2 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2"
           aria-label="Paginação">
           <div class="small text-muted">
@@ -94,16 +87,22 @@
                     <div class="fw-semibold text-truncate fs-5 mb-1" [title]="r.nome">
                       {{ r.nome || '—' }}
                     </div>
-                    <div class="small text-muted" *ngIf="r.createdByNome">Assessor: {{ r.createdByNome }}</div>
+                    <!-- CORRETO: criado por (creator) e distribuído para (designado) -->
+                    <div class="small text-muted">
+                      Criado por: <strong>{{ r.createdByNome || r.createdByUid || '—' }}</strong>
+                      <span class="mx-1">•</span>
+                      Distribuído para: <strong>{{ nomeDistribuido(r) || '—' }}</strong>
+                    </div>
                   </div>
                 </div>
 
                 <div class="tc-cta gap-2">
                   <span *ngIf="isEnviado(r)" class="badge text-bg-success me-2">Enviado</span>
                   <button class="btn btn-sm px-3"
-                    [ngClass]="{ 'btn-atualizar': isEnviado(r), 'btn-enviar': !isEnviado(r) }"
-                    [disabled]="isEnviarDisabled(r)" (click)="designarParaAssessor(r)"
-                    [attr.aria-label]="actionLabel(r) + ' para ' + (selecaoAssessorNome[r.id] || 'assessor')">
+                          [ngClass]="{ 'btn-atualizar': isEnviado(r), 'btn-enviar': !isEnviado(r) }"
+                          [disabled]="isEnviarDisabled(r)"
+                          (click)="designarParaAssessor(r)"
+                          [attr.aria-label]="actionLabel(r) + ' para ' + (selecaoAssessorNome[r.id] || 'assessor')">
                     <span *ngIf="!designando[r.id]">{{ actionLabel(r) }}</span>
                     <span *ngIf="designando[r.id]">Enviando…</span>
                   </button>
@@ -125,21 +124,18 @@
                   <span class="chip" *ngIf="r.origemLabel" title="Origem">
                     📌 {{ r.origemLabel }}
                   </span>
-
-                  <!-- STATUS -->
                   <span class="chip" [ngClass]="statusChipClass(r.statusAprovacao)"
-                    [title]="'Status: ' + statusLabel(r.statusAprovacao)">
+                        [title]="'Status: ' + statusLabel(r.statusAprovacao)">
                     {{ statusIcon(r.statusAprovacao) }} {{ statusLabel(r.statusAprovacao) }}
                   </span>
                 </div>
-
 
                 <div class="tc-actions gap-2 gap-md-3">
                   <button type="button" class="btn btn-outline-secondary btn-sm px-3" (click)="abrirModalAssessor(r)">
                     Procurar
                   </button>
                   <div class="selected-pill selected-pill--sm ms-1 ms-sm-2"
-                    [title]="selecaoAssessorNome[r.id] || 'Nenhum selecionado'">
+                       [title]="selecaoAssessorNome[r.id] || 'Nenhum selecionado'">
                     {{ selecaoAssessorNome[r.id] || '—' }}
                   </div>
                   <small class="text-danger ms-1" *ngIf="errDesignado[r.id]">
@@ -151,7 +147,7 @@
           </ul>
         </div>
 
-        <!-- PAGINAÇÃO (base) -->
+        <!-- Paginação base -->
         <nav class="list-pager px-2 py-2 mt-2 d-flex flex-wrap align-items-center justify-content-between gap-2"
           aria-label="Paginação">
           <div class="small text-muted">
@@ -184,7 +180,7 @@
     </main>
   </div>
 
-  <!-- ===== Drawer lateral (mobile/tablet) ===== -->
+  <!-- Drawer mobile -->
   <div class="filters-drawer d-lg-none" [class.open]="showFilters" id="filtersDrawerPanel">
     <div class="filters-backdrop" (click)="closeFilters()"></div>
     <div class="filters-panel" role="dialog" aria-modal="true" aria-label="Filtros">
@@ -202,7 +198,7 @@
     </div>
   </div>
 
-  <!-- ===== TEMPLATE compartilhado dos filtros ===== -->
+  <!-- Template filtros -->
   <ng-template #filtersContent>
     <div class="filters-group mb-4">
       <button class="filters-group__header" type="button" (click)="toggleGroup('status')"
@@ -236,15 +232,15 @@
             (click)="setPeriodo('todos')">Todos</button>
           <button class="chip chip-toggle" [class.active]="isPeriodoActive('hoje')"
             (click)="setPeriodo('hoje')">Hoje</button>
-          <button class="chip chip-toggle" [class.active]="isPeriodoActive('7')" (click)="setPeriodo('7')">Últimos 7
-            dias</button>
-          <button class="chip chip-toggle" [class.active]="isPeriodoActive('30')" (click)="setPeriodo('30')">Últimos 30
-            dias</button>
+          <button class="chip chip-toggle" [class.active]="isPeriodoActive('7')"
+            (click)="setPeriodo('7')">Últimos 7 dias</button>
+          <button class="chip chip-toggle" [class.active]="isPeriodoActive('30')"
+            (click)="setPeriodo('30')">Últimos 30 dias</button>
         </div>
       </div>
     </div>
 
-    <!-- Criado por (assessor) -->
+    <!-- Criado por -->
     <div class="filters-group mb-4">
       <button class="filters-group__header" type="button" (click)="toggleGroup('criador')"
         [attr.aria-expanded]="isOpen('criador')">
@@ -264,7 +260,7 @@
       </div>
     </div>
 
-    <!-- Distribuído para (assessor) -->
+    <!-- Distribuído para -->
     <div class="filters-group mb-4">
       <button class="filters-group__header" type="button" (click)="toggleGroup('destino')"
         [attr.aria-expanded]="isOpen('destino')">
@@ -288,7 +284,6 @@
         </div>
       </div>
     </div>
-
 
     <div class="filters-group mb-3">
       <button class="filters-group__header" type="button" (click)="toggleGroup('bairros')"
@@ -314,7 +309,7 @@
   </ng-template>
 </div>
 
-<!-- ===== MODAL DE SELEÇÃO DE ASSESSOR ===== -->
+<!-- Modal de seleção de assessor -->
 <div class="overlay" *ngIf="showAssessorModal">
   <div class="overlay__backdrop" (click)="fecharModalAssessor()"></div>
 
@@ -350,12 +345,8 @@
           </div>
 
           <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm px-3" (click)="escolherAssessor(a)">
-              Selecionar
-            </button>
-            <button class="btn btn-primary btn-sm px-3" (click)="escolherEEnviar(a)">
-              Selecionar e enviar
-            </button>
+            <button class="btn btn-outline-secondary btn-sm px-3" (click)="escolherAssessor(a)">Selecionar</button>
+            <button class="btn btn-primary btn-sm px-3" (click)="escolherEEnviar(a)">Selecionar e enviar</button>
           </div>
         </label>
 
@@ -380,7 +371,7 @@
   </div>
 </div>
 
-<!-- ===== Modal: Relatório de Distribuição ===== -->
+<!-- Modal: Relatório de Distribuição -->
 <div *ngIf="showRelatorioDist" class="position-fixed top-0 start-0 w-100 h-100"
   style="background: rgba(0,0,0,.35); z-index:1055;">
   <div class="bg-white shadow rounded-3 position-absolute top-50 start-50 translate-middle"
@@ -400,7 +391,7 @@
         Total: <strong>{{ distTotal() }}</strong>.
       </p>
 
-      <!-- DETALHADO: por dia (com itens) -->
+      <!-- Detalhado por dia -->
       <div *ngFor="let g of gruposDistPorDia()" class="mb-4">
         <h6 class="mb-2">Dia: {{ g.label }} <span class="text-muted">({{ g.itens.length }})</span></h6>
         <div class="table-responsive">
@@ -425,14 +416,14 @@
                   </ng-container>
                   <ng-container *ngIf="!it.designadoEm">—</ng-container>
                 </td>
-                <td>{{ it.designadoParaNome || it.designadoParaUid }}</td>
+                <td>{{ nomeDistribuido(it) || it.designadoParaUid }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- RESUMOS: totais por dia e por assessor -->
+      <!-- Resumos -->
       <h6 class="mb-2">Distribuições por dia (totais)</h6>
       <div class="table-responsive mb-4">
         <table class="table table-sm align-middle">

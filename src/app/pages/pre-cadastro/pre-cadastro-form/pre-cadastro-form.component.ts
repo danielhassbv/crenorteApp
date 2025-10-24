@@ -6,7 +6,7 @@ import {
   signal,
   OnInit,
   ChangeDetectionStrategy,
-  OnDestroy
+  OnDestroy,
 } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
@@ -77,7 +77,8 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
   @ViewChild('feedbackModal', { static: false }) feedbackModalRef?: ElementRef<HTMLDivElement>;
   private feedbackModal?: any;
 
-  // Modal Fluxo de Caixa
+  /** Modal Fluxo de Caixa por template-ref (estável) */
+  @ViewChild('fluxoModalEl', { static: false }) fluxoModalEl?: ElementRef<HTMLDivElement>;
   private fluxoModalRef: any | null = null;
 
   loading = signal(false);
@@ -103,7 +104,7 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
 
   // NOVO: lista de UFs para o select
   ufsBrasil: string[] = [
-    'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
+    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
   ];
 
   // NOVO: acrescentei cidade e uf ao model
@@ -111,16 +112,16 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     cidade?: string;
     uf?: string;
   } = {
-    nomeCompleto: '',
-    cpf: '',
-    endereco: '',
-    telefone: '',
-    email: '',
-    bairro: '',
-    origem: '',
-    cidade: '',
-    uf: '',
-  };
+      nomeCompleto: '',
+      cpf: '',
+      endereco: '',
+      telefone: '',
+      email: '',
+      bairro: '',
+      origem: '',
+      cidade: '',
+      uf: '',
+    };
 
   private lastPreCadastroId: string | null = null;
 
@@ -241,7 +242,7 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
           if (el) this._cpfCleanup = this._wireCpf(el!);
         }
       }, 100);
-      return () => {};
+      return () => { };
     } else {
       return this._wireCpf(el);
     }
@@ -337,7 +338,7 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
   }
 
   onSubmit(): void {
-    if (!this.cpfValido(this.model.cpf /*, true*/)) {
+    if (!this.cpfValido(this.model.cpf)) {
       this.showMsg('danger', 'CPF inválido!', 6000);
       return;
     }
@@ -437,7 +438,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
 
         const data = snap.data() as any;
 
-        // NOVO: popular cidade/uf a partir de vários nomes possíveis
         const cidade =
           data.cidade ??
           data.enderecoCidade ??
@@ -462,8 +462,9 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
           uf: uf || '',
         };
 
+        // 👇 AQUI ENTRA O TRECHO
         this.valorSolicitadoNumber = Number(data?.valorSolicitado || 0);
-        this.valorSolicitadoMasked = this.valorSolicitadoNumber ? this.formatBRN(this.valorSolicitadoNumber) : '';
+        this.valorSolicitadoMasked = this.maskOrEmpty(this.valorSolicitadoNumber);
         this.parcelasSelecionadas = Number(data?.parcelas || 0) || null;
 
         this.fluxoCaixa = data?.fluxoCaixa ?? this.fluxoCaixa;
@@ -485,6 +486,7 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
       }
     });
   }
+
 
   // ================= Lógica Financeira =================
   calcularParcela(pv: number, n: number, i: number): number {
@@ -587,17 +589,17 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     return this.totalReceita() - this.totalCustos();
   }
 
-  // ====== Abrir/fechar modal ======
+  // ====== Abrir/fechar modal (instância única) ======
   openFluxoModal() {
-    const f =
-      this.fluxoCaixa || ({
+    const f: FluxoCaixa =
+      this.fluxoCaixa || {
         faturamentoMensal: 0,
         fixos: { aluguel: 0, salarios: 0, energiaEletrica: 0, agua: 0, telefoneInternet: 0 },
         variaveis: { materiaPrima: 0, insumos: 0, frete: 0, transporte: 0, outros: [] },
-      } as FluxoCaixa);
+      };
 
+    // numéricos
     this.faturamento = f.faturamentoMensal || 0;
-    this.faturamentoInput = this.faturamento ? String(Math.trunc(this.faturamento)) : '';
     this.fluxoForm.faturamentoMensal = this.faturamento;
 
     this.fluxoForm.fixos.aluguel = f.fixos.aluguel || 0;
@@ -610,30 +612,65 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
     this.fluxoForm.variaveis.insumos = f.variaveis.insumos || 0;
     this.fluxoForm.variaveis.frete = f.variaveis.frete || 0;
     this.fluxoForm.variaveis.transporte = f.variaveis.transporte || 0;
+
+    // masked (para não mostrar zero)
+    this.faturamentoInput = this.maskOrEmpty(this.faturamento);
+    this.fluxoForm.fixos.aluguelMasked = this.maskOrEmpty(this.fluxoForm.fixos.aluguel);
+    this.fluxoForm.fixos.salariosMasked = this.maskOrEmpty(this.fluxoForm.fixos.salarios);
+    this.fluxoForm.fixos.energiaEletricaMasked = this.maskOrEmpty(this.fluxoForm.fixos.energiaEletrica);
+    this.fluxoForm.fixos.aguaMasked = this.maskOrEmpty(this.fluxoForm.fixos.agua);
+    this.fluxoForm.fixos.telefoneInternetMasked = this.maskOrEmpty(this.fluxoForm.fixos.telefoneInternet);
+
+    this.fluxoForm.variaveis.materiaPrimaMasked = this.maskOrEmpty(this.fluxoForm.variaveis.materiaPrima);
+    this.fluxoForm.variaveis.insumosMasked = this.maskOrEmpty(this.fluxoForm.variaveis.insumos);
+    this.fluxoForm.variaveis.freteMasked = this.maskOrEmpty(this.fluxoForm.variaveis.frete);
+    this.fluxoForm.variaveis.transporteMasked = this.maskOrEmpty(this.fluxoForm.variaveis.transporte);
+
     this.fluxoForm.variaveis.outros = (f.variaveis.outros || []).map((o) => ({
       nome: o.nome,
       valor: o.valor || 0,
-      valorMasked: this.formatBRN(o.valor || 0),
+      valorMasked: this.maskOrEmpty(o.valor || 0),
     }));
 
-    const el = document.getElementById('fluxoCaixaModal');
-    if (el) {
-      this.fluxoModalRef = new bootstrap.Modal(el, { backdrop: 'static' });
-      this.fluxoModalRef.show();
+    if (!this.fluxoModalRef) {
+      const el = this.fluxoModalEl?.nativeElement;
+      if (el) this.fluxoModalRef = new bootstrap.Modal(el, { backdrop: 'static', keyboard: false });
     }
-  }
-  closeFluxoModal() {
-    if (this.fluxoModalRef) {
-      this.fluxoModalRef.hide();
-      this.fluxoModalRef = null;
-    }
+    this.fluxoModalRef?.show();
   }
 
-  onFaturamentoChange(digits: string) {
-    const n = Number(digits || 0);
+
+  closeFluxoModal() {
+    this.fluxoModalRef?.hide();
+  }
+
+  /** Valor Solicitado (com máscara): atualiza número e rótulos */
+  onValorMaskedChange(masked: string | null) {
+    this.valorSolicitadoMasked = masked ?? '';
+    this.valorSolicitadoNumber = this.parseBRN(this.valorSolicitadoMasked || '');
+    this.atualizarParcelasLabels();
+    this.atualizarResumo();
+  }
+
+  /** Exibe string “R$ …” ou '' (para não mostrar 0) */
+  private maskOrEmpty(n: number): string {
+    return n && isFinite(n) && n > 0 ? this.formatBRN(n) : '';
+  }
+
+  /** Conveniência */
+  get hasValorSolicitado(): boolean {
+    return !!(this.valorSolicitadoNumber && this.valorSolicitadoNumber > 0);
+  }
+
+
+  /** Atualiza faturamento a partir da máscara (R$ …) */
+  onFaturamentoMaskedChange(masked: string | null) {
+    this.faturamentoInput = masked ?? '';
+    const n = this.parseBRN(masked ?? '');
     this.faturamento = n;
     this.fluxoForm.faturamentoMensal = n;
   }
+
 
   syncNumber(path: string, masked: string) {
     const n = this.parseBRN(masked);
@@ -729,7 +766,6 @@ export class PreCadastroFormComponent implements OnInit, OnDestroy {
       email: this.limpar(this.model.email),
       origem: this.limpar(this.model.origem),
       bairro: this.limpar(this.model.bairro),
-      // NOVO: cidade/uf
       cidade: this.limpar(this.model.cidade || ''),
       uf: (this.model.uf || '').toString().trim().toUpperCase(),
     };

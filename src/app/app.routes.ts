@@ -14,9 +14,8 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/login/login.component').then(m => m.LoginComponent),
   },
-  
-  { path: 'agendamentos', component: AgendamentosListaComponent },
 
+  { path: 'agendamentos', component: AgendamentosListaComponent },
   { path: 'listagem-agendamentos', component: ListagemAgendamentosComponent },
 
   {
@@ -24,8 +23,19 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/acesso-negado/acesso-negado.component').then(m => m.AcessoNegadoComponent),
   },
-  // src/app/app.routes.ts
+
+  {
+    path: 'cobranca',
+    loadComponent: () =>
+      import('./pages/central-cobranca/central-cobranca.component').then(m => m.CentralCobrancaComponent),
+  },
+
+  // === Organização / Gerais ===
   { path: 'organograma', loadComponent: () => import('./pages/hierarquia-colaboradores/hierarquia-colaboradores.component').then(m => m.HierarquiaColaboradoresComponent) },
+
+  // === Grupos (lista e criar) ===
+  { path: 'grupos', loadComponent: () => import('./pages/lista-grupos/lista-grupos.component').then(m => m.ListaGruposComponent) },
+  { path: 'grupos/novo', loadComponent: () => import('./pages/criar-grupo/criar-grupo.component').then(m => m.CriarGrupoComponent) },
 
   {
     path: 'dashboard',
@@ -42,8 +52,7 @@ export const routes: Routes = [
       import('./pages/aprovacoes/aprovacoes.component').then(m => m.AprovacoesComponent),
   },
 
-    { path: 'aprovacao-pre-cadastro', component: AprovacaoPreCadastroComponent },
-
+  { path: 'aprovacao-pre-cadastro', component: AprovacaoPreCadastroComponent },
 
   // === PRÉ-CADASTRO ===
   {
@@ -95,7 +104,6 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./pages/listagem-cadastros/listagem-cadastros.component').then(m => m.ListagemCadastrosComponent),
   },
-
   {
     path: 'lista-cadastros',
     canActivate: [authGuard, roleGuard],
@@ -125,8 +133,7 @@ export const routes: Routes = [
       import('./pages/relatorio-cadastros/relatorio-cadastros.component').then(m => m.RelatorioCadastrosComponent),
   },
 
-
-  // === Grupos Solidários ===
+  // === Grupos Solidários (outros) ===
   {
     path: 'grupos/novo',
     canActivate: [authGuard, roleGuard],
