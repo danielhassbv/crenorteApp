@@ -2,6 +2,8 @@ import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
+import { HeaderComponent } from '../../shared/header/header.component';
+
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -19,10 +21,7 @@ import {
   collection,
   getDocs,
   where,
-  writeBatch,
   orderBy,
-  startAfter,
-  limit as qLimit,
 } from 'firebase/firestore';
 
 /* =========================
@@ -63,7 +62,6 @@ const ORIGEM_LABELS: Record<string, string> = {
   outros: 'Outros',
 };
 
-// status exibido no UI (chip)
 type StatusAprovacao = 'nao' | 'apto' | 'inapto';
 function coerceStatusToUi(x: any): StatusAprovacao {
   const n = normalizeBasic(String(x || ''));
@@ -72,7 +70,6 @@ function coerceStatusToUi(x: any): StatusAprovacao {
   return 'nao';
 }
 
-// status no Firestore (novo nó aprovacao.status)
 type AprovacaoStatus = 'nao_verificado' | 'apto' | 'inapto';
 function mapLegacyToNovo(x: any): AprovacaoStatus {
   const n = normalizeBasic(String(x || ''));
@@ -123,7 +120,6 @@ type PreCadastroRow = {
 
   statusAprovacao?: 'nao' | 'apto' | 'inapto';
 
-  // === Distribuição REAL ===
   designadoEm?: Date | null;
   designadoParaUid?: string | null;
   designadoParaNome?: string | null;
@@ -131,7 +127,6 @@ type PreCadastroRow = {
   _path: string;
   _eDeAssessor?: boolean;
 
-  // Quem criou (NÃO MUDA)
   createdByUid?: string | null;
   createdByNome?: string | null;
 };
@@ -145,10 +140,40 @@ type Assessor = {
   rota?: string;
 };
 
-type PeriodoKey = 'todos' | 'hoje' | '7' | '30';
-type StatusKey = 'todos' | 'nao' | 'apto' | 'inapto';
-type DistGroup = { key: string; label: string; dt: Date | null; itens: PreCadastroRow[] };
-type FilterGroupKey = 'status' | 'periodo' | 'origem' | 'bairros' | 'criador' | 'destino';
+/* ===== Grupos (ATUALIZADO para IDs) ===== */
+export type StatusGrupo = 'em_qa' | 'aprovado_basa' | 'reprovado_basa';
+export interface GrupoSolidario {
+  id?: string;
+  codigo?: string;
+  coordenadorCpf: string;
+  coordenadorNome?: string;
+
+  /* >>> membros por IDs de pré-cadastros */
+  membrosIds?: string[];
+
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
+  status: StatusGrupo;
+  statusHistory?: Array<{
+    at: Date | any;
+    byUid: string;
+    byNome?: string;
+    from?: StatusGrupo;
+    to: StatusGrupo;
+    note?: string;
+  }>;
+  criadoEm: Date | any;
+  criadoPorUid: string;
+  criadoPorNome?: string;
+  totalSolicitado?: number;
+  observacoes?: string;
+
+  /* distribuição */
+  designadoEm?: Date | any;
+  designadoParaUid?: string | null;
+  designadoParaNome?: string | null;
+}
 
 /* =========================
    Componente
@@ -156,7 +181,7 @@ type FilterGroupKey = 'status' | 'periodo' | 'origem' | 'bairros' | 'criador' | 
 @Component({
   standalone: true,
   selector: 'app-triagem-pre-cadastros',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, HeaderComponent],
   templateUrl: './triagem-pre-cadastros.component.html',
   styleUrls: ['./triagem-pre-cadastros.component.css'],
 })
@@ -168,56 +193,74 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   density: 'relax' | 'compact' = 'relax';
   setDensity(mode: 'relax' | 'compact') { this.density = mode; }
 
+  // Tabs
+  activeTab: 'pessoas' | 'grupos' = 'pessoas';
+  setTab(tab: 'pessoas' | 'grupos') { this.activeTab = tab; this.onBusca(this.busca); }
+
   // Drawer lateral (mobile)
   showFilters = false;
   toggleFilters() { this.showFilters ? this.closeFilters() : this.openFilters(); }
   openFilters() { this.showFilters = true; try { document.body.classList.add('no-scroll'); } catch { } }
   closeFilters() { this.showFilters = false; try { document.body.classList.remove('no-scroll'); } catch { } }
 
-  // Collapses
-  filterOpen: Record<FilterGroupKey, boolean> = {
-    status: true, periodo: false, origem: true, bairros: false, criador: false, destino: false
+  // Collapses (INDIVIDUAL)
+  filterOpen: Record<'status' | 'periodo' | 'origem' | 'bairros' | 'criador' | 'destino' | 'envio', boolean> = {
+    status: true, periodo: false, origem: true, bairros: false, criador: false, destino: false, envio: true
   };
-  toggleGroup(k: FilterGroupKey) {
+  toggleGroup(k: keyof typeof this.filterOpen) {
     this.filterOpen[k] = !this.filterOpen[k];
-    this.persistFilterUI();
-  }
-  isOpen(k: FilterGroupKey) { return this.filterOpen[k]; }
-  private persistFilterUI() {
     try { localStorage.setItem('triagemFilterOpen', JSON.stringify(this.filterOpen)); } catch { }
   }
-  private loadFilterUI() {
-    try {
-      const raw = localStorage.getItem('triagemFilterOpen');
-      if (raw) this.filterOpen = { ...this.filterOpen, ...(JSON.parse(raw) as Partial<Record<FilterGroupKey, boolean>>) };
-    } catch { }
-  }
+  isOpen(k: keyof typeof this.filterOpen) { return this.filterOpen[k]; }
 
-  // filtros
+  // filtros comuns
   busca = '';
   filtroRota = '';
   somenteNaoDesignados = false;
 
-  // agregados
+  // agregados (INDIVIDUAL)
   origens: Array<{ key: string; label: string; count: number }> = [];
   filtroOrigemKey = '';
 
-  // filtros por assessor
+  // filtros por assessor (INDIVIDUAL)
   filtroCriadorUid: string = '';
   filtroDistribuidoUid: string = '';
 
   topBairros: Array<{ label: string; count: number }> = [];
   filtroBairro = '';
 
-  statusFilter: StatusKey = 'todos';
-  periodoFilter: PeriodoKey = 'todos';
+  statusFilter: 'todos' | 'nao' | 'apto' | 'inapto' = 'todos';
 
-  // dados
+  // envio (INDIVIDUAL)
+  envioFilter: 'todos' | 'enviado' | 'nao_enviado' = 'todos';
+  setEnvio(k: 'todos' | 'enviado' | 'nao_enviado') { this.envioFilter = (this.envioFilter === k ? 'todos' : k); this.aplicarFiltros(); }
+  isEnvioActive(k: 'todos' | 'enviado' | 'nao_enviado') { return this.envioFilter === k; }
+
+  // período (INDIVIDUAL)
+  periodoFilter: 'todos' | 'hoje' | 'ontem' | '7' | '14' | '30' | '90' | 'custom' = 'todos';
+  de = '';
+  ate = '';
+
+  setPeriodo(k: typeof this.periodoFilter) {
+    this.periodoFilter = (this.periodoFilter === k ? 'todos' : k);
+    if (this.periodoFilter !== 'custom') { this.de = ''; this.ate = ''; }
+    this.aplicarFiltros();
+  }
+  isPeriodoActive(k: typeof this.periodoFilter) { return this.periodoFilter === k; }
+  onPeriodoDatasChange() {
+    if (this.periodoFilter !== 'custom') this.periodoFilter = 'custom';
+    this.aplicarFiltros();
+  }
+
+  // dados INDIVIDUAL
   private unsub?: Unsubscribe;
   all: PreCadastroRow[] = [];
   view: PreCadastroRow[] = [];
 
-  // paginação
+  // índice por ID para lookup RÁPIDO (usado pelos grupos)
+  private pcById = new Map<string, PreCadastroRow>();
+
+  // paginação INDIVIDUAL
   pageSize = 20;
   currentPage = 1;
   get totalItems() { return this.view.length; }
@@ -228,31 +271,87 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
 
   // assessores / designação
   assessores: Assessor[] = [];
-  selecaoAssessor: Record<string, string> = {};       // rowId -> uid selecionado p/ distribuir
-  selecaoAssessorNome: Record<string, string> = {};   // rowId -> nome exibido
+  selecaoAssessor: Record<string, string> = {};
+  selecaoAssessorNome: Record<string, string> = {};
   designando: Record<string, boolean> = {};
   errDesignado: Record<string, boolean> = {};
 
-  // modal
+  // modal INDIVIDUAL
   showAssessorModal = false;
   assessorBusca = '';
   assessoresFiltrados: Assessor[] = [];
   rowSelecionado: PreCadastroRow | null = null;
   selectedAssessorUid: string | null = null;
 
-  // Migração em massa
+  // Migração (mantida)
   migrandoAprovacao = false;
   migracaoTotal = 0;
   migracaoProcessados = 0;
 
+  // ===== GRUPOS =====
+  private unsubGrupos?: Unsubscribe;
+  allGrupos: GrupoSolidario[] = [];
+  viewGrupos: GrupoSolidario[] = [];
+
+  // paginação grupos
+  pageSizeG = 20;
+  currentPageG = 1;
+  get totalItemsG() { return this.viewGrupos.length; }
+  get totalPagesG() { return Math.max(1, Math.ceil(this.totalItemsG / this.pageSizeG)); }
+  get pageStartG() { return this.totalItemsG ? (this.currentPageG - 1) * this.pageSizeG : 0; }
+  get pageEndG() { return Math.min(this.pageStartG + this.pageSizeG, this.pageSizeG * this.currentPageG); }
+  get pageItemsG() { return this.viewGrupos.slice(this.pageStartG, this.pageEndG); }
+
+  // modal GRUPO
+  showAssessorModalGrupo = false;
+  assessorBuscaGrupo = '';
+  assessoresFiltradosGrupo: Assessor[] = [];
+  selectedAssessorUidGrupo: string | null = null;
+
+  showGrupoDetalhe = false;
+  grupoSelecionado: GrupoSolidario | null = null;
+
+  selecaoAssessorNomeGrupo: Record<string, string> = {};
+  designandoGrupo: Record<string, boolean> = {};
+
+  // >>> membros carregados por ID para o modal
+  membrosPC: PreCadastroRow[] = [];
+
   async ngOnInit(): Promise<void> {
-    this.loadFilterUI();
     await this.carregarAssessores();
     this.carregarTodos();
+    this.carregarGrupos();
   }
-  ngOnDestroy(): void { this.unsub?.(); }
+  ngOnDestroy(): void { this.unsub?.(); this.unsubGrupos?.(); }
 
-  /* ============ Carregar dados ============ */
+  /* ============ Helpers de atualização sem perder a página ============ */
+  private patchById<T extends { id?: string | number }>(
+    arr: T[],
+    id: string | number | undefined,
+    patch: Partial<T>
+  ): T[] {
+    if (id == null) return arr;
+    const idx = arr.findIndex(x => String(x.id) === String(id));
+    if (idx === -1) return arr;
+    const updated = { ...arr[idx], ...patch };
+    const clone = arr.slice();
+    clone[idx] = updated;
+    return clone;
+  }
+  private reapplyPeoplePreservingPage(): void {
+    const keep = this.currentPage;
+    this.aplicarFiltros();
+    this.currentPage = Math.min(keep, this.totalPages || 1);
+    this.refreshMembrosSeModalAberto();
+  }
+  private reapplyGroupsPreservingPage(): void {
+    const keep = this.currentPageG;
+    this.filtrarGrupos();
+    this.currentPageG = Math.min(keep, this.totalPagesG || 1);
+    this.refreshMembrosSeModalAberto();
+  }
+
+  /* ============ Carregar dados INDIVIDUAL ============ */
   private carregarTodos() {
     this.carregando.set(true);
     this.erro.set(null);
@@ -270,7 +369,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
           const origemRaw = String(data?.origem ?? '').trim();
           const canon = canonicalizeOrigem(origemRaw);
 
-          // Status
           let uiStatus: StatusAprovacao = 'nao';
           if (data?.aprovacao?.status) {
             const novo = String(data.aprovacao.status);
@@ -280,17 +378,14 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             uiStatus = coerceStatusToUi(data?.statusAprovacao);
           }
 
-          // 🔴 MAPEAMENTO: NUNCA usar createdBy* como fallback para designado*
           const designadoParaUid: string | null =
             (data?.designadoParaUid ?? data?.designadoPara ?? null) || null;
-
           const designadoParaNome: string | null =
             (data?.designadoParaNome ?? null) || null;
 
           return {
             id: d.id,
             data: this.toDate(data?.createdAt ?? data?.criadoEm),
-
             nome: String(data?.nomeCompleto ?? data?.nome ?? '').trim(),
             cpf: String(data?.cpf ?? '').trim(),
             telefone: String(data?.telefone ?? data?.contato ?? '').trim(),
@@ -301,7 +396,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             cidade: String(data?.cidade ?? '').trim(),
             uf: String(data?.uf ?? data?.estado ?? '').trim(),
 
-            origem: origemRaw,
+            origem: canon.label,
             origemKey: canon.key,
             origemLabel: canon.label,
 
@@ -314,15 +409,17 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
             _path: path,
             _eDeAssessor: path.startsWith('colaboradores/'),
 
-            // Quem CRIOU (não muda!)
             createdByUid: data?.createdByUid ?? null,
             createdByNome: data?.createdByNome ?? null,
           };
         });
 
+        // >>> índice por ID para lookup via membrosIds
+        this.pcById.clear();
+        for (const r of rows) this.pcById.set(String(r.id), r);
+
         rows.sort((a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0));
 
-        // preseleção: SOMENTE se já está distribuído
         rows.forEach((r) => {
           if (r.designadoParaUid) {
             this.selecaoAssessor[r.id] = r.designadoParaUid;
@@ -337,6 +434,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
         this.atualizarOrigens();
         this.atualizarBairros();
         this.aplicarFiltros();
+        this.refreshMembrosSeModalAberto();
         this.carregando.set(false);
       },
       (err) => {
@@ -390,20 +488,19 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return t ? t.charAt(0).toUpperCase() : '?';
   }
   nomeAssessor(a: Assessor | undefined): string { return (a?.nome || a?.email || a?.uid || '').toString(); }
-  resolveAssessorNome(uid: string): string {
+  resolveAssessorNome(uid?: string | null): string {
+    if (!uid) return '';
     const a = this.assessores.find((x) => x.uid === uid);
     return this.nomeAssessor(a) || uid;
   }
   trackById = (_: number, r: PreCadastroRow) => r._path || r.id;
 
-  // Nome “bonito” pra distribuído
   nomeDistribuido(r: PreCadastroRow): string {
     return r.designadoParaNome
       || (r.designadoParaUid ? this.resolveAssessorNome(r.designadoParaUid) : '')
       || '';
   }
 
-  // Enviado = só quando realmente distribuído
   isEnviado(r: PreCadastroRow): boolean { return !!(r.designadoParaUid && r.designadoEm); }
   actionLabel(r: PreCadastroRow): string { return this.isEnviado(r) ? 'Atualizar' : 'Enviar'; }
   isEnviarDisabled(r: PreCadastroRow): boolean {
@@ -414,8 +511,53 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return false;
   }
 
-  /* ============ Filtros & Quick Filters ============ */
-  onBusca(val: string) { this.busca = (val ?? '').trim(); this.aplicarFiltros(); }
+  /* ===== Período helpers (INDIVIDUAL) ===== */
+  private parseDateLocal(yyyyMMdd: string, endOfDay = false): Date | null {
+    if (!yyyyMMdd) return null;
+    const [y, m, d] = yyyyMMdd.split('-').map(n => Number(n));
+    if (!y || !m || !d) return null;
+    const dt = new Date(y, m - 1, d);
+    if (endOfDay) dt.setHours(23, 59, 59, 999);
+    else dt.setHours(0, 0, 0, 0);
+    return dt;
+  }
+  private periodoCriacaoDentro(dt: Date | null): boolean {
+    if (!dt) return false;
+    const now = new Date();
+    const startToday = new Date(); startToday.setHours(0, 0, 0, 0);
+
+    if (this.periodoFilter === 'todos') return true;
+    if (this.periodoFilter === 'hoje') return dt >= startToday;
+    if (this.periodoFilter === 'ontem') {
+      const y0 = new Date(startToday); y0.setDate(y0.getDate() - 1);
+      const y1 = new Date(startToday); y1.setMilliseconds(-1);
+      return dt >= y0 && dt <= y1;
+    }
+    if (this.periodoFilter === '7' || this.periodoFilter === '14' || this.periodoFilter === '30' || this.periodoFilter === '90') {
+      const days = Number(this.periodoFilter);
+      const min = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+      return dt >= min;
+    }
+    if (this.periodoFilter === 'custom') {
+      const min = this.parseDateLocal(this.de, false);
+      const max = this.parseDateLocal(this.ate, true);
+      if (min && max) return dt >= min && dt <= max;
+      if (min && !max) return dt >= min;
+      if (!min && max) return dt <= max;
+      return true;
+    }
+    return true;
+  }
+  private periodoDistribuicaoDentro(dt: Date | null): boolean {
+    return this.periodoCriacaoDentro(dt);
+  }
+
+  /* ============ Filtros & Quick Filters (INDIVIDUAL) ============ */
+  onBusca(val: string) {
+    this.busca = (val ?? '').trim();
+    if (this.activeTab === 'pessoas') this.aplicarFiltros();
+    else this.filtrarGrupos();
+  }
   onFiltroRota(val: string) { this.filtroRota = (val ?? '').trim(); this.aplicarFiltros(); }
   limparFiltros() {
     this.busca = '';
@@ -424,6 +566,9 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.filtroBairro = '';
     this.statusFilter = 'todos';
     this.periodoFilter = 'todos';
+    this.envioFilter = 'todos';
+    this.de = '';
+    this.ate = '';
     this.somenteNaoDesignados = false;
     this.filtroCriadorUid = '';
     this.filtroDistribuidoUid = '';
@@ -471,14 +616,10 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     };
   }
 
-  setStatus(k: StatusKey) {
+  setStatus(k: 'todos' | 'nao' | 'apto' | 'inapto') {
     this.statusFilter = (this.statusFilter === k ? 'todos' : k);
     this.aplicarFiltros();
   }
-  isStatusActive(k: StatusKey) { return this.statusFilter === k; }
-
-  setPeriodo(k: PeriodoKey) { this.periodoFilter = (this.periodoFilter === k ? 'todos' : k); this.aplicarFiltros(); }
-  isPeriodoActive(k: PeriodoKey) { return this.periodoFilter === k; }
 
   setOrigem(key: string) { this.filtroOrigemKey = (this.filtroOrigemKey === key ? '' : key); this.aplicarFiltros(); }
   isOrigemActive(key: string) { return this.filtroOrigemKey === key; }
@@ -524,57 +665,45 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (origemKey) list = list.filter(p => p.origemKey === origemKey);
     if (bairroSel) list = list.filter(p => titleCase(p.bairro || '') === bairroSel);
 
-    if (this.filtroCriadorUid) {
-      list = list.filter(p => (p.createdByUid || '') === this.filtroCriadorUid);
-    }
+    if (this.filtroCriadorUid) list = list.filter(p => (p.createdByUid || '') === this.filtroCriadorUid);
 
     if (this.filtroDistribuidoUid) {
-      list = list.filter(p =>
-        !!p.designadoEm &&
-        !!p.designadoParaUid &&
-        p.designadoParaUid === this.filtroDistribuidoUid
-      );
+      list = list.filter(p => !!p.designadoEm && !!p.designadoParaUid && p.designadoParaUid === this.filtroDistribuidoUid);
+    }
+
+    if (this.envioFilter !== 'todos') {
+      list = list.filter(p => this.envioFilter === 'enviado' ? this.isEnviado(p) : !this.isEnviado(p));
     }
 
     if (this.statusFilter !== 'todos') {
       list = list.filter(p => (p.statusAprovacao || 'nao') === this.statusFilter);
     }
 
-    if (this.periodoFilter !== 'todos') {
-      const now = new Date();
-      const start = new Date(); start.setHours(0, 0, 0, 0);
-      if (this.periodoFilter === 'hoje') {
-        list = list.filter(p => p.data && p.data >= start);
-      } else {
-        const days = Number(this.periodoFilter);
-        const min = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-        list = list.filter(p => p.data && p.data >= min);
-      }
-    }
+    list = list.filter(p => this.periodoCriacaoDentro(p.data || null));
 
     if (term) {
       list = list.filter((p) => {
         const blob = this.normalize(
-          `${p.nome} ${p.cpf} ${p.telefone} ${p.email} ${p.endereco} ${p.bairro} ${p.rota} ${p.origemLabel}`
+          `${p.nome} ${p.cpf} ${p.telefone} ${p.email} ${p.endereco} ${p.bairro} ${p.rota} ${p.origemLabel} ${p.cidade} ${p.uf}`
         );
         return blob.includes(term);
       });
     }
 
     this.view = list;
-    this.currentPage = 1;
   }
 
-  /* ===== Paginação ===== */
+  /* ===== Paginação (INDIVIDUAL) ===== */
   onPageSizeChange(val: number) {
     const n = Number(val) || 10;
     this.pageSize = n;
     this.currentPage = 1;
+    this.view = [...this.view];
   }
   nextPage() { if (this.currentPage < this.totalPages) this.currentPage++; }
   prevPage() { if (this.currentPage > 1) this.currentPage--; }
 
-  /* ============ Enviar/Atualizar ============ */
+  /* ============ Enviar/Atualizar INDIVIDUAL (sem perder página) ============ */
   async designarParaAssessor(r: PreCadastroRow) {
     const uid = this.selecaoAssessor[r.id];
     if (!uid) return;
@@ -591,31 +720,26 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       const assessorNome = colab?.nome ?? colab?.displayName ?? null;
 
       const srcRef = doc(db, r._path);
-      const patch = {
-        // NÃO alterar createdBy* aqui
+      const patchRemote = {
         designadoParaUid: uid,
-        designadoPara: uid,            // compat legado
+        designadoPara: uid,
         designadoParaNome: assessorNome || null,
         designadoEm: serverTimestamp(),
-
-        // ajuda a “cair na caixa” do assessor
         caixaAtual: 'assessor',
         caixaUid: uid,
       };
-      await setDoc(srcRef, patch, { merge: true });
+      await setDoc(srcRef, patchRemote, { merge: true });
 
-      // atualiza local
-      const idx = this.all.findIndex((x) => x.id === r.id && x._path === r._path);
-      if (idx >= 0) {
-        this.all[idx] = {
-          ...this.all[idx],
-          designadoParaUid: uid,
-          designadoParaNome: assessorNome || this.resolveAssessorNome(uid),
-          designadoEm: new Date(),
-        };
-        this.selecaoAssessorNome[r.id] = assessorNome || this.resolveAssessorNome(uid);
-        this.aplicarFiltros();
-      }
+      const patchLocal = {
+        designadoParaUid: uid,
+        designadoParaNome: assessorNome || this.resolveAssessorNome(uid),
+        designadoEm: new Date(),
+      } as Partial<PreCadastroRow>;
+
+      this.all = this.patchById(this.all, r.id, patchLocal);
+      this.view = this.patchById(this.view, r.id, patchLocal);
+
+      this.reapplyPeoplePreservingPage();
     } catch (e) {
       console.error('[Triagem] designarParaAssessor erro:', e);
       this.errDesignado[r.id] = true;
@@ -625,7 +749,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     }
   }
 
-  /* ============ Modal ============ */
+  /* ============ Modal INDIVIDUAL ============ */
   abrirModalAssessor(row: PreCadastroRow) {
     this.rowSelecionado = row;
     this.assessorBusca = '';
@@ -673,99 +797,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     await this.designarParaAssessor(row);
   }
 
-  /* ===== Migração em massa (aprovacao.status) ===== */
-  async migrarAprovacaoEmMassa() {
-    const ok = confirm(
-      'Isso vai verificar todos os pré-cadastros e gravar "aprovacao.status" quando estiver faltando.\n' +
-      'Deseja continuar?'
-    );
-    if (!ok) return;
-
-    this.migrandoAprovacao = true;
-    this.migracaoTotal = 0;
-    this.migracaoProcessados = 0;
-
-    const buildPageQuery = (afterDoc: any | null, size: number) => {
-      const constraints: any[] = [orderBy('__name__')];
-      if (afterDoc) constraints.push(startAfter(afterDoc));
-      constraints.push(qLimit(size));
-      return query(collectionGroup(db, 'pre_cadastros'), ...constraints);
-    };
-
-    try {
-      const pageSize = 300;
-      const batchMax = 450;
-      let last: any = null;
-
-      // estimativa
-      {
-        let _last: any = null, _total = 0;
-        while (true) {
-          const q = buildPageQuery(_last, pageSize);
-          const s = await getDocs(q);
-          _total += s.size;
-          if (s.size < pageSize) break;
-          _last = s.docs[s.docs.length - 1];
-        }
-        this.migracaoTotal = _total;
-      }
-
-      // migração efetiva
-      while (true) {
-        const q = buildPageQuery(last, pageSize);
-        const snap = await getDocs(q);
-        if (snap.empty) break;
-
-        let batch = writeBatch(db);
-        let writes = 0;
-
-        for (const d of snap.docs) {
-          const data = d.data() as any;
-
-          const jaTemNovo = !!data?.aprovacao?.status &&
-            ['nao_verificado', 'apto', 'inapto'].includes(
-              normalizeBasic(String(data.aprovacao.status))
-            );
-
-          if (jaTemNovo) {
-            this.migracaoProcessados++;
-            continue;
-          }
-
-          const alvo = mapLegacyToNovo(data?.statusAprovacao);
-          const patch: any = {
-            aprovacao: {
-              ...(data?.aprovacao || {}),
-              status: alvo || 'nao_verificado',
-            }
-          };
-
-          batch.set(d.ref, patch, { merge: true });
-          writes++;
-          this.migracaoProcessados++;
-
-          if (writes >= batchMax) {
-            await batch.commit();
-            batch = writeBatch(db);
-            writes = 0;
-          }
-        }
-
-        if (writes > 0) await batch.commit();
-        if (snap.size < pageSize) break;
-        last = snap.docs[snap.docs.length - 1];
-      }
-
-      alert('Migração concluída! 🎉');
-    } catch (e) {
-      console.error('[Migração] Erro ao migrar aprovacao.status:', e);
-      alert('Falha na migração. Veja o console para detalhes.');
-    } finally {
-      this.migrandoAprovacao = false;
-    }
-  }
-
-  // ===== Relatório de Distribuição =====
+  /* ===== Relatório de Distribuição (INDIVIDUAL) ===== */
   showRelatorioDist = false;
   abrirRelatorioDist() { this.showRelatorioDist = true; try { document.body.classList.add('no-scroll'); } catch { } }
   fecharRelatorioDist() { this.showRelatorioDist = false; try { document.body.classList.remove('no-scroll'); } catch { } }
@@ -784,24 +816,14 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   }
 
-  // Base: distribuídos + período aplicado em designadoEm
   private distBase() {
     let arr = (this.view || []).filter(r => !!r.designadoEm && !!r.designadoParaUid);
-    if (this.periodoFilter !== 'todos') {
-      if (this.periodoFilter === 'hoje') {
-        const start = new Date(); start.setHours(0, 0, 0, 0);
-        arr = arr.filter(r => r.designadoEm && r.designadoEm >= start);
-      } else {
-        const days = Number(this.periodoFilter);
-        const min = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-        arr = arr.filter(r => r.designadoEm && r.designadoEm >= min);
-      }
-    }
+    arr = arr.filter(r => this.periodoDistribuicaoDentro(r.designadoEm || null));
     return arr;
   }
 
-  gruposDistPorDia(): DistGroup[] {
-    const map = new Map<string, DistGroup>();
+  gruposDistPorDia() {
+    const map = new Map<string, { key: string; label: string; dt: Date | null; itens: PreCadastroRow[] }>();
     for (const r of this.distBase()) {
       const d0 = this.dayStart(r.designadoEm || null);
       const key = d0 ? `${d0.getFullYear()}-${this.two(d0.getMonth() + 1)}-${this.two(d0.getDate())}` : '—';
@@ -825,7 +847,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return [...(arr || [])].sort((a, b) => (b.designadoEm?.getTime() ?? 0) - (a.designadoEm?.getTime() ?? 0));
   }
 
-  distPorDia(): Array<{ key: string; label: string; total: number; dt: Date | null }> {
+  distPorDia() {
     const map = new Map<string, { key: string; label: string; total: number; dt: Date | null }>();
     for (const r of this.distBase()) {
       const d0 = this.dayStart(r.designadoEm || null);
@@ -840,7 +862,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     return Array.from(map.values()).sort((a, b) => (b.dt?.getTime() ?? -1) - (a.dt?.getTime() ?? -1));
   }
 
-  distPorAssessor(): Array<{ uid: string; nome: string; total: number }> {
+  distPorAssessor() {
     const map = new Map<string, { uid: string; nome: string; total: number }>();
     for (const r of this.distBase()) {
       const uid = String(r.designadoParaUid);
@@ -854,8 +876,6 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
   }
 
   distTotal(): number { return this.distBase().length; }
-  
-  
 
   exportarRelatorioDistribuicaoPDF() {
     const grupos = this.gruposDistPorDia();
@@ -868,18 +888,21 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     docPdf.setFontSize(10);
     docPdf.text(`Total de distribuições (após filtros): ${this.distTotal()}`, 40, 58);
 
+    if (this.periodoFilter !== 'todos') {
+      const desc = this.periodoFilter === 'custom'
+        ? `Período: ${this.de || '—'} até ${this.ate || '—'}`
+        : `Período: ${this.periodoFilter}`;
+      docPdf.text(desc, 40, 72);
+    }
+
     let startY = 80;
 
-    // Resumo por assessor (sempre com NOME resolvido)
     autoTable(docPdf, {
       startY,
       head: [['Assessor', 'Distribuições']],
       body: totaisPorAssessor.map(a => [a.nome, String(a.total)]),
       styles: { fontSize: 10 },
-      columnStyles: {
-        0: { cellWidth: 360 },
-        1: { halign: 'right', cellWidth: 120 },
-      }
+      columnStyles: { 0: { cellWidth: 360 }, 1: { halign: 'right', cellWidth: 120 } }
     });
     startY = (docPdf as any).lastAutoTable.finalY + 16;
 
@@ -908,20 +931,10 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
         body: g.itens.map((it, idx) => {
           const dt = it.designadoEm ? it.designadoEm : null;
           const assessorNome = it.designadoParaNome || (it.designadoParaUid ? this.resolveAssessorNome(it.designadoParaUid) : '') || (it.designadoParaUid || '');
-          return [
-            String(idx + 1),
-            it.nome || '',
-            this.cpfMask(it.cpf),
-            dt ? dt.toLocaleString() : '—',
-            assessorNome
-          ];
+          return [ String(idx + 1), it.nome || '', this.cpfMask(it.cpf), dt ? dt.toLocaleString() : '—', assessorNome ];
         }),
         styles: { fontSize: 9 },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 28 },
-          2: { cellWidth: 110 },
-          3: { cellWidth: 140 }
-        }
+        columnStyles: { 0: { halign: 'center', cellWidth: 28 }, 2: { cellWidth: 110 }, 3: { cellWidth: 140 } }
       });
 
       startY = (docPdf as any).lastAutoTable.finalY + 16;
@@ -931,5 +944,207 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     const pad = (n: number) => String(n).padStart(2, '0');
     const fname = `relatorio-distribuicao-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.pdf`;
     docPdf.save(fname);
+  }
+
+  /* ====== GRUPOS (ATUALIZADO p/ membrosIds) ====== */
+  private carregarGrupos() {
+    const col = collection(db, 'grupos_solidarios');
+    const qy = query(col, orderBy('criadoEm', 'desc'));
+    this.unsubGrupos = onSnapshot(qy, snap => {
+      const arr: GrupoSolidario[] = snap.docs.map(d => {
+        const x = d.data() as any;
+
+        // suporte a legado: se não houver membrosIds, tenta extrair de membros[].cadastroId
+        const ids: string[] = Array.isArray(x.membrosIds)
+          ? x.membrosIds
+          : Array.isArray(x.membros)
+            ? (x.membros.map((m: any) => m?.cadastroId).filter((v: any) => !!v))
+            : [];
+
+        return {
+          id: d.id,
+          codigo: x.codigo,
+          coordenadorCpf: x.coordenadorCpf,
+          coordenadorNome: x.coordenadorNome,
+          membrosIds: ids,
+          bairro: x.bairro || '',
+          cidade: x.cidade,
+          estado: x.estado,
+          status: x.status || 'em_qa',
+          criadoEm: x.criadoEm?.toDate?.() || new Date(),
+          criadoPorUid: x.criadoPorUid,
+          criadoPorNome: x.criadoPorNome,
+          totalSolicitado: x.totalSolicitado || 0,
+          observacoes: x.observacoes || '',
+          designadoEm: x.designadoEm?.toDate?.() || null,
+          designadoParaUid: x.designadoParaUid || null,
+          designadoParaNome: x.designadoParaNome || null,
+        };
+      });
+      this.allGrupos = arr;
+      this.filtrarGrupos();
+      this.refreshMembrosSeModalAberto();
+    }, err => {
+      console.error('[Triagem] Grupos error:', err);
+      this.erro.set(err?.message ?? 'Falha ao carregar grupos.');
+    });
+  }
+
+  filtrarGrupos() {
+    const term = this.normalize(this.busca);
+    let list = [...this.allGrupos];
+
+    if (term) {
+      list = list.filter(g => {
+        const blob = this.normalize(
+          `${g.codigo || ''} ${g.coordenadorNome || ''} ${g.bairro || ''} ${g.cidade || ''} ${g.estado || ''}`
+        );
+        return blob.includes(term);
+      });
+    }
+
+    this.viewGrupos = list;
+  }
+
+  onPageSizeChangeG(val: number) { this.pageSizeG = +val; this.currentPageG = 1; }
+  nextPageG() { if (this.currentPageG < this.totalPagesG) this.currentPageG++; }
+  prevPageG() { if (this.currentPageG > 1) this.currentPageG--; }
+
+  grupoStatusLabel(s: StatusGrupo): string {
+    switch (s) {
+      case 'em_qa': return 'Em QA';
+      case 'aprovado_basa': return 'Aprovado BASA';
+      case 'reprovado_basa': return 'Reprovado BASA';
+      default: return '—';
+    }
+  }
+  grupoStatusIcon(s: StatusGrupo): string {
+    switch (s) {
+      case 'aprovado_basa': return '✅';
+      case 'reprovado_basa': return '⛔';
+      default: return '🕑';
+    }
+  }
+  grupoStatusChipClass(s: StatusGrupo) {
+    return {
+      'chip-status': true,
+      'is-apto': s === 'aprovado_basa',
+      'is-inapto': s === 'reprovado_basa',
+      'is-nao': s === 'em_qa'
+    };
+  }
+
+  /* ===== Designação de grupos (sem perder página) ===== */
+  abrirModalAssessorGrupo(g: GrupoSolidario) {
+    this.grupoSelecionado = g;
+    this.assessorBuscaGrupo = '';
+    this.filtrarAssessoresGrupo();
+    this.selectedAssessorUidGrupo = g.designadoParaUid || null;
+    this.showAssessorModalGrupo = true;
+  }
+  fecharModalAssessorGrupo() {
+    this.showAssessorModalGrupo = false;
+    this.grupoSelecionado = null;
+    this.selectedAssessorUidGrupo = null;
+  }
+  filtrarAssessoresGrupo() {
+    const t = this.normalize(this.assessorBuscaGrupo);
+    let arr = [...this.assessores];
+    if (t) {
+      arr = arr.filter((a) => this.normalize(`${a.nome ?? ''} ${a.email ?? ''} ${a.rota ?? ''}`).includes(t));
+    }
+    arr.sort((a, b) => (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? ''));
+    this.assessoresFiltradosGrupo = arr;
+  }
+  escolherAssessorGrupo(a: Assessor) {
+    if (!this.grupoSelecionado) return;
+    this.selecaoAssessorNomeGrupo[this.grupoSelecionado.id!] = this.nomeAssessor(a);
+    this.selectedAssessorUidGrupo = a.uid;
+  }
+  async escolherEEnviarGrupo(a: Assessor) {
+    if (!this.grupoSelecionado) return;
+    this.selecaoAssessorNomeGrupo[this.grupoSelecionado.id!] = this.nomeAssessor(a);
+    const g = this.grupoSelecionado;
+    this.fecharModalAssessorGrupo();
+    await this.designarGrupo(g, a.uid);
+  }
+  async enviarSelecionadoDoModalGrupo() {
+    if (!this.grupoSelecionado || !this.selectedAssessorUidGrupo) return;
+    const uid = this.selectedAssessorUidGrupo;
+    this.selecaoAssessorNomeGrupo[this.grupoSelecionado.id!] = this.resolveAssessorNome(uid) || uid;
+    const g = this.grupoSelecionado;
+    this.fecharModalAssessorGrupo();
+    await this.designarGrupo(g, uid);
+  }
+
+  async designarGrupo(g: GrupoSolidario, uid?: string | null) {
+    if (!g?.id || !uid) return;
+    this.designandoGrupo[g.id] = true;
+
+    try {
+      const colabRef = doc(db, 'colaboradores', uid);
+      const colabSnap = await getDoc(colabRef);
+      if (!colabSnap.exists()) throw new Error('Colaborador não encontrado.');
+      const colab = colabSnap.data() as any;
+      const assessorNome = colab?.nome ?? colab?.displayName ?? null;
+
+      const ref = doc(db, 'grupos_solidarios', g.id);
+      await setDoc(ref, {
+        designadoParaUid: uid,
+        designadoParaNome: assessorNome || null,
+        designadoEm: serverTimestamp(),
+        caixaAtual: 'assessor',
+        caixaUid: uid,
+      }, { merge: true });
+
+      const patchLocal = {
+        designadoParaUid: uid,
+        designadoParaNome: assessorNome || this.resolveAssessorNome(uid),
+        designadoEm: new Date(),
+      } as Partial<GrupoSolidario>;
+
+      this.allGrupos = this.patchById(this.allGrupos, g.id, patchLocal);
+      this.viewGrupos = this.patchById(this.viewGrupos, g.id, patchLocal);
+
+      this.reapplyGroupsPreservingPage();
+    } catch (e) {
+      console.error('[Triagem] designarGrupo erro:', e);
+      alert('Não foi possível enviar/atualizar o grupo. Tente novamente.');
+    } finally {
+      this.designandoGrupo[g.id] = false;
+    }
+  }
+
+  /* ===== Detalhe do grupo (membros por ID) ===== */
+  private getPCById(id?: string | null): PreCadastroRow | null {
+    if (!id) return null;
+    return this.pcById.get(String(id)) || null;
+  }
+  private montarMembrosPorIds(g: GrupoSolidario): PreCadastroRow[] {
+    const ids = g.membrosIds || [];
+    const itens: PreCadastroRow[] = [];
+    for (const id of ids) {
+      const pc = this.getPCById(id);
+      if (pc) itens.push(pc);
+    }
+    return itens;
+  }
+
+  abrirDetalheGrupo(g: GrupoSolidario) {
+    this.grupoSelecionado = g;
+    this.membrosPC = this.montarMembrosPorIds(g);
+    this.showGrupoDetalhe = true;
+  }
+  fecharDetalheGrupo() {
+    this.showGrupoDetalhe = false;
+    this.grupoSelecionado = null;
+    this.membrosPC = [];
+  }
+
+  /** Se dados atualizarem com o modal aberto, remonta a lista */
+  private refreshMembrosSeModalAberto() {
+    if (this.showGrupoDetalhe && this.grupoSelecionado) {
+      this.membrosPC = this.montarMembrosPorIds(this.grupoSelecionado);
+    }
   }
 }

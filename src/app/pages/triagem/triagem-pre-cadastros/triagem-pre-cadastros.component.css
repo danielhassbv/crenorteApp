@@ -1,363 +1,94 @@
-/* ===== Tokens de espaçamento (consistência) ===== */
-:root{
-  --space-1: .25rem;
-  --space-2: .5rem;
-  --space-3: .75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.5rem;
-  --space-7: 2rem;
-  --radius: 12px;
-}
-
-/* um pouco mais de respiro em telas grandes */
-@media (min-width: 992px){
-  :root{
-    --space-4: 1.25rem;   /* 20px */
-    --space-5: 1.5rem;    /* 24px */
-    --space-6: 2rem;      /* 32px */
+  /* Tabs no verde CRENORTE */
+  .crenorte-tabs .nav-link { border: 1px solid transparent; color:#146c43; font-weight:600; }
+  .crenorte-tabs .nav-link:hover { color:#0a5c36; }
+  .crenorte-tabs .nav-link.active{
+    color:#fff; background:#198754; border-color:#198754;
   }
-}
+  .crenorte-tabs { gap:.25rem; }
+  .crenorte-tabs .nav-link { border-radius:.5rem .5rem 0 0; }
 
-/* Bloqueio de scroll quando drawer aberto */
-.no-scroll { overflow: hidden; }
+  /* Badges de status */
+  .badge.bg-success { background:#198754 !important; }
+  .badge.bg-warning { background:#ffe69c !important; }
+  .badge.bg-warning.text-dark { color:#47370a !important; }
 
-/* ===== Toolbar fixa ===== */
-.triagem-toolbar{ top: 0; z-index: 1020;
-  background: rgba(255,255,255,.9);
-  backdrop-filter: saturate(180%) blur(6px);
-  border-bottom: 1px solid rgba(0,0,0,.06);
-  border-radius: 10px;
-  max-width: 100%;
-  
-}
-.triagem-toolbar__row{
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--space-4);
-  align-items: center;
-}
-.triagem-toolbar__controls{
-  display: flex; gap: var(--space-3); align-items: center;
-  flex-wrap: wrap; justify-content: flex-end;
-}
+  /* Modal mais espaçoso */
+  .overlay__panel { padding: 1.25rem; }
+  .overlay__panel.overlay__panel--lg { padding: 1.25rem; }
+  .overlay__panel .list-group-item { padding: 1rem .75rem; } /* + espaço nas linhas */
+  .overlay__panel .form-control { padding:.6rem .75rem; }
 
-/* Busca ampla */
-.input-with-icon{ position: relative; min-width: min(420px, 100%); }
-.input-with-icon.input-wide{
-  flex: 1 1 820px;
-  max-width: 1120px;
-}
-.input-with-icon i{
-  position: absolute; left: .6rem; top: 50%; transform: translateY(-50%);
-  opacity: .65; pointer-events: none;
-}
-.input-with-icon .form-control{ padding-left: 2rem; }
+  /* Cards */
+  .triagem-card { padding: 1rem; }
 
-.btn-filtros i{ margin-right: .4rem; }
+  /* Chips de status herdadas do seu TS */
+  .chip-status{ border:1px solid #cfd4da; background:#f1f3f5; color:#495057; }
+  .chip-status.is-apto{ background:#e8f6ef; border-color:#18a85b; color:#0f5132; }
+  .chip-status.is-inapto{ background:#fdecec; border-color:#dc3545; color:#842029; }
 
-/* ===== Segmented control ===== */
-.segmented{
-  display: inline-flex; border:1px solid rgba(0,0,0,.12);
-  border-radius: 999px; overflow: hidden; background:#fff;
-}
-.segmented__btn{
-  padding: .5rem .9rem; border:0; background:transparent; font-size:.92rem;
-}
-.segmented__btn.active{ background:#117a3a; color:#fff; }
-
-/* ===== Layout principal ===== */
-.triagem-layout{
-  display: grid; gap: var(--space-5); align-items: start;
-}
-@media (min-width: 992px){ /* lg */
-  .triagem-layout{
-    grid-template-columns: 320px 1fr;
-  }
-}
-
-/* ===== Sidebar de filtros (desktop) ===== */
-.filters-sidebar{
-  position: sticky; top: calc(0px + var(--space-5));
-  background: #fff; border: 1px solid rgba(0,0,0,.06);
-  border-radius: var(--radius); padding: var(--space-4);
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
-}
-
-/* ===== Blocos de filtros colapsáveis ===== */
-.filters-group{ margin-bottom: var(--space-4); }
-.filters-group__header{
-  width: 100%; display:flex; align-items:center; justify-content:space-between;
-  padding: .6rem .75rem; border-radius: 10px; border: 1px solid rgba(0,0,0,.06);
-  background: #fafafa; font-weight: 600; color: #1c1f21;
-}
-.filters-group__header:hover{ background:#f5f5f5; }
-.filters-group__body{ padding: var(--space-3) .25rem 0; }
-.filters-title{ display:none; } /* (mantido por compat) */
-.filters-actions{ display:flex; justify-content:flex-end; }
-
-/* Chips */
-.chips{ display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
-.chip{
-  display:inline-flex; align-items:center; gap:.4rem;
-  font-size:.92rem; line-height:1;
-  border:1px solid rgba(0,0,0,.12);
-  background:#fff; border-radius:999px;
-  padding:.5rem .8rem; white-space:nowrap;
-}
-.chip-toggle{ cursor:pointer; }
-.chip-toggle:hover{ background:#f7f9f8; }
-.chip-toggle.active{
-  background:#117a3a; color:#fff; border-color:#117a3a;
-}
-.triagem.is-compact .chip{ font-size:.85rem; padding:.4rem .65rem; }
-
-/* ===== Drawer lateral (mobile/tablet) ===== */
-.filters-drawer{
-  position: fixed; inset: 0; z-index: 1500; pointer-events: none;
-}
-.filters-drawer .filters-backdrop{
-  position:absolute; inset:0; background: rgba(0,0,0,.45);
-  opacity:0; transition: opacity .2s ease;
-}
-.filters-drawer .filters-panel{
-  position:absolute; right:0; top:0; bottom:0;
-  width: min(92vw, 440px);
-  background:#fff; box-shadow: -10px 0 30px rgba(0,0,0,.25);
-  transform: translateX(100%); transition: transform .25s ease;
-  display:flex; flex-direction:column;
-}
-.filters-drawer.open{ pointer-events: auto; }
-.filters-drawer.open .filters-backdrop{ opacity: 1; }
-.filters-drawer.open .filters-panel{ transform: translateX(0); }
-
-.filters-panel__header{
-  display:flex; align-items:center; justify-content:space-between;
-  padding: var(--space-4) var(--space-4) var(--space-3); border-bottom:1px solid rgba(0,0,0,.08);
-}
-.filters-panel__body{
-  padding: var(--space-4); overflow:auto;
-}
-.filters-panel__footer{
-  padding: var(--space-3) var(--space-4); border-top:1px solid rgba(0,0,0,.08);
-  display:flex; justify-content:flex-end; gap:.9rem;
-}
-
-/* ===== Lista / Cards ===== */
-.row-hover:hover{ background: rgba(16,24,40,.02); }
-.triagem-card{
-  padding: var(--space-5) var(--space-4);
-  border-bottom: 1px solid rgba(0,0,0,.06);
-}
-.triagem-card:last-child{ border-bottom: 0; }
-
-.tc-row1, .tc-row2{
-  display:flex; gap: var(--space-4); align-items:flex-start; justify-content:space-between;
-  flex-wrap: wrap;
-}
-
-/* Identificação e ações */
-.tc-id{ display:flex; gap: var(--space-4); align-items:center; min-width:0; }
-.tc-cta{ display:flex; align-items:center; gap: var(--space-3); margin-left:auto; }
-.tc-actions{ display:flex; align-items:center; gap: var(--space-3); flex-wrap:wrap; justify-content:flex-end; width:100%; }
-@media (min-width: 576px){
-  .tc-actions{ width:auto; }
-}
-
-.min-w-0{ min-width:0; }
-
-/* Avatar */
-.avatar{
-  width: 44px; height: 44px; border-radius: 50%;
-  display: grid; place-items: center; font-weight: 700;
-  background: #eef3ef; color: #117a3a;
-}
-.triagem.is-compact .avatar{ width:36px; height:36px; }
-
-/* Metadados (chips informativas) */
-.chip{ background:#f7f9f8; }
-
-/* Pílula do selecionado */
-.selected-pill{
-  border:1px dashed rgba(0,0,0,.2);
-  border-radius:10px; padding:.6rem .9rem; min-height:40px;
-  display:flex; align-items:center; background:#fff;
-}
-.selected-pill--sm{ min-height:36px; padding:.45rem .7rem; }
-.triagem.is-compact .selected-pill{ min-height:36px; padding:.45rem .7rem; }
-
-/* Botões de ação principais */
-.btn-enviar{ background:#18a85b; border-color:#18a85b; color:#fff; }
-.btn-enviar:hover{ filter: brightness(0.95); }
-.btn-atualizar{ background:#0d6efd; border-color:#0d6efd; color:#fff; } /* azul */
-.btn-atualizar:hover{ filter: brightness(0.95); }
-
-/* ===== Modal (fixed + z-index alto) ===== */
+  /* === FIX MODAL OVERLAY (centralizado e acima de tudo) === */
 .overlay{
-  position: fixed; inset: 0; z-index: 2000;
-  display: grid; grid-template-rows: 1fr; align-items: center; justify-items: center;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 3000 !important;        /* bem acima do header/nav */
+  display: grid !important;
+  place-items: center !important;  /* centraliza o painel */
+  pointer-events: auto !important;
 }
-.overlay__backdrop{ position:absolute; inset:0; background: rgba(0,0,0,.45); }
+
+.overlay__backdrop{
+  position: absolute !important;
+  inset: 0 !important;
+  background: rgba(0,0,0,.45) !important;
+}
+
 .overlay__panel{
-  position: relative; z-index: 1;
-  width: min(720px, 92vw);
-  max-height: 90vh; overflow: auto;
-  background:#fff; border-radius: var(--radius);
-  box-shadow: 0 10px 30px rgba(0,0,0,.25);
-  padding: var(--space-4);
-}
-.overlay__header{
-  display:flex; align-items:center; justify-content:space-between;
-  gap:var(--space-4); border-bottom:1px solid rgba(0,0,0,.06);
-  padding-bottom:.6rem; margin-bottom:var(--space-4);
-}
-.overlay__list .list-group-item{ padding:.75rem .25rem; }
-
-/* Utilitários */
-.break-anywhere{ word-break:break-word; overflow-wrap:anywhere; }
-
-@media (max-width: 480px){
-  .input-with-icon{ min-width: 100%; }
-}
-/* ===== Mobile fixes: full-width search + safe gutters ===== */
-@media (max-width: 767.98px) {
-  /* layout da toolbar em 1 coluna (título em cima, controles embaixo) */
-  .triagem-toolbar__row {
-    grid-template-columns: 1fr;
-    row-gap: var(--space-3);
-  }
-
-  /* controles ocupam toda a linha */
-  .triagem-toolbar__controls {
-    width: 100%;
-    justify-content: flex-start; /* evita "encolher" no canto direito */
-    gap: var(--space-3);
-  }
-
-  /* input realmente 100% no mobile */
-  .input-with-icon { min-width: 100%; }
-  .input-with-icon.input-wide {
-    flex: 1 1 100%;
-    max-width: 100%;
-  }
-
-  /* respiro lateral igual dos dois lados (inclusive safe-area do iPhone) */
-  .triagem {
-    padding-left: var(--space-6) !important;
-    padding-right: var(--space-6) !important;
-  }
-  @supports (padding: max(0px)) {
-    .triagem {
-      padding-left: max(var(--space-6), env(safe-area-inset-left)) !important;
-      padding-right: max(var(--space-6), env(safe-area-inset-right)) !important;
-    }
-  }
-
-  /* o card principal não "encosta" na borda */
-  .triagem-content > .card {
-    border-radius: 14px;
-    margin-left: 0;  /* garante alinhamento dentro do padding do container */
-    margin-right: 0;
-  }
-
-  /* um pouco mais de respiro entre as linhas do card */
-  .triagem-card { padding: var(--space-5) var(--space-4); }
-  .tc-row1, .tc-row2 { gap: var(--space-4); }
+  position: relative !important;
+  z-index: 1 !important;
+  width: min(760px, 92vw) !important;  /* largura boa no desktop e mobile */
+  max-height: 90vh !important;
+  overflow: auto !important;
+  background: #fff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25) !important;
+  padding: 1.25rem !important;     /* mais respiro */
 }
 
-/* opcional: em telas bem estreitas, aumenta ainda mais o padding lateral */
-@media (max-width: 389px) {
-  .triagem {
-    padding-left: var(--space-7) !important;
-    padding-right: var(--space-7) !important;
-  }
+/* versão grande (relatório) */
+.overlay__panel.overlay__panel--lg{
+  width: min(1100px, 96vw) !important;
 }
 
-/* ======== PATCHES DE RESPONSIVIDADE ADICIONAIS ======== */
+/* Mais respiro dentro do conteúdo do modal */
+.overlay__panel .list-group-item{ padding: 1rem .85rem !important; }
+.overlay__panel .form-control{ padding: .65rem .85rem !important; }
 
-/* Nada estoura pra direita */
-.triagem,
-.triagem * { max-width: 100%; }
-.triagem { overflow-x: hidden; }
-
-/* Corrige overflow quando há flex + truncamento */
-.triagem-layout,
-.triagem-content,
-.tc-row1,
-.tc-row2 { min-width: 0; }
-
-/* Identificação pode encolher; CTA não encolhe */
-.tc-id { flex: 1 1 auto; min-width: 0; }
-.tc-cta { flex: 0 0 auto; }
-
-/* Títulos longos: truncamento correto */
-.tc-id .min-w-0 { min-width: 0; }
-.tc-id .text-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Chips não empurram layout */
-.chips { flex-wrap: wrap; }
-.chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-
-/* Botões não quebram palavras estranhas */
-.tc-cta .btn, .tc-actions .btn { white-space: nowrap; }
-
-/* Container interno: sem padding extra + sem overflow */
-.no-overflow { padding-left: 0; padding-right: 0; overflow-x: hidden; }
-
-/* Sidebar e content limitados à viewport */
-.filters-sidebar, .triagem-content { max-width: 100%; }
-
-/* CTA desce no mobile sem criar scroll lateral */
-@media (max-width: 575.98px) {
-  .tc-cta { width: 100%; justify-content: flex-start; gap: var(--space-3); }
+/* Evita que qualquer “transform” de ancestrais quebre o fixed */
+:host, body, .container, .container-fluid, .card{
+  transform: none !important;
 }
 
-/* Toolbar mobile reforço */
-@media (max-width: 767.98px) {
-  .input-with-icon { min-width: 100%; }
-  .triagem-toolbar__controls { width: 100%; }
+/* (opcional) impedir scroll do body quando modal aberto */
+body.modal-lock { overflow: hidden !important; }
+/* === FLAGS (CRENORTE) === */
+.flag{
+  display:inline-block;
+  width: 22px;
+  height: 16px;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 2px;
+  background-size: cover;
+  background-position: center;
+  vertical-align: -2px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
 }
 
-/* Chip de status (variações) */
-.chip-status { border-width: 1px; }
+/* Estados atendidos */
+.flag-pa{ background-image: url("https://upload.wikimedia.org/wikipedia/commons/0/02/Bandeira_do_Par%C3%A1.svg"); }
+.flag-am{ background-image: url("https://upload.wikimedia.org/wikipedia/commons/6/6b/Bandeira_do_Amazonas.svg"); }
+.flag-ap{ background-image: url("https://upload.wikimedia.org/wikipedia/commons/0/0c/Bandeira_do_Amap%C3%A1.svg"); }
 
-.chip-status.is-apto {
-  background: #e8f6ef;
-  border-color: #18a85b;
-  color: #0f5132;
-}
-
-.chip-status.is-inapto {
-  background: #fdecec;
-  border-color: #dc3545;
-  color: #842029;
-}
-
-.chip-status.is-nao {
-  background: #f1f3f5;
-  border-color: #cfd4da;
-  color: #495057;
-}
-
-/* …todo o seu CSS anterior… */
-
-/* Cores dos chips de status */
-.chip--ok { background: #eaf7ee; border-color:#cdebd6; color:#0a7a3b; }
-.chip--bad { background: #fdecec; border-color:#f5c2c7; color:#b42318; }
-.chip--pending { background:#f7f7fb; border-color:#e5e7eb; color:#3d3d4e; }
-
-/* Paginação não estoura */
-.list-pager { overflow-x: auto; }
+/* fallback Brasil */
+.flag-br{ background-image: url("https://upload.wikimedia.org/wikipedia/commons/0/05/Flag_of_Brazil.svg"); }
 
 
-/* Mídia embutida sempre responsiva */
-.triagem img, .triagem video, .triagem iframe { max-width: 100%; height: auto; display: block; }
-
-/* Qualquer coisa com width: max-content não quebra layout */
-.triagem [style*="max-content"] { max-width: 100% !important; }
-
-/* Evita estourar por elementos absolutos internos */
-.triagem .card { overflow: hidden; }
-
-/* Quando drawer aberto, bloqueia scroll para evitar "nudge" no iOS */
-.drawer-open { overflow: hidden; }

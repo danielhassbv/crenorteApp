@@ -1,6 +1,6 @@
 // src/app/app.config.ts
 import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withInMemoryScrolling, withPreloading, PreloadAllModules } from '@angular/router';
 import { routes } from './app.routes';
 
 import { provideFirebaseApp } from '@angular/fire/app';
@@ -17,14 +17,20 @@ import { firebaseConfig } from '../environments/firebase.config';
 import { provideNgxMask } from 'ngx-mask';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideHttpClient } from '@angular/common/http';
-import { withPreloading, PreloadAllModules } from '@angular/router';
 
 export const appConfig: ApplicationConfig = {
-  
-  
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
-    provideRouter(routes, withPreloading(PreloadAllModules)),
+
+    // Router com preloading + rolagem controlada
+    provideRouter(
+      routes,
+      withPreloading(PreloadAllModules),
+      withInMemoryScrolling({
+        scrollPositionRestoration: 'enabled', // volta ao topo em navegações “para frente” e restaura no back/forward
+        anchorScrolling: 'enabled',           // permite rolar para âncoras (#id)
+      }),
+    ),
 
     provideFirebaseApp(() =>
       getApps().length ? getApp() : initializeApp(firebaseConfig)
