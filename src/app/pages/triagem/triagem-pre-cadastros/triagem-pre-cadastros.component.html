@@ -449,10 +449,61 @@
   </div>
 </div>
 
+
 <!-- =========================
-     MODAL: Relatório de Distribuição (PESSOAS)
+     MODAL: Selecionar Assessor (PESSOAS) — CORRIGIDO
      ========================= -->
-<!-- ... (mantido igual ao seu) ... -->
+<div class="overlay" *ngIf="showAssessorModal">
+  <div class="overlay__backdrop" (click)="fecharModalAssessor()"></div>
+  <div class="overlay__panel" (keyup.escape)="fecharModalAssessor()" tabindex="0">
+    <div class="d-flex align-items-center justify-content-between border-bottom mb-2">
+      <div class="py-2">
+        <div class="fw-semibold">Selecionar assessor</div>
+        <small class="text-muted d-block" *ngIf="rowSelecionado">
+          Cliente: {{ rowSelecionado.nome || rowSelecionado.cpf || rowSelecionado.id }}
+          <span *ngIf="rowSelecionado.cpf">• CPF: {{ cpfMask(rowSelecionado.cpf) }}</span>
+        </small>
+      </div>
+      <button class="btn-close" aria-label="Fechar" (click)="fecharModalAssessor()"></button>
+    </div>
+
+    <div class="py-2">
+      <input class="form-control mb-3" placeholder="Buscar por nome, e-mail ou rota"
+        [(ngModel)]="assessorBusca" (ngModelChange)="filtrarAssessores()" />
+
+      <ul class="list-group">
+        <li class="list-group-item d-flex align-items-center justify-content-between gap-3"
+            *ngFor="let a of assessoresFiltrados">
+          <div>
+            <div class="fw-semibold">{{ nomeAssessor(a) }}</div>
+            <div class="text-muted small" *ngIf="a.rota">Rota: {{ a.rota }}</div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm px-3" (click)="escolherAssessor(a)">
+              Selecionar
+            </button>
+            <button type="button" class="btn btn-success btn-sm px-3" (click)="escolherEEnviar(a)">
+              Selecionar e enviar
+            </button>
+          </div>
+        </li>
+
+        <li class="list-group-item text-muted py-3" *ngIf="!assessoresFiltrados.length">
+          Nenhum assessor encontrado para “{{ assessorBusca }}”.
+        </li>
+      </ul>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 border-top pt-3">
+      <button class="btn btn-outline-secondary" (click)="fecharModalAssessor()">Cancelar</button>
+      <button class="btn btn-success" [disabled]="!selectedAssessorUid" (click)="enviarSelecionadoDoModal()">
+        Enviar
+      </button>
+    </div>
+  </div>
+</div>
+
 
 <!-- =========================
      MODAL: Relatório de Distribuição (PESSOAS)
