@@ -5,8 +5,33 @@ import { FormsModule } from '@angular/forms';
 import { GrupoSolidarioService } from '../../services/grupo-solidario.service';
 import { PreCadastro } from '../../models/pre-cadastro.model';
 import { HeaderComponent } from '../shared/header/header.component';
+import type { GrupoStatus } from '../../models/grupo-solidario.model';
 
 type SortDir = 'asc' | 'desc';
+type GrupoSituacao = 'aprovado' | 'incompleto' | 'inapto';
+type SvcGrupoStatus = Parameters<GrupoSolidarioService['definirStatusGrupo']>[1];
+
+
+type PreviewMembro = {
+  id: string;
+  nome: string;
+  cidade: string;
+  uf: string;
+  aprovacao: 'Apto' | 'Inapto' | 'Pendente' | '—';
+};
+
+type PreviewGrupo = {
+  nome: string;
+  coordenadorNome: string;
+  coordenadorUid: string | null;
+  cidade: string;
+  uf: string;
+  capacidadeMin: number;
+  capacidadeMax: number;
+  totalSelecionados: number;
+  situacao: GrupoSituacao;
+  membros: PreviewMembro[];
+};
 
 @Component({
   standalone: true,
@@ -62,8 +87,10 @@ export class CriarGrupoComponent implements OnInit {
   uf = '';
   capacidadeMin = 3;
   capacidadeMax = 10;
+
+  // coordenador automático: primeiro selecionado
   coordenadorNome = '';
-  coordenadorUid: string | null = null; // opcional
+  coordenadorUid: string | null = null;
 
   // resultado
   grupoCriadoUrl: string | null = null;
@@ -71,7 +98,14 @@ export class CriarGrupoComponent implements OnInit {
   // só para compatibilidade com o template
   visualizacao: 'cards' = 'cards';
 
-  constructor(private svc: GrupoSolidarioService) {}
+  // Modal de pré-visualização
+  showCreateModal = false;
+  preview: PreviewGrupo | null = null;
+
+  // copy link toast
+  toastMsg: string | null = null;
+
+  constructor(private svc: GrupoSolidarioService) { }
 
   async ngOnInit(): Promise<void> {
     await this.buscar();
@@ -177,79 +211,232 @@ export class CriarGrupoComponent implements OnInit {
 
   // =================== Grupo ===================
   toggle(id: string) {
-    if (this.selecionados.has(id)) this.selecionados.delete(id);
-    else this.selecionados.add(id);
+    if (this.selecionados.has(id)) {
+      // desmarcando
+      this.selecionados.delete(id);
+      // se era o coordenador, reposiciona coordenador (primeiro da lista, se houver)
+      if (this.coordenadorUid === id) {
+        const novoCoord = Array.from(this.selecionados)[0] || null;
+        this.definirCoordenador(novoCoord);
+      }
+    } else {
+      // marcando
+      this.selecionados.add(id);
+      // se ainda não há coordenador, primeiro marcado vira coordenador
+      if (!this.coordenadorUid) {
+        this.definirCoordenador(id);
+      }
+    }
   }
+
   get countSelecionados() { return this.selecionados.size; }
 
-  async criarGrupo() {
-  if (!this.nome.trim()) { alert('Dê um nome ao grupo.'); return; }
-  if (this.countSelecionados === 0) { alert('Selecione pelo menos 1 integrante.'); return; }
-  if (this.countSelecionados > this.capacidadeMax) {
-    alert(`O grupo pode ter no máximo ${this.capacidadeMax} integrantes.`);
-    return;
+  /** Define coordenador e puxa cidade/UF do coordenador */
+  private definirCoordenador(id: string | null) {
+    this.coordenadorUid = id;
+
+    if (!id) {
+      this.coordenadorNome = '';
+      return;
+    }
+
+    const coord = this.aptos().find(c => c.id === id);
+    if (coord) {
+      this.coordenadorNome = this.displayName((coord as any)?.nomeCompleto || (coord as any)?.nome || '');
+
+      // sempre sincroniza cidade/UF com o coordenador
+      const cidadeCoord = this.getCidade(coord);
+      const ufCoord = this.getUF(coord);
+      this.cidade = (cidadeCoord && cidadeCoord !== '—') ? cidadeCoord : this.cidade;
+      this.uf = (ufCoord && ufCoord !== '—') ? ufCoord : this.uf;
+    }
   }
 
-  const membrosIds = Array.from(this.selecionados);
-  const user = { uid: 'CURRENT_UID', nome: 'Usuário Logado' }; // troque pelo Auth real
-  const statusGrupo: 'incompleto' | 'completo' =
-    (this.countSelecionados < this.capacidadeMin) ? 'incompleto' : 'completo';
+  /** Abre modal de pré-visualização com situação calculada */
+  abrirModalCriacao() {
+    if (this.countSelecionados === 0) {
+      alert('Selecione pelo menos 1 integrante.');
+      return;
+    }
+    const membros = this.getSelecionadosDetalhados();
+    const situacao = this.calcularSituacao(membros);
 
-  // 1) Criar grupo (bloco independente)
-  let grupo: { id?: string; inviteUrl?: string } | null = null;
-  try {
-    grupo = await this.svc.criarGrupo({
-      nome: this.nome.trim(),
-      criadoPorUid: user.uid,
-      criadoPorNome: user.nome,
-      cidade: this.cidade || null,
-      uf: this.uf || null,
+    this.preview = {
+      nome: (this.nome || '').trim() || '(Sem nome)',
+      coordenadorNome: this.coordenadorNome || '(não definido)',
+      coordenadorUid: this.coordenadorUid,
+      cidade: this.cidade || '—',
+      uf: this.uf || '—',
       capacidadeMin: this.capacidadeMin,
       capacidadeMax: this.capacidadeMax,
-      membrosIds,
-      coordenadorUid: this.coordenadorUid,
-      coordenadorNome: this.coordenadorNome || null,
-    });
-  } catch (e) {
-    console.error('[criarGrupo] falha na criação:', e);
-    alert('Falha ao criar o grupo. Tente novamente.');
-    return; // sai aqui se realmente não criou
+      totalSelecionados: this.countSelecionados,
+      situacao,
+      membros: membros.map(m => ({
+        id: m.id,
+        nome: this.displayName(m.nomeCompleto || (m as any)?.nome || ''),
+        cidade: this.getCidade(m),
+        uf: this.getUF(m),
+        aprovacao: this.getAprovacaoStatus(m) as any,
+      })),
+    };
+
+    this.showCreateModal = true;
   }
 
-  // 2) Atualizar status (NÃO bloqueante)
-  if (grupo?.id) {
+  fecharModalCriacao() {
+    this.showCreateModal = false;
+    this.preview = null;
+  }
+
+  private getSelecionadosDetalhados(): PreCadastro[] {
+    const ids = new Set(this.selecionados);
+    return this.aptos().filter(c => ids.has(c.id));
+  }
+
+  /** Calcula situação do grupo conforme as regras */
+  private calcularSituacao(membros: PreCadastro[]): GrupoSituacao {
+    const qtd = membros.length;
+
+    // INCOMPLETO (<3)
+    if (qtd < 3) return 'incompleto';
+
+    // INAPTO (>=3 e pelo menos 1 inapto)
+    const temInapto = membros.some(m => this.getAprovacaoCode(m) === 'inapto');
+    if (temInapto) return 'inapto';
+
+    // APROVADO (>=3 e todos aptos)
+    const todosAptos = membros.every(m => this.getAprovacaoCode(m) === 'apto');
+    if (todosAptos) return 'aprovado';
+
+    // Se não incompleto, sem inapto, e ainda não todos aptos -> tratamos como incompleto
+    return 'incompleto';
+  }
+
+  /** Confirma a criação a partir do modal (salva já com situacao e distribuicao vazia) */
+  async confirmarCriacaoDoModal() {
+    if (!this.preview) return;
+
+    // reforça cidade/UF a partir do coordenador se estiverem vazios
+    if (this.coordenadorUid) {
+      const coord = this.aptos().find(c => c.id === this.coordenadorUid);
+      if (coord) {
+        const cidadeCoord = this.getCidade(coord);
+        const ufCoord = this.getUF(coord);
+        if (!this.cidade || this.cidade === '—') this.cidade = cidadeCoord || '';
+        if (!this.uf || this.uf === '—') this.uf = ufCoord || '';
+      }
+    }
+
+    const membrosIds = Array.from(this.selecionados);
+    const user = { uid: 'CURRENT_UID', nome: 'Usuário Logado' }; // troque pelo Auth real
+    const situacao = this.preview.situacao;
+
     try {
-      await this.svc.definirStatusGrupo(grupo.id, statusGrupo);
+      const grupo = await this.svc.criarGrupo({
+        nome: this.nome.trim(),
+        criadoPorUid: user.uid,
+        criadoPorNome: user.nome,
+        cidade: this.cidade || null,
+        uf: this.uf || null,
+        capacidadeMin: this.capacidadeMin,
+        capacidadeMax: this.capacidadeMax,
+        membrosIds,
+        coordenadorUid: this.coordenadorUid,
+        coordenadorNome: this.coordenadorNome || null,
+
+        // novos campos
+        situacao,
+        distribuicao: {
+          groupAssessorUid: null,
+          groupAssessorNome: null,
+          membros: [],
+        },
+      } as any); // cast temporário caso o service ainda não tenha atualizado o tipo
+
+      // status operacional (não confundir com situacao)
+      if (grupo?.id) {
+        try {
+          const novoStatus: SvcGrupoStatus = (situacao === 'aprovado' ? 'ativo' : 'rascunho') as SvcGrupoStatus;
+          await this.svc.definirStatusGrupo(grupo.id, novoStatus);
+        } catch (e) {
+          console.warn('[criarGrupo] grupo criado, mas falhou ao atualizar status:', e);
+          this.successMsg = 'Grupo criado, mas não foi possível atualizar o status agora.';
+          setTimeout(() => { this.successMsg = null; }, 5000);
+        }
+      }
+
+
+      this.grupoCriadoUrl = grupo?.inviteUrl || null;
+      this.selecionados.clear();
+      this.definirCoordenador(null);
+
+      const msgOk = `Grupo criado (${situacao.toUpperCase()}) com sucesso!`;
+      this.successMsg = msgOk;
+      try { window.alert(msgOk); } catch { }
+      setTimeout(() => { this.successMsg = null; }, 4000);
     } catch (e) {
-      console.warn('[criarGrupo] grupo criado, mas falhou ao atualizar status:', e);
-      // Apenas um aviso leve — não derruba o sucesso
-      this.successMsg = 'Grupo criado com sucesso, porém não foi possível atualizar o status agora.';
-      setTimeout(() => { this.successMsg = null; }, 5000);
+      console.error('[confirmarCriacaoDoModal] erro:', e);
+      alert('Falha ao criar o grupo. Tente novamente.');
+    } finally {
+      this.fecharModalCriacao();
     }
   }
 
-  // 3) Finalização de sucesso
-  this.grupoCriadoUrl = grupo?.inviteUrl || null;
-  this.selecionados.clear();
-
-  const msgOk = `Grupo criado com sucesso${statusGrupo === 'incompleto' ? ' (status: Incompleto)' : ''}!`;
-  this.successMsg = msgOk;
-  try { window.alert(msgOk); } catch {}
-  setTimeout(() => { this.successMsg = null; }, 4000);
-}
-
-
-  /** Mostra a mensagem visual e garante fallback com window.alert */
-  private announceSuccess(status: 'incompleto' | 'completo') {
-    const msg = `Grupo criado com sucesso${status === 'incompleto' ? ' (status: Incompleto)' : ''}!`;
-    this.successMsg = msg;
-
-    // fallback para garantir que o usuário veja algo mesmo sem o bloco no HTML
-    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-      try { window.alert(msg); } catch {}
+  /** (mantido para compat) criação direta sem modal — não está sendo usado no HTML atual */
+  async criarGrupo() {
+    if (!this.nome.trim()) { alert('Dê um nome ao grupo.'); return; }
+    if (this.countSelecionados === 0) { alert('Selecione pelo menos 1 integrante.'); return; }
+    if (this.countSelecionados > this.capacidadeMax) {
+      alert(`O grupo pode ter no máximo ${this.capacidadeMax} integrantes.`);
+      return;
     }
 
-    // auto-esconde o alert do HTML em 4s
+    const membrosIds = Array.from(this.selecionados);
+    const user = { uid: 'CURRENT_UID', nome: 'Usuário Logado' }; // troque pelo Auth real
+    const statusGrupo: 'incompleto' | 'completo' =
+      (this.countSelecionados < this.capacidadeMin) ? 'incompleto' : 'completo';
+
+    // 1) Criar grupo (bloco independente)
+    let grupo: { id?: string; inviteUrl?: string } | null = null;
+    try {
+      grupo = await this.svc.criarGrupo({
+        nome: this.nome.trim(),
+        criadoPorUid: user.uid,
+        criadoPorNome: user.nome,
+        cidade: this.cidade || null,
+        uf: this.uf || null,
+        capacidadeMin: this.capacidadeMin,
+        capacidadeMax: this.capacidadeMax,
+        membrosIds,
+        coordenadorUid: this.coordenadorUid,
+        coordenadorNome: this.coordenadorNome || null,
+      });
+    } catch (e) {
+      console.error('[criarGrupo] falha na criação:', e);
+      alert('Falha ao criar o grupo. Tente novamente.');
+      return; // sai aqui se realmente não criou
+    }
+
+    // 2) Atualizar status (NÃO bloqueante)
+    if (grupo?.id) {
+      try {
+        const novoStatus: SvcGrupoStatus = (statusGrupo === 'completo' ? 'ativo' : 'rascunho') as SvcGrupoStatus;
+        await this.svc.definirStatusGrupo(grupo.id, novoStatus);
+      } catch (e) {
+        console.warn('[criarGrupo] grupo criado, mas falhou ao atualizar status:', e);
+        this.successMsg = 'Grupo criado com sucesso, porém não foi possível atualizar o status agora.';
+        setTimeout(() => { this.successMsg = null; }, 5000);
+      }
+    }
+
+
+    // 3) Finalização de sucesso
+    this.grupoCriadoUrl = grupo?.inviteUrl || null;
+    this.selecionados.clear();
+
+    const msgOk = `Grupo criado com sucesso${statusGrupo === 'incompleto' ? ' (status: Incompleto)' : ''}!`;
+    this.successMsg = msgOk;
+    try { window.alert(msgOk); } catch { }
     setTimeout(() => { this.successMsg = null; }, 4000);
   }
 
@@ -275,7 +462,7 @@ export class CriarGrupoComponent implements OnInit {
   private asDateFlexible(v: any): Date | null {
     if (!v) return null;
     if (v instanceof Date) return v;
-    if (typeof v === 'object' && typeof v.toDate === 'function') { try { return v.toDate(); } catch {} }
+    if (typeof v === 'object' && typeof v.toDate === 'function') { try { return v.toDate(); } catch { } }
     if (v && typeof v === 'object' && typeof v.seconds === 'number') {
       return new Date(v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6));
     }
@@ -375,7 +562,6 @@ export class CriarGrupoComponent implements OnInit {
   trackById(_idx: number, item: any) { return item.id; }
 
   // copiar link
-  toastMsg: string | null = null;
   copyLink() {
     if (!this.grupoCriadoUrl) return;
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {

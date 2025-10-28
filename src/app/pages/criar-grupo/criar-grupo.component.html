@@ -19,8 +19,9 @@
       <button class="btn btn-outline-secondary" (click)="buscar()" [disabled]="carregando">
         <i class="fa-solid fa-rotate-right me-1"></i> Recarregar
       </button>
-      <button class="btn btn-success" (click)="criarGrupo()">
-        <i class="fa-solid fa-plus me-1"></i> Criar grupo
+      <!-- Agora abrimos o modal para testar os status antes de criar -->
+      <button class="btn btn-success" (click)="abrirModalCriacao()">
+        <i class="fa-solid fa-flask me-1"></i> Testar status / Criar
       </button>
     </div>
   </div>
@@ -83,8 +84,9 @@
           <input type="number" class="form-control" [(ngModel)]="capacidadeMax" min="1" max="10" />
         </div>
         <div class="col-12 col-md-4">
-          <label class="form-label">Coordenador (opcional)</label>
-          <input class="form-control" [(ngModel)]="coordenadorNome" placeholder="Nome do coordenador" />
+          <label class="form-label">Coordenador (auto: 1º selecionado)</label>
+          <input class="form-control" [(ngModel)]="coordenadorNome" placeholder="Nome do coordenador" [readonly]="true" />
+          <small class="text-muted">Definido automaticamente pelo 1º selecionado (puxa cidade/UF).</small>
         </div>
       </div>
     </div>
@@ -240,6 +242,11 @@
               <i class="fa-regular" [ngClass]="selecionados.has(c.id) ? 'fa-square-check' : 'fa-square'"></i>
             </button>
           </div>
+
+          <!-- badge de coordenador no card -->
+          <div class="mt-1" *ngIf="coordenadorUid === c.id">
+            <span class="badge bg-warning text-dark">Coordenador</span>
+          </div>
         </div>
       </div>
     </div>
@@ -259,8 +266,8 @@
       </span>
     </div>
 
-    <button class="btn btn-success" (click)="criarGrupo()">
-      <i class="fa-solid fa-users-line me-1"></i> Criar grupo
+    <button class="btn btn-success" (click)="abrirModalCriacao()">
+      <i class="fa-solid fa-users-line me-1"></i> Testar status / Criar
     </button>
   </div>
 
@@ -286,3 +293,92 @@
     </div>
   </div>
 </div>
+
+<!-- ===================== MODAL: Pré-visualização do Grupo ===================== -->
+<div class="overlay" *ngIf="showCreateModal">
+  <div class="overlay__backdrop" (click)="fecharModalCriacao()"></div>
+  <div class="overlay__panel" tabindex="0">
+    <div class="d-flex align-items-center justify-content-between border-bottom mb-2">
+      <div class="py-2">
+        <div class="fw-semibold">Pré-visualização do Grupo</div>
+        <small class="text-muted d-block">Confira integrantes, coordenador e situação antes de confirmar.</small>
+      </div>
+      <button class="btn-close" aria-label="Fechar" (click)="fecharModalCriacao()"></button>
+    </div>
+
+    <div *ngIf="preview as p">
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div><strong>Nome:</strong> {{ p.nome }}</div>
+            <div><strong>Coordenador:</strong> {{ p.coordenadorNome }}</div>
+            <div><strong>Cidade/UF:</strong> {{ p.cidade }} / {{ p.uf }}</div>
+            <div><strong>Capacidade:</strong> {{ p.totalSelecionados }} / {{ p.capacidadeMax }}</div>
+          </div>
+          <div>
+            <span class="badge"
+                  [ngClass]="{
+                    'bg-success': p.situacao==='aprovado',
+                    'bg-warning text-dark': p.situacao==='incompleto',
+                    'bg-danger': p.situacao==='inapto'
+                  }">
+              {{ p.situacao | uppercase }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-responsive" style="max-height: 320px; overflow:auto;">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Integrante</th>
+              <th>Cidade/UF</th>
+              <th>Aprovação</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let m of p.membros; trackBy: trackById">
+              <td>
+                {{ m.nome }}
+                <span *ngIf="coordenadorUid===m.id" class="badge bg-warning text-dark ms-2">Coordenador</span>
+              </td>
+              <td>{{ m.cidade }} / {{ m.uf }}</td>
+              <td>
+                <span class="badge"
+                      [ngClass]="{
+                        'bg-success': m.aprovacao==='Apto',
+                        'bg-danger': m.aprovacao==='Inapto',
+                        'bg-secondary': m.aprovacao==='—',
+                        'bg-warning text-dark': m.aprovacao==='Pendente'
+                      }">
+                  {{ m.aprovacao }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex justify-content-end gap-2 mt-3">
+        <button class="btn btn-outline-secondary" (click)="fecharModalCriacao()">Fechar</button>
+        <button class="btn btn-primary"
+                [disabled]="!p || p.totalSelecionados===0"
+                (click)="confirmarCriacaoDoModal()">
+          Confirmar criação
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- estilos do overlay (pode mover para .css do componente se preferir) -->
+<style>
+  .overlay { position: fixed; inset: 0; z-index: 1050; }
+  .overlay__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.5); }
+  .overlay__panel {
+    position: relative; z-index: 1; width: min(960px, 94vw);
+    margin: 5vh auto; background: #fff; border-radius: 12px; padding: 16px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  }
+</style>

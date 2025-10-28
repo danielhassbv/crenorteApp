@@ -2,6 +2,7 @@
 <br>
 
 <div class="container py-5 mt-5">
+
   <!-- Título + ações -->
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 py-4">
     <h3 class="mb-0 fw-bold text-success">
@@ -9,11 +10,16 @@
     </h3>
 
     <div class="btn-group">
-      <button class="btn btn-outline-secondary" [class.active]="visualizacao() === 'cards'" (click)="trocarVisualizacao('cards')">
+      <button class="btn btn-outline-secondary" [class.active]="visualizacao() === 'cards'"
+        (click)="trocarVisualizacao('cards')">
         <i class="bi bi-grid-3x3-gap me-1"></i> Cards
       </button>
-      <button class="btn btn-outline-secondary" [class.active]="visualizacao() === 'tabela'" (click)="trocarVisualizacao('tabela')">
+      <button class="btn btn-outline-secondary" [class.active]="visualizacao() === 'tabela'"
+        (click)="trocarVisualizacao('tabela')">
         <i class="bi bi-table me-1"></i> Tabela
+      </button>
+      <button class="btn btn-success" (click)="gerarPDF()">
+        <i class="bi bi-filetype-pdf me-1"></i> Relatório (PDF)
       </button>
     </div>
   </div>
@@ -38,12 +44,13 @@
     <div class="row g-2">
       <div class="col-12 col-md-3">
         <label class="form-label">Nome</label>
-        <input class="form-control" [(ngModel)]="filtro().nome" (ngModelChange)="paginaAtual.set(1)" placeholder="Buscar por nome..." />
+        <input class="form-control" [ngModel]="filtro().nome" (ngModelChange)="setFiltro('nome',$event)"
+          placeholder="Buscar por nome..." />
       </div>
 
       <div class="col-6 col-md-2">
         <label class="form-label">Status</label>
-        <select class="form-select" [(ngModel)]="filtro().status" (ngModelChange)="paginaAtual.set(1)">
+        <select class="form-select" [ngModel]="filtro().status" (ngModelChange)="setFiltro('status',$event)">
           <option value="">Todos</option>
           <option *ngFor="let s of statusDisponiveis()" [value]="s">{{ s | titlecase }}</option>
         </select>
@@ -51,7 +58,7 @@
 
       <div class="col-6 col-md-2">
         <label class="form-label">Cidade</label>
-        <select class="form-select" [(ngModel)]="filtro().cidade" (ngModelChange)="paginaAtual.set(1)">
+        <select class="form-select" [ngModel]="filtro().cidade" (ngModelChange)="setFiltro('cidade',$event)">
           <option value="">Todas</option>
           <option *ngFor="let c of cidadesDisponiveis()" [value]="c">{{ c }}</option>
         </select>
@@ -59,7 +66,7 @@
 
       <div class="col-6 col-md-1">
         <label class="form-label">UF</label>
-        <select class="form-select" [(ngModel)]="filtro().uf" (ngModelChange)="paginaAtual.set(1)">
+        <select class="form-select" [ngModel]="filtro().uf" (ngModelChange)="setFiltro('uf',$event)">
           <option value="">Todas</option>
           <option *ngFor="let u of ufsDisponiveis()" [value]="u">{{ u }}</option>
         </select>
@@ -67,7 +74,7 @@
 
       <div class="col-6 col-md-2">
         <label class="form-label">Coordenador</label>
-        <select class="form-select" [(ngModel)]="filtro().coordenador" (ngModelChange)="paginaAtual.set(1)">
+        <select class="form-select" [ngModel]="filtro().coordenador" (ngModelChange)="setFiltro('coordenador',$event)">
           <option value="">Todos</option>
           <option *ngFor="let a of coordenadoresDisponiveis()" [value]="a">{{ a }}</option>
         </select>
@@ -75,11 +82,13 @@
 
       <div class="col-6 col-md-1">
         <label class="form-label">De</label>
-        <input type="date" class="form-control" [(ngModel)]="filtro().criadoDe" (ngModelChange)="paginaAtual.set(1)" />
+        <input type="date" class="form-control" [ngModel]="filtro().criadoDe"
+          (ngModelChange)="setFiltro('criadoDe',$event)" />
       </div>
       <div class="col-6 col-md-1">
         <label class="form-label">Até</label>
-        <input type="date" class="form-control" [(ngModel)]="filtro().criadoAte" (ngModelChange)="paginaAtual.set(1)" />
+        <input type="date" class="form-control" [ngModel]="filtro().criadoAte"
+          (ngModelChange)="setFiltro('criadoAte',$event)" />
       </div>
     </div>
   </div>
@@ -92,11 +101,12 @@
   <div *ngIf="!carregando() && visualizacao() === 'cards'">
     <div class="row g-3">
       <div class="col-12 col-md-6 col-lg-4" *ngFor="let g of gruposPaginados(); trackBy: trackById">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
+        <div class="card h-100 shadow-sm rounded-4">
+          <div class="card-body d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between align-items-start">
               <h5 class="card-title mb-0">{{ g.nome }}</h5>
-              <span class="badge {{ statusBadgeClass(g.status) }}">{{ g.status | titlecase }}</span>
+              <span class="badge {{ statusBadgeClass(g._statusDerivado || g.status) }}">{{ (g._statusDerivado ||
+                g.status) | titlecase }}</span>
             </div>
 
             <div class="small text-muted mb-2">
@@ -104,31 +114,20 @@
             </div>
 
             <div class="mb-2">
-              <div class="small">Coordenador: <strong>{{ g.coordenadorNome ? (g.coordenadorNome | titlecase) : '—' }}</strong></div>
+              <div class="small">Coordenador: <strong>{{ g.coordenadorNome ? (g.coordenadorNome | titlecase) : '—'
+                  }}</strong></div>
               <div class="small">Local: <strong>{{ g.cidade || '—' }}/{{ g.uf || '—' }}</strong></div>
-              <div class="small">Membros: <strong>{{ g.membrosCount }}</strong> (capacidade {{ g.capacidadeMin }}–{{ g.capacidadeMax }})</div>
+              <div class="small">Membros: <strong>{{ g.membrosCount }}</strong></div>
             </div>
 
             <div class="mt-auto d-flex gap-2">
-              <button class="btn btn-outline-primary flex-fill" (click)="abrirModal(g)">
-                <i class="bi bi-eye me-1"></i> Ver
+              <button class="btn btn-outline-primary flex-fill" (click)="abrirEditar(g)">
+                <i class="bi bi-pencil-square me-1"></i> Editar
               </button>
-              <a class="btn btn-outline-dark flex-fill" [routerLink]="['/grupos', g.id]">
-                <i class="bi bi-box-arrow-in-right me-1"></i> Abrir
-              </a>
+              <button class="btn btn-outline-success flex-fill" (click)="grupoSelecionado.set(g); abrirDistribuicao()">
+                <i class="bi bi-diagram-3 me-1"></i> Distribuir
+              </button>
             </div>
-          </div>
-
-          <div class="card-footer d-flex flex-wrap gap-2">
-            <button class="btn btn-sm btn-outline-success" (click)="copyInvite(g)">
-              <i class="bi bi-clipboard me-1"></i> Copiar convite
-            </button>
-            <button class="btn btn-sm btn-outline-success" (click)="shareWhatsApp(g)">
-              <i class="bi bi-whatsapp me-1"></i> WhatsApp
-            </button>
-            <a class="btn btn-sm btn-outline-secondary ms-auto" [href]="g.inviteUrl" target="_blank" rel="noopener">
-              <i class="bi bi-link-45deg me-1"></i> Abrir link
-            </a>
           </div>
         </div>
       </div>
@@ -161,22 +160,23 @@
           <th (click)="ordenarPor('uf')" role="button">UF</th>
           <th (click)="ordenarPor('membrosCount')" role="button">Membros</th>
           <th (click)="ordenarPor('criadoEm')" role="button">Criado em</th>
-          <th style="width: 220px;">Ações</th>
+          <th style="width: 240px;">Ações</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let g of gruposPaginados(); trackBy: trackById">
           <td class="fw-semibold">{{ g.nome }}</td>
-          <td><span class="badge {{ statusBadgeClass(g.status) }}">{{ g.status | titlecase }}</span></td>
+          <td><span class="badge {{ statusBadgeClass(g._statusDerivado || g.status) }}">{{ (g._statusDerivado ||
+              g.status) | titlecase }}</span></td>
           <td>{{ g.cidade || '—' }}</td>
           <td>{{ g.uf || '—' }}</td>
           <td>{{ g.membrosCount }}</td>
           <td>{{ toBRDate(g.criadoEm) }} {{ toBRTime(g.criadoEm) }}</td>
           <td>
             <div class="d-flex gap-2">
-              <button class="btn btn-sm btn-outline-primary" (click)="abrirModal(g)">Ver</button>
-              <a class="btn btn-sm btn-outline-dark" [routerLink]="['/grupos', g.id]">Abrir</a>
-              <button class="btn btn-sm btn-outline-success" (click)="copyInvite(g)">Copiar link</button>
+              <button class="btn btn-sm btn-outline-primary" (click)="abrirEditar(g)">Editar</button>
+              <button class="btn btn-sm btn-outline-success"
+                (click)="grupoSelecionado.set(g); abrirDistribuicao()">Distribuir</button>
             </div>
           </td>
         </tr>
@@ -200,47 +200,164 @@
   </div>
 </div>
 
-<!-- MODAL DETALHES -->
-<div class="modal fade show" tabindex="-1" style="display:block; background: rgba(0,0,0,.35);" *ngIf="modalAberto()">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
+<!-- MODAL EDITAR -->
+<div class="modal fade show" tabindex="-1" style="display:block; background: rgba(0,0,0,.35);"
+  *ngIf="modalEditarAberto()">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header">
+      <div class="modal-header" *ngIf="grupoSelecionado() as g">
         <h5 class="modal-title">
-          <i class="bi bi-people-fill me-2"></i>
-          {{ grupoSelecionado()?.nome }}
+          <i class="bi bi-pencil-square me-2"></i>
+          {{ g.nome }}
+          <span class="badge ms-2 {{ statusBadgeClass(g._statusDerivado || g.status) }}">
+            {{ (g._statusDerivado || g.status) | titlecase }}
+          </span>
         </h5>
-        <button type="button" class="btn-close" (click)="fecharModal()"></button>
+        <button type="button" class="btn-close" (click)="fecharEditar()"></button>
       </div>
 
       <div class="modal-body" *ngIf="grupoSelecionado() as g">
         <div class="row g-3">
-          <div class="col-12 col-md-6">
-            <div><span class="text-muted">Status:</span>
-              <span class="badge ms-1 {{ statusBadgeClass(g.status) }}">{{ g.status | titlecase }}</span>
+          <div class="col-12 col-md-8">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="fw-semibold">Integrantes ({{ g.membrosIds.length }})</div>
+              <button class="btn btn-sm btn-success" (click)="abrirAdd()">
+                <i class="bi bi-person-plus me-1"></i> Adicionar integrante
+              </button>
             </div>
-            <div><span class="text-muted">Criado em:</span> <strong>{{ toBRDate(g.criadoEm) }}</strong> {{ toBRTime(g.criadoEm) }}</div>
-            <div><span class="text-muted">Coordenador:</span> <strong>{{ g.coordenadorNome || '—' }}</strong></div>
-            <div><span class="text-muted">Local:</span> <strong>{{ g.cidade || '—' }}/{{ g.uf || '—' }}</strong></div>
+
+            <div class="row g-2 mt-2">
+              <div class="col-12 col-sm-6 col-lg-4" *ngFor="let mid of g.membrosIds">
+                <div class="border rounded-3 p-2 h-100 d-flex flex-column">
+                  <div class="fw-semibold text-truncate">{{ getPreNome(mid) || '—' }}</div>
+                  <div class="small text-muted">
+                    <div class="text-truncate">CPF: {{ getPreCpf(mid) }}</div>
+                    <div class="text-truncate">Fone: {{ getPreTel(mid) }}</div>
+                    <div class="text-truncate">Local: {{ getPreLocal(mid) }}</div>
+                    <div class="text-truncate">Aprovação: {{ getPreAprovacao(mid) }}</div>
+                  </div>
+                  <div class="mt-auto d-flex justify-content-end">
+                    <button class="btn btn-outline-danger btn-sm" (click)="removerMembro(mid)">
+                      <i class="bi bi-person-dash me-1"></i> Remover
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div *ngIf="!g.membrosIds.length" class="text-muted small mt-2">Sem integrantes.</div>
+            </div>
           </div>
-          <div class="col-12 col-md-6">
-            <div><span class="text-muted">Capacidade:</span> <strong>{{ g.capacidadeMin }}–{{ g.capacidadeMax }}</strong></div>
-            <div><span class="text-muted">Membros atuais:</span> <strong>{{ g.membrosCount }}</strong></div>
-            <div class="text-truncate"><span class="text-muted">Convite:</span> <a [href]="g.inviteUrl" target="_blank" rel="noopener">{{ g.inviteUrl }}</a></div>
-            <div *ngIf="g.observacoes"><span class="text-muted">Obs.:</span> {{ g.observacoes }}</div>
+
+          <div class="col-12 col-md-4">
+            <div class="border rounded-3 p-3">
+              <div class="fw-semibold mb-2">Dados do grupo</div>
+              <div class="small mb-1"><span class="text-muted">Coordenador:</span> <b>{{ g.coordenadorNome || '—' }}</b>
+              </div>
+              <div class="small mb-1"><span class="text-muted">Local:</span> <b>{{ g.cidade || '—' }}/{{ g.uf || '—'
+                  }}</b></div>
+              <div class="small mb-1"><span class="text-muted">Capacidade:</span> <b>{{ g.capacidadeMin }}–{{
+                  g.capacidadeMax }}</b></div>
+              <div class="small mb-1"><span class="text-muted">Criado em:</span> <b>{{ toBRDate(g.criadoEm) }}</b> {{
+                toBRTime(g.criadoEm) }}</div>
+              <div class="small"><span class="text-muted">Obs.:</span> {{ g.observacoes || '—' }}</div>
+
+              <hr class="my-3">
+
+              <div class="fw-semibold mb-2">Distribuição (resumo)</div>
+              <div class="small">Assessor do grupo: <b>{{ distGroupAssessorNome() || '—' }}</b></div>
+              <button class="btn btn-outline-success btn-sm mt-2" (click)="abrirDistribuicao()">
+                <i class="bi bi-diagram-3 me-1"></i> Abrir distribuição
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="modal-footer" *ngIf="grupoSelecionado() as g">
-        <button type="button" class="btn btn-outline-secondary" (click)="copyInvite(g)">
-          <i class="bi bi-clipboard me-1"></i> Copiar link
-        </button>
-        <button type="button" class="btn btn-outline-success" (click)="shareWhatsApp(g)">
-          <i class="bi bi-whatsapp me-1"></i> WhatsApp
-        </button>
-        <a class="btn btn-dark" [routerLink]="['/grupos', g.id]">
-          <i class="bi bi-box-arrow-in-right me-1"></i> Abrir grupo
-        </a>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" (click)="fecharEditar()">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ADICIONAR INTEGRANTE -->
+<div class="modal fade show" tabindex="-1" style="display:block; background: rgba(0,0,0,.35);" *ngIf="modalAddAberto()">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-person-plus me-2"></i>Adicionar integrante
+        </h5>
+        <button type="button" class="btn-close" (click)="fecharAdd()"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-8">
+            <label class="form-label">Buscar</label>
+            <input class="form-control" [ngModel]="buscaCandidato()" (ngModelChange)="buscaCandidato.set($event)"
+              placeholder="nome, CPF, cidade, UF..." />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label">Filtro</label>
+            <div class="form-check">
+              <input id="chkAptos" class="form-check-input" type="checkbox" [ngModel]="apenasAptos()"
+                (ngModelChange)="apenasAptos.set($event)" />
+              <label class="form-check-label" for="chkAptos">Apenas aptos</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-3" style="max-height: 380px; overflow:auto;">
+          <div class="border rounded-3 p-2 mb-2 d-flex align-items-center justify-content-between"
+            *ngFor="let p of candidatosFiltrados()">
+            <div class="me-3" style="min-width:0">
+              <div class="fw-semibold text-truncate">{{ p.nomeCompleto || '—' }}</div>
+              <div class="small text-muted text-truncate">
+                CPF: {{ p.cpf || '—' }} • {{ p.cidade || '—' }}/{{ p.uf || '—' }} • {{ p.aprovacaoStatus || '—' }}
+              </div>
+            </div>
+            <button class="btn btn-sm btn-success" (click)="adicionarMembro(p.id)">
+              <i class="bi bi-plus-lg me-1"></i> Adicionar
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" (click)="fecharAdd()">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DISTRIBUIÇÃO -->
+<div class="modal fade show" tabindex="-1" style="display:block; background: rgba(0,0,0,.35);"
+  *ngIf="modalDistribAberto() && grupoSelecionado() as g">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-diagram-3 me-2"></i>Distribuir grupo — {{ g.nome }}
+        </h5>
+        <button type="button" class="btn-close" (click)="fecharDistribuicao()"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="mb-3">
+          <div class="fw-semibold">Assessor do grupo</div>
+          <select class="form-select form-select-sm mt-1" [value]="distGroupAssessorUid()"
+            (change)="onChangeAssessorGrupo($event)">
+            <option value="">Escolha o Assessor</option>
+            <option *ngFor="let a of assessores()" [value]="a.uid">{{ a.nome | titlecase }}</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" (click)="fecharDistribuicao()">Fechar</button>
       </div>
     </div>
   </div>
