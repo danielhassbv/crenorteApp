@@ -1,16 +1,14 @@
-// src/app/components/listagem-pre-cadastros/listagem-pre-cadastros.component.ts
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-// Firestore — SOMENTE coleções de topo: sem collectionGroup, sem orderBy/where
 import {
   collection,
   getDocs,
   getCountFromServer,
   deleteDoc,
   doc,
-  updateDoc,           // <<<<<< ADICIONADO
+  updateDoc,
 } from 'firebase/firestore';
 
 import jsPDF from 'jspdf';
@@ -21,7 +19,7 @@ import { HeaderComponent } from '../shared/header/header.component';
 import { PreCadastro } from '../../models/pre-cadastro.model';
 
 type SortDir = 'asc' | 'desc';
-type Visualizacao = 'cards' | 'tabela' | 'porAssessor' | 'porOrigem' | 'porStatus';
+type Visualizacao = 'cards';
 type PreCadastroList = PreCadastro & { _path: string };
 
 @Component({
@@ -33,16 +31,14 @@ type PreCadastroList = PreCadastro & { _path: string };
 })
 export class ListagemPreCadastrosComponent implements OnInit {
   // =================== Estado base ===================
-  presAll: PreCadastroList[] = [];        // TUDO carregado (sempre)
-  presFiltrados: PreCadastroList[] = [];  // após filtros locais
-  presPaginados: PreCadastroList[] = [];  // para a visão "tabela"
+  presAll: PreCadastroList[] = [];
+  presFiltrados: PreCadastroList[] = [];
 
   totalEstimado = 0;
-
   carregando = false;
   erroCarregar = '';
 
-  // Visualização
+  // Visualização fixa (apenas cards)
   visualizacao: Visualizacao = 'cards';
 
   // =================== Filtros ===================
@@ -59,7 +55,8 @@ export class ListagemPreCadastrosComponent implements OnInit {
     agDataDe: '' as string | '',
     agDataAte: '' as string | '',
     agStatus: '',
-    aprovStatus: '', // rótulo exibido (Apto | Inapto | Pendente)
+    aprovStatus: '',
+    distribuidoPara: '', // <— NOVO
   };
 
   // Combos dinâmicos
@@ -69,12 +66,10 @@ export class ListagemPreCadastrosComponent implements OnInit {
   ufsDisponiveis: string[] = [];
   assessoresDisponiveis: string[] = [];
   agStatusDisponiveis: string[] = [];
-  aprovStatusDisponiveis: string[] = []; // sempre inclui Apto, Inapto, Pendente
+  aprovStatusDisponiveis: string[] = [];
+  distribuicoesDisponiveis: string[] = []; // <— NOVO
 
-  // Relatório / agrupamentos
-  gruposAssessor: Array<{ assessor: string; items: PreCadastroList[] }> = [];
-  relPorOrigem: Array<[string, number]> = [];
-  relPorStatus: Array<[string, number]> = [];
+  // Relatório
   relatorioAberto = false;
   relatorioGeradoEm = '';
   kpiCarregados = 0;
@@ -84,15 +79,16 @@ export class ListagemPreCadastrosComponent implements OnInit {
   relDetalhes: Array<{
     nome: string; telefone: string; criado: string; agendado: 'Sim' | 'Não';
     agDataHora: string; agStatus: string; aprovStatus: string; bairro: string; cidade: string; uf: string; origem: string;
+    distribuidosPara: string;
   }> = [];
   resumoFiltros = '';
 
-  // Tabela
-  itensPorPagina = 20;
-  paginaAtual = 1;
-  totalPaginas = 1;
+  // Ordenação (só afeta o array base/relatório)
   sortField: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro' = 'createdAt';
   sortDir: SortDir = 'desc';
+
+  // =================== Mapa de colaboradores (UID -> Nome) ===================
+  private uidToNome = new Map<string, string>();
 
   // =================== Modal de Edição ===================
   editOpen = false;
@@ -125,7 +121,27 @@ export class ListagemPreCadastrosComponent implements OnInit {
 
   // =================== Ciclo de vida ===================
   async ngOnInit(): Promise<void> {
+    // 1) carrega colaboradores para mapear UIDs -> nomes
+    await this.carregarMapaColaboradores();
+    // 2) carrega pré-cadastros
     await this.recarregarTudo();
+  }
+
+  /** Carrega top-level 'colaboradores' para montar o mapa UID→Nome */
+  private async carregarMapaColaboradores(): Promise<void> {
+    this.uidToNome.clear();
+    try {
+      const snap = await getDocs(collection(db, 'colaboradores'));
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        const uid = (data?.uid || d.id || '').toString().trim();
+        const nome =
+          (data?.displayName || data?.nome || data?.apelido || data?.email || '').toString().trim();
+        if (uid && nome) this.uidToNome.set(uid, this.displayName(nome));
+      });
+    } catch {
+      // Se não existir a coleção, seguimos sem mapa (cairá nos fallbacks por nome direto)
+    }
   }
 
   // =================== Carrega TUDO (sem índice, sem collectionGroup) ===================
@@ -215,7 +231,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false });
   }
 
-  // ========= campos derivados =========
+  // ========= Assessor/Origem/Bairro/Cidade/UF =========
   public getAssessorNome(c: PreCadastroList): string {
     const nome = (c.createdByNome || '').trim();
     if (nome) return this.displayName(nome);
@@ -239,6 +255,94 @@ export class ListagemPreCadastrosComponent implements OnInit {
     return v || '—';
   }
 
+  // ========= Distribuídos para (com fallback via UIDs) =========
+  private isRoleWord(s: string): boolean {
+    const n = this.normalize(s);
+    return ['analista','administrador','admin','assessor','coordenador','supervisor','operacional','rh']
+      .some(w => n === w || n.startsWith(w + ' '));
+  }
+
+  /** Retorna nomes normalizados de "distribuídos para", resolvendo UIDs via mapa de colaboradores */
+  public getDistribuidosPara(c: PreCadastroList): string[] {
+    const nomes: string[] = [];
+
+    // 1) nomes diretos se existirem
+    const addNome = (v: any) => {
+      const s = (v ?? '').toString().trim();
+      if (!s) return;
+      if (this.isRoleWord(s)) return; // ignora rótulos de papel (ex: "analista")
+      nomes.push(this.displayName(s));
+    };
+    addNome((c as any).distribuidoPara);
+    addNome((c as any).distribuidoParaNome);
+    addNome((c as any).destinatarioNome);
+    addNome((c as any).designadoParaNome);
+
+    // 2) UIDs comuns no seu banco (pelo print): destinatarioUid, designadoParaUid, caixaUid
+    const addUid = (uid: any) => {
+      const s = (uid ?? '').toString().trim();
+      if (!s) return;
+      const nome = this.uidToNome.get(s);
+      if (nome) nomes.push(this.displayName(nome));
+    };
+    addUid((c as any).destinatarioUid);
+    addUid((c as any).designadoParaUid);
+    addUid((c as any).caixaUid);
+
+    // 3) Array genérico (se existir) — strings ou objetos com .nome / .porNome
+    const arr = (c as any)?.distribuidosPara as any[] | undefined;
+    if (Array.isArray(arr)) {
+      for (const it of arr) {
+        if (!it) continue;
+        if (typeof it === 'string') addNome(it);
+        else { addNome(it?.nome); addNome(it?.porNome); addUid(it?.uid); }
+      }
+    }
+
+    // Dedupe e limpa
+    return Array.from(new Set(nomes.filter(Boolean)));
+  }
+
+ /** Palavras de cargo que NÃO devem contar como nome de destino */
+private readonly CARGO_WORDS = new Set([
+  'administrador','analista','coordenador','supervisor','operacional','rh','assessor'
+]);
+
+/** Extrai o nome principal do destinatário da distribuição */
+private getDistribuidoPrincipalNome(c: any): string {
+  const nome =
+    (c?.designadoParaNome ?? c?.destinatarioNome ?? '').toString().trim();
+
+  if (!nome) return '';
+  // pega só a 1ª parte antes de vírgula (evita "Fulano, Administrador")
+  const first = nome.split(',')[0].trim();
+  const low = first.toLowerCase();
+
+  // se for só um cargo, ignora
+  if (this.CARGO_WORDS.has(low)) return '';
+  return this.displayName(first);
+}
+
+/** Verdadeiro apenas se houver distribuição REAL para alguém diferente de quem criou */
+public isDistribuido(c: any): boolean {
+  const temUidDestino = !!(c?.designadoParaUid || c?.destinatarioUid);
+  const temMomento = !!c?.designadoEm; // opcional, mas ajuda a evitar falsos positivos
+  const nomeDestino = this.getDistribuidoPrincipalNome(c);
+
+  // se tiver creator e destino iguais, considera NÃO distribuído
+  const mesmoQueCriador =
+    c?.createdByUid && (c?.designadoParaUid === c?.createdByUid || c?.destinatarioUid === c?.createdByUid);
+
+  return !!nomeDestino && temUidDestino && !mesmoQueCriador && (temMomento || temUidDestino);
+}
+
+/** Texto final para o card/relatório */
+public getDistribuidosParaTexto(c: any): string {
+  return this.isDistribuido(c) ? this.getDistribuidoPrincipalNome(c) : 'Ainda não foi distribuído';
+}
+
+
+  // ========= Aprovação / Agendamento =========
   private getAprovacaoCode(c: any): 'apto' | 'inapto' | 'pendente' | 'desconhecido' {
     const cand =
       c?.aprovacao?.status ??
@@ -247,26 +351,17 @@ export class ListagemPreCadastrosComponent implements OnInit {
       c?.statusAprovacao ??
       c?.aprovadoStatus ??
       '';
-
     const raw = (cand ?? '').toString().trim();
     if (!raw) return 'desconhecido';
     const n = this.normalize(raw);
 
-    // NEGATIVO primeiro
     if (/\binapto\b/.test(n) || /reprov/.test(n) || /neg/.test(n) ||
-        /\bnao[_-]?apto\b/.test(n) || /\bnão[_-]?apto\b/.test(n)) {
-      return 'inapto';
-    }
+        /\bnao[_-]?apto\b/.test(n) || /\bnão[_-]?apto\b/.test(n)) return 'inapto';
     if (['false', '0', 'nao', 'não', 'no'].includes(n)) return 'inapto';
-
-    // POSITIVO
     if (/\bapto\b/.test(n) || /aprov/.test(n)) return 'apto';
     if (['true', '1', 'sim', 'yes'].includes(n)) return 'apto';
-
-    // PENDENTE
     if (/pend/.test(n) || /analise/.test(n) || /em anal/.test(n) || /nao_verificado/.test(n) || /não_verificado/.test(n))
       return 'pendente';
-
     return 'desconhecido';
   }
 
@@ -331,6 +426,11 @@ export class ListagemPreCadastrosComponent implements OnInit {
     this.assessoresDisponiveis = this.uniqSorted(this.presAll.map(c => this.getAssessorNome(c)).filter(a => a !== '(sem assessor)'));
     this.agStatusDisponiveis   = this.uniqSorted(this.presAll.map(c => this.getAgendaStatus(c)));
 
+    // Distribuídos para — usando o resolvedor (pega nomes por UID também)
+    this.distribuicoesDisponiveis = this.uniqSorted(
+      this.presAll.flatMap(c => this.getDistribuidosPara(c))
+    );
+
     const vistos = new Set(['Apto', 'Inapto', 'Pendente']);
     this.presAll.forEach(c => {
       const rotulo = this.getAprovacaoStatus(c);
@@ -343,7 +443,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
   onFiltroNomeChange(v: string) { this.filtro.nome = v; this.aplicarFiltrosLocais(); }
   onAprovacaoChange() { this.aplicarFiltrosLocais(true); }
 
-  aplicarFiltrosLocais(resetPagina = false) {
+  aplicarFiltrosLocais(_resetPagina = false) {
     const nl = this.normalize(this.filtro.nome);
     let arr = [...this.presAll];
 
@@ -359,7 +459,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
     if (this.filtro.cidade)   arr = arr.filter(c => this.normalize(this.getCidade(c))  === this.normalize(this.filtro.cidade));
     if (this.filtro.uf)       arr = arr.filter(c => this.getUF(c).toUpperCase() === this.filtro.uf.toUpperCase());
     if (this.filtro.assessor) arr = arr.filter(c => this.normalize(this.getAssessorNome(c)) === this.normalize(this.filtro.assessor));
-
     if (this.filtro.agStatus) arr = arr.filter(c => this.normalize(this.getAgendaStatus(c)) === this.normalize(this.filtro.agStatus));
 
     if (this.filtro.aprovStatus) {
@@ -369,6 +468,14 @@ export class ListagemPreCadastrosComponent implements OnInit {
         n.includes('apto')   ? 'apto'   :
         'pendente';
       arr = arr.filter(c => this.getAprovacaoCode(c) === alvo);
+    }
+
+    // Filtro por "Distribuído para"
+    if (this.filtro.distribuidoPara) {
+      const alvo = this.normalize(this.filtro.distribuidoPara);
+      arr = arr.filter(c =>
+        this.getDistribuidosPara(c).some(n => this.normalize(n) === alvo)
+      );
     }
 
     if (this.filtro.agDataDe || this.filtro.agDataAte) {
@@ -395,22 +502,14 @@ export class ListagemPreCadastrosComponent implements OnInit {
       });
     }
 
+    // Ordena e aplica
     this.presFiltrados  = this.ordenarArray(arr, this.sortField, this.sortDir);
-    this.relPorOrigem   = this.contarPor(this.presFiltrados, c => this.getOrigem(c));
-    this.relPorStatus   = this.contarPor(this.presFiltrados, c => (this.isAgendado(c) ? (this.getAgendaStatus(c) || '—') : '—'));
-    this.gruposAssessor = this.agruparPorAssessor(this.presFiltrados);
-
-    if (this.visualizacao === 'tabela') {
-      if (resetPagina) this.paginaAtual = 1;
-      this.recalcularPaginacao();
-    }
   }
 
   ordenarPor(campo: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro') {
     if (this.sortField === campo) this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
     else { this.sortField = campo; this.sortDir = 'asc'; }
     this.presFiltrados = this.ordenarArray(this.presFiltrados, this.sortField, this.sortDir);
-    if (this.visualizacao === 'tabela') this.recalcularPaginacao();
   }
 
   private ordenarArray(arr: PreCadastroList[], campo: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro', dir: SortDir): PreCadastroList[] {
@@ -425,40 +524,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
     });
   }
 
-  private contarPor<T>(arr: T[], keyFn: (x: T) => string): [string, number][] {
-    const mapa = new Map<string, number>();
-    for (const it of arr) {
-      const k = (keyFn(it) || '—').trim();
-      mapa.set(k, (mapa.get(k) || 0) + 1);
-    }
-    return Array.from(mapa.entries())
-      .sort((a, b) => this.normalize(a[0]).localeCompare(this.normalize(b[0])));
-  }
-
-  private agruparPorAssessor(arr: PreCadastroList[]): Array<{ assessor: string; items: PreCadastroList[] }> {
-    const map = new Map<string, PreCadastroList[]>();
-    for (const c of arr) {
-      const a = this.getAssessorNome(c) || '(sem assessor)';
-      map.set(a, (map.get(a) || []).concat(c));
-    }
-    return Array.from(map.entries())
-      .map(([assessor, items]) => ({ assessor, items }))
-      .sort((g1, g2) => this.normalize(g1.assessor).localeCompare(this.normalize(g2.assessor)));
-  }
-
-  // =================== Paginação local (tabela) ===================
-  private recalcularPaginacao() {
-    this.totalPaginas = Math.max(1, Math.ceil(this.presFiltrados.length / this.itensPorPagina));
-    if (this.paginaAtual > this.totalPaginas) this.paginaAtual = this.totalPaginas;
-    const ini = (this.paginaAtual - 1) * this.itensPorPagina;
-    const fim = ini + this.itensPorPagina;
-    this.presPaginados = this.presFiltrados.slice(ini, fim);
-  }
-  irParaPagina(n: number) { if (n < 1 || n > this.totalPaginas || n === this.paginaAtual) return; this.paginaAtual = n; this.recalcularPaginacao(); }
-  pages(): number[] { return Array.from({ length: this.totalPaginas }, (_, i) => i + 1); }
-  trackById(_i: number, c: PreCadastroList) { return c._path || c.id; }
-
-  // =================== Editar (AGORA VIA MODAL) ===================
+  // =================== Editar (modal) ===================
   abrirEdicao(item: PreCadastroList) {
     this.editItem = item;
     this.editModel = {
@@ -480,7 +546,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
   }
 
   private patchLocalItem(path: string, updates: Partial<PreCadastroList>) {
-    const idx = this.presAll.findIndex(c => (c._path || `pre_cadastros/${c.id}`) === path);
+    const idx = this.presAll.findIndex(c => (c._path || `pre_cadastros/${(c as any).id}`) === path);
     if (idx >= 0) {
       this.presAll[idx] = { ...this.presAll[idx], ...updates } as any;
     }
@@ -490,7 +556,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
     if (!this.editItem) return;
     this.editSaving = true;
 
-    const path = this.editItem._path || `pre_cadastros/${this.editItem.id}`;
+    const path = this.editItem._path || `pre_cadastros/${(this.editItem as any).id}`;
     const ref = doc(db, path);
 
     const payload = {
@@ -508,8 +574,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
 
     try {
       await updateDoc(ref, payload);
-
-      // Atualiza localmente e refaz filtros/combos
       this.patchLocalItem(path, payload as any);
       this.recalcularOpcoesDinamicas();
       this.aplicarFiltrosLocais();
@@ -528,9 +592,9 @@ export class ListagemPreCadastrosComponent implements OnInit {
   async removerPreCadastro(item: PreCadastroList) {
     const ok = window.confirm('Tem certeza que deseja remover este pré-cadastro?'); if (!ok) return;
     try {
-      const path = item._path || `pre_cadastros/${item.id}`;
+      const path = item._path || `pre_cadastros/${(item as any).id}`;
       await deleteDoc(doc(db, path));
-      this.presAll = this.presAll.filter(c => (c._path || `pre_cadastros/${c.id}`) !== path);
+      this.presAll = this.presAll.filter(c => (c._path || `pre_cadastros/${(c as any).id}`) !== path);
       this.recalcularOpcoesDinamicas();
       this.aplicarFiltrosLocais();
     } catch (e) {
@@ -546,9 +610,6 @@ export class ListagemPreCadastrosComponent implements OnInit {
     this.kpiAgendados  = dados.filter(c => this.isAgendado(c)).length;
     this.kpiSemAgendamento = this.kpiFiltrados - this.kpiAgendados;
 
-    this.relPorOrigem = this.contarPor(dados, c => this.getOrigem(c));
-    this.relPorStatus = this.contarPor(dados, c => (this.isAgendado(c) ? (this.getAgendaStatus(c) || '—') : '—'));
-
     this.relDetalhes = dados.map(c => {
       const dtAg = this.getAgendaDateTime(c);
       return {
@@ -563,6 +624,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
         cidade: this.getCidade(c),
         uf: this.getUF(c),
         origem: this.getOrigem(c),
+        distribuidosPara: this.getDistribuidosParaTexto(c),
       };
     });
 
@@ -585,7 +647,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
     if (f.agDataDe) p.push(`Agendamento de ${f.agDataDe}`); if (f.agDataAte) p.push(`até ${f.agDataAte}`);
     if (f.agStatus) p.push(`Status: ${f.agStatus}`);
     if (f.aprovStatus) p.push(`Aprovação: ${f.aprovStatus}`);
-    if (this.visualizacao !== 'tabela') p.push(`Visualização: ${this.visualizacao}`);
+    if (f.distribuidoPara) p.push(`Distribuído para: ${f.distribuidoPara}`);
     return p.length ? p.join(' · ') : 'Sem filtros específicos';
   }
 
@@ -617,8 +679,14 @@ export class ListagemPreCadastrosComponent implements OnInit {
     docPdf.addPage('a4', 'l');
     autoTable(docPdf, {
       startY: 40,
-      head: [['Nome','Telefone','Criado em','Agendado','Data/Hora Ag.','Status','Aprovação','Bairro','Cidade','UF','Origem']],
-      body: this.relDetalhes.map(d => [d.nome, d.telefone, d.criado, d.agendado, d.agDataHora, d.agStatus, d.aprovStatus, d.bairro, d.cidade, d.uf, d.origem]),
+      head: [[
+        'Nome','Telefone','Criado em','Agendado','Data/Hora Ag.','Status','Aprovação',
+        'Bairro','Cidade','UF','Origem','Distribuídos para'
+      ]],
+      body: this.relDetalhes.map(d => [
+        d.nome, d.telefone, d.criado, d.agendado, d.agDataHora, d.agStatus, d.aprovStatus,
+        d.bairro, d.cidade, d.uf, d.origem, d.distribuidosPara
+      ]),
       styles: { fontSize: 8, cellPadding: 4 },
       headStyles: { fillColor: [30, 132, 73] },
       theme: 'striped',
@@ -626,7 +694,8 @@ export class ListagemPreCadastrosComponent implements OnInit {
       didDrawPage: () => {
         docPdf.setFontSize(10);
         docPdf.text('Relatório detalhado', 30, 24);
-        const w = (docPdf.internal.pageSize as any).getWidth?.() ?? (docPdf.internal.pageSize as any).width;
+        // @ts-ignore
+        const w = (docPdf.internal.pageSize.getWidth?.() ?? (docPdf.internal.pageSize as any).width);
         docPdf.text(`Página ${docPdf.getNumberOfPages()}`, w - 30, 24, { align: 'right' });
       },
     });
@@ -634,4 +703,10 @@ export class ListagemPreCadastrosComponent implements OnInit {
     const nomeArquivo = `relatorio-pre-cadastro-${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}.pdf`;
     docPdf.save(nomeArquivo);
   }
+
+  // Identificador estável para *ngFor (cards/relatórios)
+trackById(index: number, c: PreCadastroList): string | number {
+  return c?._path ?? (c as any)?.id ?? index;
+}
+
 }

@@ -97,6 +97,15 @@
           </select>
         </div>
 
+        <!-- Distribuído para -->
+        <div class="col-md-4">
+          <label class="form-label">Distribuído para</label>
+          <select class="form-select" [(ngModel)]="filtro.distribuidoPara" (change)="aplicarFiltrosLocais(true)">
+            <option value="">Todos</option>
+            <option *ngFor="let d of distribuicoesDisponiveis" [value]="d">{{ d }}</option>
+          </select>
+        </div>
+
         <!-- Bairro -->
         <div class="col-md-3">
           <label class="form-label">Bairro</label>
@@ -158,38 +167,15 @@
           <label class="form-label">Status de aprovação</label>
           <select class="form-select" [(ngModel)]="filtro.aprovStatus" (change)="onAprovacaoChange()">
             <option value="">Todos</option>
-            <!-- As três opções canônicas sempre aparecem;
-                 a lista dinâmica pode acrescentar rótulos equivalentes se existirem -->
             <option *ngFor="let s of aprovStatusDisponiveis" [value]="s">{{ s }}</option>
-          </select>
-        </div>
-
-        <!-- Visualização -->
-        <div class="col-md-4">
-          <label class="form-label">Visualização</label>
-          <select class="form-select" [(ngModel)]="visualizacao" (change)="aplicarFiltrosLocais(true)">
-            <option value="cards">Cards (rápido)</option>
-            <option value="tabela">Tabela</option>
-            <option value="porAssessor">Agrupar por assessor</option>
-            <option value="porOrigem">Agrupar por origem</option>
-            <option value="porStatus">Agrupar por status</option>
-          </select>
-        </div>
-
-        <!-- Itens por página (só afeta a tabela) -->
-        <div class="col-md-2">
-          <label class="form-label">Itens por página</label>
-          <select class="form-select" [(ngModel)]="itensPorPagina" (change)="aplicarFiltrosLocais(true)">
-            <option *ngFor="let n of [10,20,30,50,100]" [value]="n">{{ n }}</option>
           </select>
         </div>
       </div>
     </div>
   </div>
 
-
   <!-- ===================== Cards responsivos ===================== -->
-  <div *ngIf="visualizacao==='cards'">
+  <div>
     <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-lg-3">
       <div class="col" *ngFor="let c of presFiltrados; trackBy: trackById">
         <div class="crn-card card h-100 shadow-sm rounded-4">
@@ -209,25 +195,37 @@
 
             <div class="small text-muted">
               <div class="text-truncate"><i class="fa-regular fa-calendar me-1"></i>{{ toBRDate(c.createdAt) }}</div>
-              <div class="text-truncate" *ngIf="getAssessorNome(c) !== '(sem assessor)'">
-                <i class="fa-solid fa-user-tie me-1"></i>{{ getAssessorNome(c) }}
-              </div>
               <div class="text-truncate" *ngIf="getPhone(c)">
                 <i class="fa-solid fa-phone me-1"></i>{{ maskPhone(getPhone(c)) }}
               </div>
               <div class="text-truncate">
                 <i class="fa-solid fa-location-dot me-1"></i>{{ getBairro(c) }} — {{ getCidade(c) }} / {{ getUF(c) }}
               </div>
-              <div class="text-truncate"><i class="fa-solid fa-hashtag me-1"></i>{{ getOrigem(c) }}</div>
+
+              <div class="text-truncate" *ngIf="getAssessorNome(c) !== '(sem assessor)'">
+                <i class="fa-solid fa-user-tie me-1"></i>
+                <strong>Criado por:</strong> {{ getAssessorNome(c) }}
+
+              </div>
+              <!-- Distribuído para -->
+              <div class="text-truncate">
+                <i class="fa-solid fa-share-nodes me-1"></i>
+                <ng-container *ngIf="isDistribuido(c); else naoDist">
+                  <strong>Distribuído para:</strong> {{ getDistribuidosParaTexto(c) }}
+                </ng-container>
+                <ng-template #naoDist> Ainda não foi distribuído </ng-template>
+              </div>
+
               <div class="text-truncate">
                 <i class="fa-regular fa-clock me-1"></i>
                 <strong>{{ isAgendado(c) ? 'Agendado:' : 'Sem agendamento' }}</strong>
                 <span *ngIf="isAgendado(c)"> — {{ getAgendamentoResumo(c) }}</span>
               </div>
+              <div class="text-truncate"><i class="fa-solid fa-hashtag me-1"></i>{{ getOrigem(c) }}</div>
+
             </div>
 
             <div class="d-flex justify-content-end gap-2 mt-2">
-              <!-- EDITAR inline (abre modal) -->
               <button class="btn btn-outline-success btn-sm" (click)="abrirEdicao(c)">
                 <i class="fas fa-edit"></i>
               </button>
@@ -246,105 +244,6 @@
       Nenhum pré-cadastro encontrado
     </div>
   </div>
-
-  <!-- ===================== Tabela ===================== -->
-  <div *ngIf="visualizacao==='tabela'" class="table-responsive shadow-sm rounded-4 border">
-    <table class="table table-hover align-middle mb-0">
-      <thead class="sticky-top" style="z-index:1;background:#eaf6ef">
-        <tr class="text-success">
-          <th style="width:26%; cursor:pointer" (click)="ordenarPor('nomeCompleto')">
-            <div class="d-inline-flex align-items-center gap-2">
-              <span>Nome</span>
-              <i *ngIf="sortField==='nomeCompleto' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
-              <i *ngIf="sortField==='nomeCompleto' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
-            </div>
-          </th>
-          <th style="width:220px; cursor:pointer" (click)="ordenarPor('assessorNome')">
-            <div class="d-inline-flex align-items-center gap-2">
-              <span>Assessor responsável</span>
-              <i *ngIf="sortField==='assessorNome' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
-              <i *ngIf="sortField==='assessorNome' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
-            </div>
-          </th>
-          <th style="width:130px">Telefone</th>
-          <th style="width:150px; cursor:pointer" (click)="ordenarPor('createdAt')">
-            <div class="d-inline-flex align-items-center gap-2">
-              <span>Criado em</span>
-              <i *ngIf="sortField==='createdAt' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
-              <i *ngIf="sortField==='createdAt' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
-            </div>
-          </th>
-          <th style="width:240px">Agendamento</th>
-          <th style="width:180px; cursor:pointer" (click)="ordenarPor('bairro')">
-            <div class="d-inline-flex align-items-center gap-2">
-              <span>Bairro</span>
-              <i *ngIf="sortField==='bairro' && sortDir==='asc'" class="fa-solid fa-arrow-up"></i>
-              <i *ngIf="sortField==='bairro' && sortDir==='desc'" class="fa-solid fa-arrow-down"></i>
-            </div>
-          </th>
-          <th style="width:160px">Origem</th>
-          <th style="width:150px">Aprovação</th>
-          <th style="width:150px">Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let c of presPaginados; trackBy: trackById">
-          <td class="fw-semibold text-success-emphasis text-truncate" style="max-width: 420px;">
-            {{ displayName(c.nomeCompleto) || '—' }}
-          </td>
-          <td class="text-truncate" style="max-width: 240px;">{{ getAssessorNome(c) }}</td>
-          <td>{{ maskPhone(getPhone(c)) }}</td>
-          <td>{{ toBRDate(c.createdAt) }}</td>
-          <td class="text-truncate" style="max-width: 260px;">
-            <span class="badge me-1" [class.text-bg-success]="isAgendado(c)" [class.text-bg-secondary]="!isAgendado(c)">
-              {{ isAgendado(c) ? 'Agendado' : 'Sem agendamento' }}
-            </span>
-            <span *ngIf="isAgendado(c)">— {{ getAgendamentoResumo(c) }}</span>
-          </td>
-          <td class="text-truncate" style="max-width: 200px;">{{ getBairro(c) }}</td>
-          <td class="text-truncate" style="max-width: 160px;">{{ getOrigem(c) }}</td>
-          <td>
-            <span class="badge" [ngClass]="{
-                    'text-bg-success': getAprovacaoStatus(c)==='Apto',
-                    'text-bg-danger':  getAprovacaoStatus(c)==='Inapto',
-                    'text-bg-secondary': getAprovacaoStatus(c)==='Pendente' || getAprovacaoStatus(c)==='—'
-                  }">
-              {{ getAprovacaoStatus(c) }}
-            </span>
-          </td>
-          <td class="text-nowrap">
-            <div class="btn-group">
-              <!-- EDITAR inline (abre modal) -->
-              <button class="btn btn-sm btn-outline-success" (click)="abrirEdicao(c)">
-                <i class="fas fa-edit"></i>
-              </button>
-              <button class="btn btn-sm btn-outline-danger" (click)="removerPreCadastro(c)">
-                <i class="fas fa-trash"></i>
-              </button>
-            </div>
-          </td>
-        </tr>
-        <tr *ngIf="!carregando && presPaginados.length === 0">
-          <td colspan="9" class="text-center text-muted py-4">Nenhum pré-cadastro encontrado</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- Paginação local (só quando tabela) -->
-  <nav class="mt-4" *ngIf="visualizacao==='tabela' && totalPaginas > 1">
-    <ul class="pagination justify-content-center flex-wrap gap-1">
-      <li class="page-item" [class.disabled]="paginaAtual === 1">
-        <button class="page-link" (click)="irParaPagina(paginaAtual - 1)">Anterior</button>
-      </li>
-      <li class="page-item" *ngFor="let p of pages()" [class.active]="paginaAtual === p">
-        <button class="page-link" (click)="irParaPagina(p)">{{ p }}</button>
-      </li>
-      <li class="page-item" [class.disabled]="paginaAtual === totalPaginas">
-        <button class="page-link" (click)="irParaPagina(paginaAtual + 1)">Próxima</button>
-      </li>
-    </ul>
-  </nav>
 </div>
 
 <!-- ======================= MODAL DE RELATÓRIO ======================= -->
@@ -400,9 +299,6 @@
                 <th>Nome</th>
                 <th>Telefone</th>
                 <th>Criado em</th>
-                <th>Agendado</th>
-                <th>Data/Hora Ag.</th>
-                <th>Status</th>
                 <th>Aprovação</th>
                 <th>Bairro</th>
                 <th>Cidade</th>
@@ -415,9 +311,6 @@
                 <td class="text-truncate" style="max-width:260px">{{ d.nome }}</td>
                 <td>{{ d.telefone }}</td>
                 <td>{{ d.criado }}</td>
-                <td>{{ d.agendado }}</td>
-                <td>{{ d.agDataHora }}</td>
-                <td>{{ d.agStatus }}</td>
                 <td>{{ d.aprovStatus }}</td>
                 <td class="text-truncate" style="max-width:160px">{{ d.bairro }}</td>
                 <td class="text-truncate" style="max-width:160px">{{ d.cidade }}</td>
@@ -425,7 +318,7 @@
                 <td>{{ d.origem }}</td>
               </tr>
               <tr *ngIf="relDetalhes.length===0">
-                <td colspan="11" class="text-center text-muted py-4">Nenhum registro para exibir</td>
+                <td colspan="12" class="text-center text-muted py-4">Nenhum registro para exibir</td>
               </tr>
             </tbody>
           </table>
@@ -450,8 +343,10 @@
       <div class="modal-header">
         <h5 class="modal-title">
           Editar Pré-cadastro
-          <!-- FIX: remover optional chaining pois *ngIf="editItem" garante não-nulo -->
-          <small *ngIf="editItem" class="text-muted d-block fs-6">{{ displayName(editItem.nomeCompleto) }}</small>
+          <small *ngIf="editItem" class="text-muted d-block fs-6">
+            {{ displayName(editItem.nomeCompleto || '') }}
+          </small>
+
         </h5>
         <button type="button" class="btn-close" aria-label="Close" (click)="fecharEdicao()"></button>
       </div>

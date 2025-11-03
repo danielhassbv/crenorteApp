@@ -1,9 +1,26 @@
 // src/app/models/pre-cadastro.model.ts
 import { Timestamp } from '@angular/fire/firestore';
+// --- Tipos auxiliares novos ---
+export interface ArquivoPreCadastro {
+  id: string;                // id único (gerado pelo storage/serviço)
+  nome: string;              // nome do arquivo (ex.: boleto-01.pdf)
+  url: string;               // URL para download
+  tipo?: string | null;      // mime type
+  tamanho?: number | null;   // bytes
+  uploadedAt?: any;          // Timestamp | Date
+  uploadedByUid?: string | null;
+  uploadedByNome?: string | null;
+  storagePath?: string; // recomendado
+
+}
+
 
 export type AgendamentoStatus = 'nao_agendado' | 'agendado' | 'visitado';
 export type AprovacaoStatus = 'nao_verificado' | 'apto' | 'inapto';
 export type FormalizacaoStatus = 'nao_formalizado' | 'formalizado';
+
+// NOVO: status de desistência
+export type DesistenciaStatus = 'nao_desistiu' | 'desistiu';
 
 export type FluxoFixos = {
   aluguel: number;
@@ -31,6 +48,9 @@ export type FluxoTotais = { receita: number; custos: number; lucro: number };
 
 export interface PreCadastro {
   id: string;
+
+  grupoId?: string | null;                 // id do grupo que pertence
+  papelNoGrupo?: 'coordenador' | 'membro' | null;
 
   nomeCompleto: string;
   cpf: string;
@@ -80,6 +100,15 @@ export interface PreCadastro {
     observacao?: string | null;
   };
 
+  // NOVO: desistência (espelhado em formalização)
+  desistencia?: {
+    status: DesistenciaStatus;      // 'nao_desistiu' | 'desistiu'
+    porUid?: string;
+    porNome?: string;
+    em?: Timestamp | Date | any;
+    observacao?: string | null;
+  };
+
   encaminhamento?: {
     assessorUid?: string | null;
     assessorId?: string | null;     // alias legado
@@ -100,4 +129,12 @@ export interface PreCadastro {
   alocadoParaNome?: string | null;
 
   __col?: 'pre_cadastros' | 'pre-cadastros';
+
+
+
+  // NOVOS CAMPOS:
+  observacoes?: string | null;
+  arquivos?: ArquivoPreCadastro[];   // opcional: meta dos arquivos no próprio doc
+
+
 }

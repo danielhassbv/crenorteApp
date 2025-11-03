@@ -1,4 +1,3 @@
-// src/app/pages/pre-cadastro/pre-cadastro-lista/pre-cadastro-lista.component.ts
 import { Component, inject, signal, computed, effect, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
@@ -6,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { PreCadastroService } from '../../../services/pre-cadastro.service';
 import { Auth, user } from '@angular/fire/auth';
 import { Subscription } from 'rxjs';
-import { PreCadastro, FluxoCaixa } from '../../../models/pre-cadastro.model';
+import { PreCadastro, FluxoCaixa, ArquivoPreCadastro } from '../../../models/pre-cadastro.model';
 import { HeaderComponent } from '../../shared/header/header.component';
 import { AgendamentoService } from '../../../services/agendamento.service';
 import {
@@ -20,6 +19,10 @@ import {
   getDocs,
   limit
 } from '@angular/fire/firestore';
+
+// ===== NOVO: Grupos =====
+import { GrupoSolidario, MembroGrupoView } from '../../../models/grupo-solidario.model';
+import { GrupoSolidarioService } from '../../../services/grupo-solidario.service';
 
 type PreCadastroEdit = PreCadastro & { id: string };
 
@@ -36,7 +39,10 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   private auth = inject(Auth);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
-  private afs = inject(Firestore); // 🔹 Firestore para buscar nome do perfil
+  private afs = inject(Firestore);
+
+  // ===== NOVO: service de grupos
+  private gruposSvc = inject(GrupoSolidarioService);
 
   loading = signal(true);
   itens = signal<PreCadastro[]>([]);
@@ -53,18 +59,41 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   filtroDataIni = signal<string>(''); // yyyy-MM-dd
   filtroDataFim = signal<string>(''); // yyyy-MM-dd
 
-  // paginação
+  // paginação (PESSOAS)
   pageSize = signal<number>(9);
   page = signal<number>(1);
 
-  // modais
+  // ====== NOVO: Abas Pessoas | Grupos ======
+  aba = signal<'pessoas' | 'grupos'>('pessoas');
+
+  // Estado GRUPOS (lista do assessor)
+  gruposLoading = signal(false);
+  grupos = signal<GrupoSolidario[]>([]);
+
+  // paginação (GRUPOS) — independentes da aba Pessoas
+  pageGrupos = signal<number>(1);
+  pageSizeGrupos = signal<number>(6);
+
+  // modais (PESSOAS)
   modalVerAberto = signal(false);
   modalEditarAberto = signal(false);
   modalAgendarAberto = signal(false);
 
+  // NOVOS modais (PESSOAS)
+  modalObsAberto = signal(false);
+  modalArqsAberto = signal(false);
+
   viewItem = signal<PreCadastro | null>(null);
   editModel = signal<PreCadastroEdit | null>(null);
   itemAgendar = signal<PreCadastro | null>(null);
+
+  // Observações (PESSOAS)
+  obsModel = signal<string>('');
+
+  // Arquivos (PESSOAS)
+  arqsCarregando = signal(false);
+  arqsLista = signal<ArquivoPreCadastro[]>([]);
+  uploadEmProgresso = signal(false);
 
   saving = signal(false);
   agSalvando = signal(false);
@@ -82,7 +111,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   private nomeCache = new Map<string, string>();
 
   constructor() {
-    // sempre que busca/filtros mudarem, voltar para a primeira página
+    // sempre que busca/filtros mudarem, voltar para a primeira página (PESSOAS)
     effect(() => {
       this.searchTerm();
       this.filtroStatus();
@@ -109,12 +138,15 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.sub = user(this.auth).subscribe(async u => {
       this.loading.set(true);
       try {
-        if (!u) { this.itens.set([]); return; }
+        if (!u) { 
+          this.itens.set([]); 
+          this.grupos.set([]);
+          return; 
+        }
         this.currentUserUid = u.uid;
-        this.currentUserNome = await this.resolveUserName(u.uid); // 🔹 nome de perfil
+        this.currentUserNome = await this.resolveUserName(u.uid);
 
-        // 🔎 Preferir listar itens da "caixa" do assessor (encaminhados + próprios).
-        // Se o service ainda não tiver listarParaCaixa, cai no fallback listarDoAssessor.
+        // ==== Pessoas (pré-cadastros) ====
         let rows: PreCadastro[] = [];
         const svcAny = this.service as any;
         if (typeof svcAny.listarParaCaixa === 'function') {
@@ -123,27 +155,39 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
           rows = await this.service.listarDoAssessor(u.uid);
         }
 
-        // Normalização local:
-        // - agendamentoStatus default 'nao_agendado'
-        // - formalizacao.status default 'nao_formalizado' (sem gravar automaticamente no DB)
+        // Normalização local (PESSOAS)
         const norm = rows.map(r => {
           const formalizacao = (r as any).formalizacao || {};
+          const desistencia = (r as any).desistencia || {};
           return {
             agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
             formalizacao: {
               status: (formalizacao.status as any) || 'nao_formalizado',
               porUid: formalizacao.porUid,
               porNome: formalizacao.porNome,
-              em: formalizacao.em
+              em: formalizacao.em,
+              observacao: formalizacao.observacao ?? null
             },
+            desistencia: {
+              status: (desistencia.status as any) || 'nao_desistiu',
+              porUid: desistencia.porUid,
+              porNome: desistencia.porNome,
+              em: desistencia.em,
+              observacao: desistencia.observacao ?? null
+            },
+            observacoes: (r as any).observacoes ?? null,
+            arquivos: (r as any).arquivos ?? [],
             ...r
           } as PreCadastro;
         });
-
         this.itens.set(norm);
+
+        // ==== Grupos (aba "Grupos") ====
+        await this.loadGruposDoAssessor(u.uid);
       } catch (err) {
         console.error('[PreCadastro] Erro ao listar:', err);
         this.itens.set([]);
+        this.grupos.set([]);
       } finally {
         this.loading.set(false);
       }
@@ -172,11 +216,42 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       .trim();
   }
 
-  whatsHref(v?: string | null): string {
-    const d = this.onlyDigits(v);
-    if (!d) return '';
-    const core = d.startsWith('55') ? d : `55${d}`;
-    return `https://wa.me/${core}`;
+  onWhatsClick(evt: MouseEvent, tel?: string | null, toggle?: HTMLInputElement) {
+    evt.preventDefault();
+    const url = this.whatsHref(tel);
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      if (toggle) toggle.checked = false;
+    }
+  }
+
+  whatsHref(v?: string | null): string | null {
+    const core = this.normalizeBRPhone(v);
+    return core ? `https://wa.me/${core}` : null;
+  }
+
+  /** Normaliza para o formato exigido pelo wa.me: 55 + DDD (2) + número (8 ou 9) */
+  private normalizeBRPhone(v?: string | null): string | null {
+    if (!v) return null;
+    let d = String(v).replace(/\D+/g, '');
+    if (d.startsWith('55')) d = d.slice(2);
+    d = d.replace(/^0+/, '');
+    if (d.length < 10 || d.length > 11) return null;
+    const full = `55${d}`;
+    if (full.length < 12 || full.length > 13) return null;
+    return full;
+  }
+
+  // Bandeira do estado (pasta de assets). Ex.: /assets/flags/uf-pa.svg
+  ufFlagSrc(uf?: string | null): string | null {
+    const code = (uf || '').toLowerCase().trim();
+    if (!code || code.length !== 2) return null;
+    return `/assets/flags/uf-${code}.svg`;
+  }
+
+  // Nome curto do estado para tooltip (opcional simples)
+  ufTitle(uf?: string | null): string {
+    return (uf || '').toUpperCase();
   }
 
   // 🔹 Resolve nome do usuário a partir do perfil (coleção "colaboradores")
@@ -185,7 +260,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
     let nome: string | null = null;
 
-    // 1) tenta documento exato em colaboradores/{uid}
     try {
       const snap = await getDoc(doc(this.afs, 'colaboradores', uid));
       if (snap.exists()) {
@@ -196,7 +270,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       console.warn('[NomePerfil] doc direto falhou:', e);
     }
 
-    // 2) se não achou, tenta query por campo uid
     if (!nome) {
       try {
         const q = fsQuery(collection(this.afs, 'colaboradores'), where('uid', '==', uid), limit(1));
@@ -210,10 +283,8 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       }
     }
 
-    // 3) fallback para displayName
     if (!nome) nome = this.auth.currentUser?.displayName || null;
 
-    // 4) fallback para "nome amigável" do e-mail
     if (!nome) {
       const email = this.auth.currentUser?.email || '';
       if (email) {
@@ -222,21 +293,19 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       }
     }
 
-    // 5) último recurso
     if (!nome) nome = 'Usuário';
 
     this.nomeCache.set(uid, nome);
     return nome;
   }
 
-  // ======= NOVOS HELPERS: aprovação & encaminhamento & formalização =======
+  // ======= HELPERS: aprovação & encaminhamento & formalização & desistência =======
   aprovacaoStatus(i: PreCadastro): 'apto' | 'inapto' {
     return ((i as any)?.aprovacao?.status === 'apto') ? 'apto' : 'inapto';
   }
   aprovacaoBadgeClass(i: PreCadastro) {
     return this.aprovacaoStatus(i) === 'apto' ? 'text-bg-success' : 'text-bg-danger';
   }
-  // "encaminhado para mim" = veio de analista e caiu na minha caixa
   encaminhadoParaMim(i: PreCadastro): boolean {
     const uid = this.currentUserUid;
     const encUid = (i as any)?.encaminhamento?.assessorUid;
@@ -261,7 +330,16 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     return this.formalizacaoStatus(i) === 'formalizado' ? 'text-bg-success' : 'text-bg-secondary';
   }
 
-  // ===== Derived UI data =====
+  // Desistência
+  desistenciaStatus(i: PreCadastro): 'desistiu' | 'nao_desistiu' {
+    const st = (i as any)?.desistencia?.status;
+    return st === 'desistiu' ? 'desistiu' : 'nao_desistiu';
+  }
+  desistenciaBadgeClass(i: PreCadastro) {
+    return this.desistenciaStatus(i) === 'desistiu' ? 'text-bg-warning' : 'text-bg-secondary';
+  }
+
+  // ===== Derived UI data (PESSOAS) =====
   bairrosDisponiveis = computed<string[]>(() => {
     const set = new Set<string>();
     for (const x of this.itens()) {
@@ -271,7 +349,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   });
 
-  // Filtra por busca + filtros
   filteredItems = computed<PreCadastro[]>(() => {
     const term = this.normalize(this.searchTerm());
     const st = this.filtroStatus();
@@ -330,7 +407,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     return arr.slice(start, start + ps);
   });
 
-  // paginação actions
   setPageSize(n: number) {
     this.pageSize.set(n);
     this.page.set(1);
@@ -341,9 +417,102 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   goLast() { this.page.set(this.totalPages()); }
   goTo(n: number) { this.page.set(Math.min(Math.max(1, n), this.totalPages())); }
 
-  // ===== Abertura/fechamento modais =====
-  abrirVer(i: PreCadastro) { this.viewItem.set(i); this.modalVerAberto.set(true); }
+  // ====== NOVO: Abas ======
+  setAba(aba: 'pessoas' | 'grupos') {
+    this.aba.set(aba);
+    if (aba === 'grupos') {
+      // opcional: recarregar grupos on-demand
+      if (this.currentUserUid) this.loadGruposDoAssessor(this.currentUserUid);
+    }
+  }
 
+  // ====== GRUPOS: carregamento e paginação ======
+  private async loadGruposDoAssessor(uid: string) {
+    this.gruposLoading.set(true);
+    try {
+      const base = await this.gruposSvc.listarParaCaixaAssessor(uid);
+      const join = await this.gruposSvc.joinGruposView(base);
+      this.grupos.set(join || []);
+      this.pageGrupos.set(1);
+    } catch (e) {
+      console.error('[Grupos] erro ao listar:', e);
+      this.grupos.set([]);
+    } finally {
+      this.gruposLoading.set(false);
+    }
+  }
+
+  gruposTotal = computed(() => this.grupos().length);
+
+  gruposPaged = computed<GrupoSolidario[]>(() => {
+    const p = this.pageGrupos();
+    const ps = this.pageSizeGrupos();
+    const arr = this.grupos();
+    const start = (p - 1) * ps;
+    return arr.slice(start, start + ps);
+  });
+
+  gruposTotalPages = computed<number>(() => {
+    const n = Math.ceil(this.gruposTotal() / this.pageSizeGrupos());
+    return Math.max(1, n || 1);
+  });
+
+  gruposGoFirst() { this.pageGrupos.set(1); }
+  gruposGoPrev() { this.pageGrupos.update(p => Math.max(1, p - 1)); }
+  gruposGoNext() { this.pageGrupos.update(p => Math.min(this.gruposTotalPages(), p + 1)); }
+  gruposGoLast() { this.pageGrupos.set(this.gruposTotalPages()); }
+  gruposSetPageSize(n: number) { this.pageSizeGrupos.set(n); this.pageGrupos.set(1); }
+
+  // ===== Abertura/fechamento modais (PESSOAS) =====
+  abrirVer(i: PreCadastro) {
+    this.viewItem.set(i);
+    this.modalVerAberto.set(true);
+  }
+
+  abrirObservacoes(i: PreCadastro) {
+    this.viewItem.set(i);
+    this.obsModel.set((i.observacoes ?? '').toString());
+    this.modalObsAberto.set(true);
+  }
+
+  abrirArquivos(i: PreCadastro) {
+    this.viewItem.set(i);
+    this.modalArqsAberto.set(true);
+    this.carregarArquivos(i);
+  }
+
+  fecharModais() {
+    this.modalVerAberto.set(false);
+    this.modalEditarAberto.set(false);
+    this.modalAgendarAberto.set(false);
+    this.modalObsAberto.set(false);
+    this.modalArqsAberto.set(false);
+
+    this.viewItem.set(null);
+    this.editModel.set(null);
+    this.itemAgendar.set(null);
+    this.agData = '';
+    this.agHora = '';
+    this.obsModel.set('');
+    this.arqsLista.set([]);
+  }
+
+  // ===== Atualização do editModel =====
+  onEditChange<K extends keyof PreCadastroEdit>(prop: K, value: PreCadastroEdit[K]) {
+    const m = this.editModel();
+    if (!m) return;
+
+    const numericProps = new Set(['valorSolicitado', 'parcelas', 'valorParcela']);
+
+    let v: any = value;
+    if (numericProps.has(prop as string) && typeof value === 'string') {
+      v = value === '' ? undefined : Number(value);
+    }
+
+    this.editModel.set({ ...(m as any), [prop]: v });
+  }
+
+  // ===== Atualização do fluxoCaixa =====
   private defaultFluxo(): FluxoCaixa {
     return {
       faturamentoMensal: 0,
@@ -364,53 +533,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     };
   }
 
-  abrirEditar(i: PreCadastro) {
-    if (!i?.id) { console.warn('Item sem ID'); return; }
-    // Clona e garante fluxoCaixa não-nulo para edição
-    const fluxo = i.fluxoCaixa ? JSON.parse(JSON.stringify(i.fluxoCaixa)) as FluxoCaixa : this.defaultFluxo();
-    this.editModel.set({
-      ...(i as any),
-      id: i.id,
-      // normaliza strings principais
-      cpf: (i.cpf ?? '').trim(),
-      telefone: (i.telefone ?? '').trim(),
-      email: (i.email ?? '').trim(),
-      nomeCompleto: (i.nomeCompleto ?? '').trim(),
-      bairro: i.bairro ?? '',
-      endereco: i.endereco ?? '',
-      fluxoCaixa: fluxo
-    });
-    this.modalEditarAberto.set(true);
-  }
-
-  fecharModais() {
-    this.modalVerAberto.set(false);
-    this.modalEditarAberto.set(false);
-    this.modalAgendarAberto.set(false);
-    this.viewItem.set(null);
-    this.editModel.set(null);
-    this.itemAgendar.set(null);
-    this.agData = '';
-    this.agHora = '';
-  }
-
-  // ===== Atualização do editModel (top-level, sem arrow/spread no template) =====
-  onEditChange<K extends keyof PreCadastroEdit>(prop: K, value: PreCadastroEdit[K]) {
-    const m = this.editModel();
-    if (!m) return;
-
-    // números top-level que você pode editar aqui
-    const numericProps = new Set(['valorSolicitado', 'parcelas', 'valorParcela']);
-
-    let v: any = value;
-    if (numericProps.has(prop as string) && typeof value === 'string') {
-      v = value === '' ? undefined : Number(value);
-    }
-
-    this.editModel.set({ ...(m as any), [prop]: v });
-  }
-
-  // ===== Atualização do fluxoCaixa (aninhado) =====
   onFluxoNumberChange(path: string, value: string | number) {
     const m = this.editModel();
     if (!m) return;
@@ -436,7 +558,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     if (!m) return;
     const fluxo = m.fluxoCaixa ? { ...m.fluxoCaixa } : this.defaultFluxo();
     const arr = fluxo.variaveis?.outros ?? [];
-    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }) };
+    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima: 0, insumos: 0, frete: 0, transporte: 0, outros: [] }) };
     fluxo.variaveis.outros = [...arr, { nome: '', valor: 0 }];
     this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
   }
@@ -449,6 +571,12 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
   }
 
+  abrirEditar(i: PreCadastro) {
+    this.viewItem.set(i);
+    this.editModel.set({ ...i }); // copia os dados atuais para edição
+    this.modalEditarAberto.set(true);
+  }
+
   onOutroNomeChange(index: number, value: string) {
     const m = this.editModel();
     if (!m) return;
@@ -456,7 +584,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     const outros = [...(fluxo.variaveis?.outros ?? [])];
     if (!outros[index]) outros[index] = { nome: '', valor: 0 };
     outros[index] = { ...outros[index], nome: value };
-    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }), outros };
+    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima: 0, insumos: 0, frete: 0, transporte: 0, outros: [] }), outros };
     this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
   }
 
@@ -468,11 +596,11 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     const outros = [...(fluxo.variaveis?.outros ?? [])];
     if (!outros[index]) outros[index] = { nome: '', valor: 0 };
     outros[index] = { ...outros[index], valor: Number(num) };
-    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima:0, insumos:0, frete:0, transporte:0, outros:[] }), outros };
+    fluxo.variaveis = { ...(fluxo.variaveis || { materiaPrima: 0, insumos: 0, frete: 0, transporte: 0, outros: [] }), outros };
     this.editModel.set({ ...(m as any), fluxoCaixa: fluxo });
   }
 
-  // ===== CRUD =====
+  // ===== CRUD (PESSOAS) =====
   async salvarEdicao() {
     const m = this.editModel();
     if (!m?.id) return;
@@ -487,6 +615,8 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
         bairro: (m.bairro ?? '').trim(),
         endereco: (m.endereco ?? '').trim(),
         origem: m.origem ?? '',
+        cidade: (m.cidade ?? null),
+        uf: (m.uf ?? null),
 
         // Financeiro
         valorSolicitado: typeof m.valorSolicitado === 'number' ? m.valorSolicitado : m.valorSolicitado ? Number(m.valorSolicitado) : undefined,
@@ -515,7 +645,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
     try {
       const agId = (item as any)?.agendamentoId;
-      if (agId) { try { await this.agService.remover(agId); } catch {} }
+      if (agId) { try { await this.agService.remover(agId); } catch { } }
 
       await this.service.remover(item.id);
       this.itens.update(lista => lista.filter(x => x.id !== item.id));
@@ -544,7 +674,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.router.navigate(['/cadastro', 'novo'], { queryParams: qp });
   }
 
-  // ====== AGENDAMENTO ======
+  // ====== AGENDAMENTO (PESSOAS) ======
   abrirAgendar(i: PreCadastro) {
     this.itemAgendar.set(i);
     this.agData = '';
@@ -656,7 +786,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     }
   }
 
-  // ===== NOVO: Marcar/Desfazer FORMALIZAÇÃO =====
+  // ===== FORMALIZAÇÃO (PESSOAS) =====
   async marcarFormalizado(i: PreCadastro) {
     if (!i?.id) return;
     if (!this.currentUserUid) { alert('Usuário não autenticado.'); return; }
@@ -666,7 +796,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
         formalizacao: {
           status: 'formalizado',
           porUid: this.currentUserUid!,
-          porNome: this.currentUserNome || undefined, // 🔹 nome de perfil (não e-mail)
+          porNome: this.currentUserNome || undefined,
           em: Timestamp.now()
         }
       };
@@ -691,7 +821,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
         formalizacao: {
           status: 'nao_formalizado',
           porUid: this.currentUserUid!,
-          porNome: this.currentUserNome || undefined, // 🔹 nome de perfil
+          porNome: this.currentUserNome || undefined,
           em: Timestamp.now()
         }
       };
@@ -705,5 +835,274 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       console.error('[Formalização] erro ao desfazer:', e);
       alert('Não foi possível desfazer a formalização.');
     }
+  }
+
+  // ===== DESISTÊNCIA (PESSOAS) =====
+  async marcarDesistencia(i: PreCadastro) {
+    if (!i?.id) return;
+    if (!this.currentUserUid) { alert('Usuário não autenticado.'); return; }
+
+    const obs = (window.prompt('Observação da desistência (opcional):') || '').trim() || null;
+
+    try {
+      const patch: Partial<PreCadastro> = {
+        desistencia: {
+          status: 'desistiu',
+          porUid: this.currentUserUid!,
+          porNome: this.currentUserNome || undefined,
+          em: Timestamp.now(),
+          observacao: obs
+        }
+      };
+      await this.service.atualizar(i.id, patch as any);
+      this.itens.update(list => list.map(x =>
+        x.id === i.id ? { ...x, desistencia: patch.desistencia } as PreCadastro : x
+      ));
+      this.toastVisivel.set(true);
+      setTimeout(() => this.toastVisivel.set(false), 2000);
+    } catch (e) {
+      console.error('[Desistência] erro ao marcar:', e);
+      alert('Não foi possível marcar desistência.');
+    }
+  }
+
+  async desfazerDesistencia(i: PreCadastro) {
+    if (!i?.id) return;
+    if (!this.currentUserUid) { alert('Usuário não autenticado.'); return; }
+
+    try {
+      const patch: Partial<PreCadastro> = {
+        desistencia: {
+          status: 'nao_desistiu',
+          porUid: this.currentUserUid!,
+          porNome: this.currentUserNome || undefined,
+          em: Timestamp.now(),
+          observacao: null
+        }
+      };
+      await this.service.atualizar(i.id, patch as any);
+      this.itens.update(list => list.map(x =>
+        x.id === i.id ? { ...x, desistencia: patch.desistencia } as PreCadastro : x
+      ));
+      this.toastVisivel.set(true);
+      setTimeout(() => this.toastVisivel.set(false), 2000);
+    } catch (e) {
+      console.error('[Desistência] erro ao desfazer:', e);
+      alert('Não foi possível desfazer a desistência.');
+    }
+  }
+
+  // ===== OBSERVAÇÕES (PESSOAS) =====
+  async salvarObservacoes() {
+    const i = this.viewItem();
+    if (!i?.id) return;
+    try {
+      const texto = (this.obsModel() || '').trim() || null;
+      await this.service.atualizarObservacoes(i.id, texto);
+      // Atualiza local
+      this.itens.update(list => list.map(x => x.id === i.id ? { ...x, observacoes: texto } : x));
+      // Atualiza no viewItem
+      this.viewItem.set({ ...(i as any), observacoes: texto });
+      this.modalObsAberto.set(false);
+      alert('Observações salvas!');
+    } catch (e) {
+      console.error('[Observações] erro ao salvar:', e);
+      alert('Não foi possível salvar as observações.');
+    }
+  }
+
+  // ===== ARQUIVOS (PESSOAS) =====
+  private async carregarArquivos(i: PreCadastro) {
+    if (!i?.id) return;
+    this.arqsCarregando.set(true);
+    try {
+      const lista = await this.service.listarArquivos(i.id);
+      this.arqsLista.set(lista || []);
+    } catch (e) {
+      console.error('[Arquivos] erro ao listar:', e);
+      this.arqsLista.set([]);
+    } finally {
+      this.arqsCarregando.set(false);
+    }
+  }
+
+  async onEscolherArquivo(evt: Event) {
+    const input = evt.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    const i = this.viewItem();
+    if (!file || !i?.id) return;
+
+    if (!this.currentUserUid) { alert('Usuário não autenticado.'); return; }
+
+    this.uploadEmProgresso.set(true);
+    try {
+      const meta = await this.service.uploadArquivo(i.id, file, {
+        uid: this.currentUserUid!,
+        nome: this.currentUserNome || null
+      });
+      // adiciona à lista local
+      this.arqsLista.set([meta, ...this.arqsLista()]);
+      // opcional: reflete no array do documento em memória
+      this.itens.update(list => list.map(x => x.id === i.id ? { ...x, arquivos: [meta, ...(x.arquivos || [])] } : x));
+      // reseta input
+      input.value = '';
+    } catch (e) {
+      console.error('[Arquivos] upload falhou:', e);
+      alert('Falha no upload do arquivo.');
+    } finally {
+      this.uploadEmProgresso.set(false);
+    }
+  }
+
+  async removerArquivo(arquivo: ArquivoPreCadastro) {
+    const i = this.viewItem();
+    if (!i?.id || !arquivo?.id) return;
+    const ok = confirm(`Remover o arquivo "${arquivo.nome}"?`);
+    if (!ok) return;
+
+    try {
+      await this.service.removerArquivo(i.id, arquivo.id);
+      this.arqsLista.set(this.arqsLista().filter(a => a.id !== arquivo.id));
+      this.itens.update(list => list.map(x =>
+        x.id === i.id ? { ...x, arquivos: (x.arquivos || []).filter(a => a.id !== arquivo.id) } : x
+      ));
+    } catch (e) {
+      console.error('[Arquivos] erro ao remover:', e);
+      alert('Não foi possível remover o arquivo.');
+    }
+  }
+
+  closeActions(toggle?: HTMLInputElement) {
+    if (toggle) toggle.checked = false;
+  }
+
+  // =====================================================================================
+  // ==================================  GRUPOS  ========================================
+  // =====================================================================================
+
+  /** Converte um MembroGrupoView em um objeto "pré-cadastro-like" mínimo para reutilizar as ações */
+  private preLikeFromMember(m: MembroGrupoView): PreCadastro {
+    return {
+      id: m.preCadastroId,
+      nomeCompleto: m.nome ?? null as any,
+      cpf: m.cpf ?? null as any,
+      telefone: m.telefone ?? null as any,
+      email: m.email ?? null as any,
+      endereco: null as any,
+      bairro: null as any,
+      cidade: null as any,
+      uf: null as any,
+      agendamentoStatus: m.agendamentoStatus || 'nao_agendado',
+      formalizacao: m.formalizacao,
+      desistencia: m.desistencia
+    } as unknown as PreCadastro;
+  }
+
+  /** Converte coordenadorView do grupo em um "pré-cadastro-like" */
+  private preLikeFromCoordenador(g: GrupoSolidario): PreCadastro | null {
+    const c = g.coordenadorView;
+    if (!c?.preCadastroId) return null;
+    return {
+      id: c.preCadastroId,
+      nomeCompleto: c.nome ?? null as any,
+      cpf: c.cpf ?? null as any,
+      telefone: c.telefone ?? null as any,
+      email: c.email ?? null as any,
+      endereco: c.endereco ?? null as any,
+      bairro: c.bairro ?? null as any,
+      cidade: c.cidade ?? null as any,
+      uf: c.uf ?? null as any,
+      agendamentoStatus: c.agendamentoStatus || 'nao_agendado',
+      formalizacao: c.formalizacao,
+      desistencia: c.desistencia
+    } as unknown as PreCadastro;
+  }
+
+  // ===== Ações no Coordenador do Grupo =====
+  abrirAgendarCoordenador(g: GrupoSolidario) {
+    const pre = this.preLikeFromCoordenador(g);
+    if (!pre) { alert('Coordenador não definido para este grupo.'); return; }
+    this.abrirAgendar(pre);
+  }
+
+  marcarVisitadoCoordenador(g: GrupoSolidario) {
+    const pre = this.preLikeFromCoordenador(g);
+    if (!pre) return;
+    this.marcarVisitado(pre);
+  }
+
+  cancelarAgendamentoCoordenador(g: GrupoSolidario) {
+    const pre = this.preLikeFromCoordenador(g);
+    if (!pre) return;
+    this.cancelarAgendamento(pre);
+  }
+
+  marcarFormalizadoCoordenador(g: GrupoSolidario) {
+    const pre = this.preLikeFromCoordenador(g);
+    if (!pre) return;
+    this.marcarFormalizado(pre);
+  }
+
+  desfazerFormalizacaoCoordenador(g: GrupoSolidario) {
+    const pre = this.preLikeFromCoordenador(g);
+    if (!pre) return;
+    this.desfazerFormalizacao(pre);
+  }
+
+  marcarDesistenciaCoordenador(g: GrupoSolidario) {
+    const pre = this.preLikeFromCoordenador(g);
+    if (!pre) return;
+    this.marcarDesistencia(pre);
+  }
+
+  desfazerDesistenciaCoordenador(g: GrupoSolidario) {
+    const pre = this.preLikeFromCoordenador(g);
+    if (!pre) return;
+    this.desfazerDesistencia(pre);
+  }
+
+  whatsHrefCoordenador(g: GrupoSolidario): string | null {
+    const tel = g?.coordenadorView?.telefone;
+    return this.whatsHref(tel);
+  }
+
+  // ===== Ações por MEMBRO =====
+  abrirAgendarMembro(m: MembroGrupoView) {
+    const pre = this.preLikeFromMember(m);
+    this.abrirAgendar(pre);
+  }
+
+  marcarVisitadoMembro(m: MembroGrupoView) {
+    const pre = this.preLikeFromMember(m);
+    this.marcarVisitado(pre);
+  }
+
+  cancelarAgendamentoMembro(m: MembroGrupoView) {
+    const pre = this.preLikeFromMember(m);
+    this.cancelarAgendamento(pre);
+  }
+
+  marcarFormalizadoMembro(m: MembroGrupoView) {
+    const pre = this.preLikeFromMember(m);
+    this.marcarFormalizado(pre);
+  }
+
+  desfazerFormalizacaoMembro(m: MembroGrupoView) {
+    const pre = this.preLikeFromMember(m);
+    this.desfazerFormalizacao(pre);
+  }
+
+  marcarDesistenciaMembro(m: MembroGrupoView) {
+    const pre = this.preLikeFromMember(m);
+    this.marcarDesistencia(pre);
+  }
+
+  desfazerDesistenciaMembro(m: MembroGrupoView) {
+    const pre = this.preLikeFromMember(m);
+    this.desfazerDesistencia(pre);
+  }
+
+  whatsHrefMembro(m: MembroGrupoView): string | null {
+    return this.whatsHref(m.telefone || null);
   }
 }

@@ -1,4 +1,3 @@
-<!-- src/app/pages/pre-cadastro/pre-cadastro-lista/pre-cadastro-lista.component.html -->
 <app-header></app-header>
 
 <br><br><br><br><br><br>
@@ -15,11 +14,9 @@
     <div class="d-flex align-items-center gap-3">
       <div class="crn-kicker"></div>
       <div>
-        <h3 class="mb-0 text-crn-dark fw-bold">Meus Pré-cadastros</h3>
+        <h3 class="mb-0 text-crn-dark fw-bold">Minha Lista</h3>
         <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
-          <span class="badge-soft">Total: {{ totalGeral() }}</span>
-          <span class="badge-soft">Filtrados: {{ totalFiltrado() }}</span>
-          <span class="text-muted" style="font-size:.9rem">Visão geral dos seus cadastros recentes</span>
+          <span class="text-muted" style="font-size:.9rem">Visualize seus atendimentos por Pessoas ou por Grupos</span>
           <br><br>
         </div>
       </div>
@@ -34,279 +31,675 @@
     </div>
   </div>
 
-  <!-- Toolbar: Busca + Filtros -->
-  <div class="card shadow-sm border-0 mb-3">
-    <div class="card-body py-3">
-      <div class="row g-3 align-items-end">
-        <div class="col-12 col-lg-4">
-          <label class="form-label mb-1">Buscar por nome</label>
-          <div class="input-group">
-            <span class="input-group-text"><i class="bi bi-search"></i></span>
-            <input type="search" class="form-control" placeholder="Digite o nome do cliente…" [ngModel]="searchTerm()"
-              (ngModelChange)="searchTerm.set($event)" />
-          </div>
-        </div>
+  <!-- ===== Abas Pessoas | Grupos ===== -->
+  <div class="mt-3">
+    <div class="btn-group" role="tablist" aria-label="Alternar visão">
+      <button type="button" class="btn" [class.btn-success]="aba()==='pessoas'"
+        [class.btn-outline-success]="aba()!=='pessoas'" (click)="setAba('pessoas')" role="tab"
+        [attr.aria-selected]="aba()==='pessoas' ? 'true' : 'false'">
+        <i class="bi bi-person-lines-fill me-1"></i> Pessoas
+      </button>
 
-        <div class="col-6 col-lg-2">
-          <label class="form-label mb-1">Status</label>
-          <select class="form-select" [ngModel]="filtroStatus()" (ngModelChange)="filtroStatus.set($event)">
-            <option value="todos">Todos</option>
-            <option value="nao_agendado">Não agendado</option>
-            <option value="agendado">Agendado</option>
-            <option value="visitado">Visita realizada</option>
-          </select>
-        </div>
+      <button type="button" class="btn" [class.btn-success]="aba()==='grupos'"
+        [class.btn-outline-success]="aba()!=='grupos'" (click)="setAba('grupos')" role="tab"
+        [attr.aria-selected]="aba()==='grupos' ? 'true' : 'false'">
+        <i class="bi bi-people-fill me-1"></i> Grupos
+      </button>
 
-        <div class="col-6 col-lg-2">
-          <label class="form-label mb-1">Data início</label>
-          <input type="date" class="form-control" [ngModel]="filtroDataIni()"
-            (ngModelChange)="filtroDataIni.set($event)" />
-        </div>
-
-        <div class="col-6 col-lg-2">
-          <label class="form-label mb-1">Data fim</label>
-          <input type="date" class="form-control" [ngModel]="filtroDataFim()"
-            (ngModelChange)="filtroDataFim.set($event)" />
-        </div>
-
-      </div>
     </div>
   </div>
 
-  <!-- Loading -->
-  <div *ngIf="loading()" class="alert alert-light border-0 shadow-sm d-flex align-items-center gap-2">
-    <span class="spinner-border spinner-border-sm"></span>
-    Carregando…
-  </div>
+  <!-- ======================= ABA: PESSOAS ======================= -->
+  <ng-container *ngIf="aba()==='pessoas'">
 
-  <!-- Lista em cards -->
-  <div class="card shadow-sm border-0" *ngIf="!loading()">
-    <div class="card-body">
-
-      <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
-        <div class="col" *ngFor="let i of pagedItems()">
-          <div class="crn-card h-100 d-flex flex-column" [class.crn-card--highlight]="i.id === highlightId()">
-            <!-- Cabeçalho -->
-            <div class="crn-card__header">
-              <div class="avatar-inicial">
-                {{ (i.nomeCompleto || '?').charAt(0) | uppercase }}
-              </div>
-              <div class="min-w-0">
-                <div class="fw-semibold truncate-2 mb-0 text-crn-dark">
-                  {{ i.nomeCompleto || '—' }}
-                </div>
-                <div class="d-flex align-items-center gap-2">
-                  <small class="text-muted">Pré-cadastro</small>
-                  <span class="badge-soft">CPF</span>
-                </div>
-              </div>
+    <!-- Toolbar: Busca + Filtros -->
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body py-3">
+        <div class="row g-3 align-items-end">
+          <div class="col-12 col-lg-4">
+            <label class="form-label mb-1">Buscar por nome</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="search" class="form-control" placeholder="Digite o nome do cliente…" [ngModel]="searchTerm()"
+                (ngModelChange)="searchTerm.set($event)" />
             </div>
+          </div>
 
-            <!-- Corpo -->
-            <div class="crn-card__body">
-              <div class="crn-field">
-                <span class="crn-label">CPF</span>
-                <span class="crn-value"><span class="badge text-bg-light fw-medium">{{ i.cpf || '—' }}</span></span>
-              </div>
+          <div class="col-6 col-lg-2">
+            <label class="form-label mb-1">Status</label>
+            <select class="form-select" [ngModel]="filtroStatus()" (ngModelChange)="filtroStatus.set($event)">
+              <option value="todos">Todos</option>
+              <option value="nao_agendado">Não agendado</option>
+              <option value="agendado">Agendado</option>
+              <option value="visitado">Visita realizada</option>
+            </select>
+          </div>
 
-              <div class="crn-field">
-                <span class="crn-label">Telefone</span>
-                <span class="crn-value"><i class="bi bi-telephone text-crn me-1"></i> {{ i.telefone || '—' }}</span>
-              </div>
+          <div class="col-6 col-lg-2">
+            <label class="form-label mb-1">Data início</label>
+            <input type="date" class="form-control" [ngModel]="filtroDataIni()"
+              (ngModelChange)="filtroDataIni.set($event)" />
+          </div>
 
-              <div class="crn-field">
-                <span class="crn-label">E-mail</span>
-                <span class="crn-value text-break"><i class="bi bi-envelope text-muted me-1"></i> {{ i.email || '—'
-                  }}</span>
-              </div>
+          <div class="col-6 col-lg-2">
+            <label class="form-label mb-1">Data fim</label>
+            <input type="date" class="form-control" [ngModel]="filtroDataFim()"
+              (ngModelChange)="filtroDataFim.set($event)" />
+          </div>
 
-              <div class="crn-field">
-                <span class="crn-label">Endereço</span>
-                <span class="crn-value text-break">{{ i.endereco || '—' }}</span>
-              </div>
-
-              <div class="crn-field">
-                <span class="crn-label">Bairro</span>
-                <span class="crn-value text-break">{{ i.bairro || '—' }}</span>
-              </div>
-
-              <div class="crn-field">
-                <span class="crn-label">Criado em</span>
-                <span class="crn-value">
-                  {{ (i.createdAt?.toDate ? i.createdAt.toDate() : i.createdAt) | date:'dd/MM/yyyy HH:mm' }}
-                </span>
-              </div>
-
-              <div class="crn-field">
-                <span class="crn-label">Valor solicitado</span>
-                <span class="crn-value fw-semibold">
-                  <ng-container *ngIf="i?.valorSolicitadoFormatado?.trim(); else calcBRL">
-                    {{ i.valorSolicitadoFormatado }}
-                  </ng-container>
-                  <ng-template #calcBRL>
-                    <ng-container
-                      *ngIf="i?.valorSolicitado !== null && i?.valorSolicitado !== undefined; else noValorSolic2">
-                      {{ i.valorSolicitado | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}
-                    </ng-container>
-                    <ng-template #noValorSolic2>—</ng-template>
-                  </ng-template>
-                </span>
-              </div>
-
-              <!-- Aprovação: 3 estados -->
-              <div class="crn-field">
-                <span class="crn-label">Aprovação</span>
-                <span class="crn-value">
-                  <span class="badge" [ngClass]="{
-                          'text-bg-secondary': (i.aprovacao?.status || 'nao_verificado')==='nao_verificado',
-                          'text-bg-danger':    (i.aprovacao?.status || 'nao_verificado')==='inapto',
-                          'text-bg-success':   (i.aprovacao?.status || 'nao_verificado')==='apto'
-                        }">
-                    {{
-                    (i.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
-                    (i.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
-                    }}
-                  </span>
-                  <small class="text-muted ms-2" *ngIf="$any(i)?.aprovacao?.porNome">
-                    por {{ $any(i).aprovacao.porNome }}
-                    <ng-container *ngIf="$any(i)?.aprovacao?.em as em">
-                      — {{ (em?.toDate ? em.toDate() : em) | date:'dd/MM/yyyy HH:mm' }}
-                    </ng-container>
-                  </small>
-                </span>
-              </div>
-
-              <!-- Encaminhado (se esse assessor for o destinatário) -->
-              <div class="crn-field" *ngIf="encaminhadoParaMim(i)">
-                <span class="crn-label">Encaminhado</span>
-                <span class="crn-value">
-                  por {{ encaminhadoPorNome(i) || 'Analista' }}
-                  <small class="text-muted" *ngIf="encaminhadoQuando(i)"> — {{ encaminhadoQuando(i) | date:'dd/MM/yyyy
-                    HH:mm' }}</small>
-                </span>
-              </div>
-
-              <!-- Status de agendamento -->
-              <div class="crn-field">
-                <span class="crn-label">Agendamento</span>
-                <span class="crn-value">
-                  <span class="badge" [ngClass]="{
-                      'text-bg-secondary': (i.agendamentoStatus || 'nao_agendado')==='nao_agendado',
-                      'text-bg-info':      (i.agendamentoStatus || 'nao_agendado')==='agendado',
-                      'text-bg-success':   (i.agendamentoStatus || 'nao_agendado')==='visitado'
-                    }">
-                    {{
-                    (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
-                    (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
-                    }}
-                  </span>
-                </span>
-              </div>
-
-              <!-- NOVO: Status de Formalização -->
-              <div class="crn-field">
-                <span class="crn-label">Formalização</span>
-                <span class="crn-value">
-                  <span class="badge" [ngClass]="formalizacaoBadgeClass(i)">
-                    {{ formalizacaoStatus(i) === 'formalizado' ? 'Formalizado' : 'Não formalizado' }}
-                  </span>
-                  <small class="text-muted ms-2" *ngIf="$any(i)?.formalizacao?.porNome">
-                    por {{ $any(i).formalizacao.porNome }}
-                    <ng-container *ngIf="$any(i)?.formalizacao?.em as emFml">
-                      — {{ (emFml?.toDate ? emFml.toDate() : emFml) | date:'dd/MM/yyyy HH:mm' }}
-                    </ng-container>
-                  </small>
-                </span>
-              </div>
+          <div class="col-12 col-lg-2">
+            <div class="mt-4">
+              <span class="badge-soft me-2">Total: {{ totalGeral() }}</span>
+              <span class="badge-soft">Filtrados: {{ totalFiltrado() }}</span>
             </div>
+          </div>
 
-            <!-- Ações -->
-            <div class="crn-card__actions mt-3 d-flex flex-column gap-3">
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-primary flex-fill" (click)="abrirVer(i)">
-                  <i class="bi bi-eye me-1"></i> Ver
-                </button>
-                <button type="button" class="btn btn-outline-dark flex-fill" (click)="abrirEditar(i)">
-                  <i class="bi bi-pencil me-1"></i> Editar
-                </button>
-                <button type="button" class="btn btn-outline-danger flex-fill" (click)="remover(i)">
-                  <i class="bi bi-trash"></i>
-                </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div *ngIf="loading()" class="alert alert-light border-0 shadow-sm d-flex align-items-center gap-2">
+      <span class="spinner-border spinner-border-sm"></span>
+      Carregando…
+    </div>
+
+    <!-- Lista em cards (Pessoas) -->
+    <div class="card shadow-sm border-0" *ngIf="!loading()">
+      <div class="card-body">
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+          <div class="col" *ngFor="let i of pagedItems()">
+            <div class="crn-card h-100 d-flex flex-column" [class.crn-card--highlight]="i.id === highlightId()">
+
+              <!-- Cabeçalho -->
+              <div class="crn-card__header d-flex align-items-center gap-3">
+                <div class="avatar-inicial">
+                  {{ (i.nomeCompleto || '?').charAt(0) | uppercase }}
+                </div>
+                <div class="min-w-0">
+                  <div class="fw-semibold truncate-2 mb-0 text-crn-dark">
+                    {{ i.nomeCompleto || '—' }}
+                  </div>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="text-muted">Pré-cadastro</small>
+                  </div>
+                </div>
               </div>
 
-              <div class="d-flex gap-2">
-                <a class="btn btn-outline-success flex-fill" *ngIf="i.telefone" [href]="whatsHref(i.telefone)"
-                  target="_blank" rel="noopener">
-                  <i class="bi bi-whatsapp me-1"></i> Entrar em contato
-                </a>
+              <!-- Corpo -->
+              <div class="crn-card__body">
+                <div class="crn-field">
+                  <span class="crn-label">CPF</span>
+                  <span class="crn-value"><span class="badge text-bg-light fw-medium">{{ i.cpf || '—' }}</span></span>
+                </div>
 
-                <button type="button" class="btn btn-outline-secondary flex-fill" (click)="abrirAgendar(i)"
-                  [disabled]="(i.agendamentoStatus||'nao_agendado')==='agendado'" title="Criar agendamento de visita">
-                  <i class="bi bi-calendar-plus me-1"></i>
-                  {{ (i.agendamentoStatus||'nao_agendado')==='agendado' ? 'Já agendado' : 'Marcar visita' }}
-                </button>
+                <div class="crn-field">
+                  <span class="crn-label">Telefone</span>
+                  <span class="crn-value"><i class="bi bi-telephone text-crn me-1"></i> {{ i.telefone || '—' }}</span>
+                </div>
+
+                <div class="crn-field">
+                  <span class="crn-label">Endereço</span>
+                  <span class="crn-value text-break">{{ i.endereco || '—' }}</span>
+                </div>
+
+                <div class="crn-field">
+                  <span class="crn-label">Bairro</span>
+                  <span class="crn-value text-break">{{ i.bairro || '—' }}</span>
+                </div>
+
+                <!-- Cidade/UF + bandeira -->
+                <div class="crn-field">
+                  <span class="crn-label">Cidade/UF</span>
+                  <span class="crn-value d-flex align-items-center gap-2">
+                    <span class="text-break">
+                      {{ (i.cidade || '—') }}
+                      <ng-container *ngIf="i.uf; else noUF">
+                        • <span class="uf-text">{{ i.uf.toUpperCase() }}</span>
+                      </ng-container>
+                      <ng-template #noUF></ng-template>
+                    </span>
+                    <span *ngIf="i.uf" class="uf-flag" [ngClass]="
+                            (i.uf.toLowerCase()==='pa') ? 'flag-pa' :
+                            (i.uf.toLowerCase()==='am') ? 'flag-am' :
+                            (i.uf.toLowerCase()==='ap') ? 'flag-ap' : 'flag-br'
+                          " [title]="'Bandeira ' + (i.uf.toUpperCase() || 'BR')" aria-hidden="true"></span>
+                  </span>
+                </div>
+
+                <!-- Aprovação -->
+                <div class="crn-field">
+                  <span class="crn-label">Aprovação</span>
+                  <span class="crn-value">
+                    <span class="badge" [ngClass]="{
+                        'text-bg-secondary': (i.aprovacao?.status || 'nao_verificado')==='nao_verificado',
+                        'text-bg-danger':    (i.aprovacao?.status || 'nao_verificado')==='inapto',
+                        'text-bg-success':   (i.aprovacao?.status || 'nao_verificado')==='apto'
+                      }">
+                      {{
+                      (i.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
+                      (i.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
+                      }}
+                    </span>
+                    <small class="text-muted ms-2" *ngIf="$any(i)?.aprovacao?.porNome">
+                      por {{ $any(i).aprovacao.porNome }}
+                      <ng-container *ngIf="$any(i)?.aprovacao?.em as em">
+                        — {{ (em?.toDate ? em.toDate() : em) | date:'dd/MM/yyyy HH:mm' }}
+                      </ng-container>
+                    </small>
+                  </span>
+                </div>
+
+                <!-- Encaminhado -->
+                <div class="crn-field" *ngIf="encaminhadoParaMim(i)">
+                  <span class="crn-label">Encaminhado</span>
+                  <span class="crn-value">
+                    por {{ encaminhadoPorNome(i) || 'Analista' }}
+                    <small class="text-muted" *ngIf="encaminhadoQuando(i)">
+                      — {{ encaminhadoQuando(i) | date:'dd/MM/yyyy HH:mm' }}
+                    </small>
+                  </span>
+                </div>
+
+                <!-- Agendamento -->
+                <div class="crn-field">
+                  <span class="crn-label">Agendamento</span>
+                  <span class="crn-value">
+                    <span class="badge" [ngClass]="{
+                        'text-bg-secondary': (i.agendamentoStatus || 'nao_agendado')==='nao_agendado',
+                        'text-bg-info':      (i.agendamentoStatus || 'nao_agendado')==='agendado',
+                        'text-bg-success':   (i.agendamentoStatus || 'nao_agendado')==='visitado'
+                      }">
+                      {{
+                      (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
+                      (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
+                      }}
+                    </span>
+                  </span>
+                </div>
+
+                <!-- Formalização -->
+                <div class="crn-field">
+                  <span class="crn-label">Formalização</span>
+                  <span class="crn-value">
+                    <span class="badge" [ngClass]="formalizacaoBadgeClass(i)">
+                      {{ formalizacaoStatus(i) === 'formalizado' ? 'Formalizado' : 'Não formalizado' }}
+                    </span>
+                    <small class="text-muted ms-2" *ngIf="$any(i)?.formalizacao?.porNome">
+                      por {{ $any(i).formalizacao.porNome }}
+                      <ng-container *ngIf="$any(i)?.formalizacao?.em as emFml">
+                        — {{ (emFml?.toDate ? emFml.toDate() : emFml) | date:'dd/MM/yyyy HH:mm' }}
+                      </ng-container>
+                    </small>
+                  </span>
+                </div>
+
+                <!-- Desistência -->
+                <div class="crn-field">
+                  <span class="crn-label">Desistência</span>
+                  <span class="crn-value">
+                    <span class="badge" [ngClass]="desistenciaBadgeClass(i)">
+                      {{ desistenciaStatus(i) === 'desistiu' ? 'Desistiu' : 'Não desistiu' }}
+                    </span>
+                    <small class="text-muted ms-2" *ngIf="$any(i)?.desistencia?.porNome">
+                      por {{ $any(i).desistencia.porNome }}
+                      <ng-container *ngIf="$any(i)?.desistencia?.em as emDes">
+                        — {{ (emDes?.toDate ? emDes.toDate() : emDes) | date:'dd/MM/yyyy HH:mm' }}
+                      </ng-container>
+                    </small>
+                    <div class="text-muted mt-1" *ngIf="$any(i)?.desistencia?.observacao as obs">
+                      <i class="bi bi-chat-left-quote me-1"></i>
+                      <em>Obs.:</em> {{ obs }}
+                    </div>
+                  </span>
+                </div>
+
+                <!-- Observações (resumo) -->
+                <div class="crn-field" *ngIf="i.observacoes">
+                  <span class="crn-label">Observações</span>
+                  <span class="crn-value text-break">
+                    {{ i.observacoes }}
+                  </span>
+                </div>
+
               </div>
 
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-primary flex-fill"
-                  *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'" (click)="marcarVisitado(i)">
-                  <i class="bi bi-check2-circle me-1"></i> Marcar como visitado
-                </button>
+              <!-- ===== Toggle & Rodapé do card ===== -->
+              <input type="checkbox" class="crn-actions-toggle" [attr.id]="'acoes-toggle-'+i.id" #acToggle
+                aria-hidden="true" />
 
-                <button type="button" class="btn btn-outline-danger flex-fill"
-                  *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'" (click)="cancelarAgendamento(i)">
-                  <i class="bi bi-x-circle me-1"></i> Cancelar agendamento
-                </button>
+              <div class="crn-card__footer-actions">
+                <label class="crn-actions-open" role="button" [attr.for]="'acoes-toggle-'+i.id"
+                  [attr.aria-controls]="'acoes-modal-'+i.id" aria-expanded="false">
+                  <i class="bi bi-list-task"></i>
+                  <span class="crn-actions-open__label">Realizar uma ação</span>
+                  <i class="bi bi-chevron-right ms-1"></i>
+                </label>
               </div>
 
-              <!-- NOVAS AÇÕES: Formalização -->
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-primary flex-fill"
+              <!-- 3) Modal que aparece quando o checkbox está checked -->
+              <div class="crn-modal-toggle-target" [attr.id]="'acoes-modal-'+i.id" role="dialog" aria-modal="true"
+                [attr.aria-labelledby]="'acoesTitulo-' + i.id">
+
+                <!-- Backdrop fecha o modal -->
+                <label class="crn-modal__backdrop" [attr.for]="'acoes-toggle-'+i.id" aria-label="Fechar"></label>
+
+                <div class="crn-modal__dialog">
+                  <div class="crn-modal__header d-flex align-items-center justify-content-between">
+                    <h5 class="mb-0" [attr.id]="'acoesTitulo-' + i.id">Ações do pré-cadastro</h5>
+                    <label class="btn-close" [attr.for]="'acoes-toggle-'+i.id" aria-label="Fechar"></label>
+                  </div>
+
+                  <div class="crn-modal__body">
+                    <!-- Grupo principal -->
+                    <div class="group-title">Geral</div>
+                    <div class="actions-grid">
+                      <button type="button" class="btn btn-outline-dark"
+                        (click)="acToggle.checked = false; abrirEditar(i)">
+                        <i class="bi bi-pencil me-1"></i> Editar
+                      </button>
+
+                      <button type="button" class="btn btn-outline-secondary"
+                        (click)="acToggle.checked = false; abrirVer(i)">
+                        <i class="bi bi-eye me-1"></i> Ver
+                      </button>
+
+                      <button type="button" class="btn btn-outline-danger" (click)="acToggle.checked=false; remover(i)">
+                        <i class="bi bi-trash me-1"></i> Remover
+                      </button>
+                    </div>
+
+                    <!-- Observações -->
+                    <div class="group-title">Observações</div>
+                    <div class="actions-grid">
+                      <button type="button" class="btn btn-outline-primary"
+                        (click)="acToggle.checked=false; abrirObservacoes(i)">
+                        <i class="bi bi-journal-text me-1"></i> Observações
+                      </button>
+                    </div>
+
+                    <!-- Arquivos -->
+                    <div class="group-title">Arquivos</div>
+                    <div class="actions-grid">
+                      <button type="button" class="btn btn-outline-info"
+                        (click)="acToggle.checked=false; abrirArquivos(i)">
+                        <i class="bi bi-paperclip me-1"></i> Arquivos
+                      </button>
+                    </div>
+
+                    <!-- Grupo visita -->
+                    <div class="group-title">Visita</div>
+                    <div class="actions-grid">
+                      <a class="btn btn-outline-success" *ngIf="i.telefone" href=""
+                        (click)="onWhatsClick($event, i.telefone, acToggle)">
+                        <i class="bi bi-whatsapp me-1"></i> WhatsApp
+                      </a>
+
+                      <button type="button" class="btn btn-outline-secondary"
+                        (click)="acToggle.checked=false; abrirAgendar(i)"
+                        [disabled]="(i.agendamentoStatus||'nao_agendado')==='agendado'">
+                        <i class="bi bi-calendar-plus me-1"></i>
+                        {{ (i.agendamentoStatus||'nao_agendado')==='agendado' ? 'Já agendado' : 'Marcar visita' }}
+                      </button>
+                      <button type="button" class="btn btn-outline-primary"
+                        *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'"
+                        (click)="acToggle.checked=false; marcarVisitado(i)">
+                        <i class="bi bi-check2-circle me-1"></i> Marcar visitado
+                      </button>
+                      <button type="button" class="btn btn-outline-danger"
+                        *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'"
+                        (click)="acToggle.checked=false; cancelarAgendamento(i)">
+                        <i class="bi bi-x-circle me-1"></i> Cancelar agendamento
+                      </button>
+                    </div>
+
+                    <!-- Grupo formalização -->
+                    <div class="group-title">Formalização</div>
+                    <div class="actions-grid">
+                      <button type="button" class="btn btn-outline-primary"
                         *ngIf="formalizacaoStatus(i) === 'nao_formalizado'"
-                        (click)="marcarFormalizado(i)">
-                  <i class="bi bi-file-check me-1"></i> Marcar formalizado
-                </button>
-
-                <button type="button" class="btn btn-outline-secondary flex-fill"
+                        (click)="acToggle.checked=false; marcarFormalizado(i)">
+                        <i class="bi bi-file-check me-1"></i> Marcar formalizado
+                      </button>
+                      <button type="button" class="btn btn-outline-secondary"
                         *ngIf="formalizacaoStatus(i) === 'formalizado'"
-                        (click)="desfazerFormalizacao(i)">
-                  <i class="bi bi-arrow-counterclockwise me-1"></i> Desfazer formalização
-                </button>
+                        (click)="acToggle.checked=false; desfazerFormalizacao(i)">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i> Desfazer formalização
+                      </button>
+                    </div>
+
+                    <!-- Grupo desistência -->
+                    <div class="group-title">Desistência</div>
+                    <div class="actions-grid">
+                      <button type="button" class="btn btn-outline-warning"
+                        *ngIf="desistenciaStatus(i) === 'nao_desistiu'"
+                        (click)="acToggle.checked=false; marcarDesistencia(i)">
+                        <i class="bi bi-emoji-frown me-1"></i> Marcar desistência
+                      </button>
+                      <button type="button" class="btn btn-outline-dark" *ngIf="desistenciaStatus(i) === 'desistiu'"
+                        (click)="acToggle.checked=false; desfazerDesistencia(i)">
+                        <i class="bi bi-emoji-smile me-1"></i> Desfazer desistência
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="crn-modal__footer">
+                    <label class="btn btn-light" [attr.for]="'acoes-toggle-'+i.id">Fechar</label>
+                  </div>
+                </div>
+              </div>
+              <!-- ===== /Toggle & Modal ===== -->
+
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">
+          Nenhum registro encontrado para os filtros/busca.
+        </div>
+      </div>
+
+      <!-- Paginação Pessoas -->
+      <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          Página {{ page() }} de {{ totalPages() }}
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-outline-secondary" (click)="goFirst()" [disabled]="page()===1">
+            <i class="bi bi-chevron-double-left"></i>
+          </button>
+          <button class="btn btn-outline-secondary" (click)="goPrev()" [disabled]="page()===1">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <button class="btn btn-outline-secondary" (click)="goNext()" [disabled]="page()===totalPages()">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+          <button class="btn btn-outline-secondary" (click)="goLast()" [disabled]="page()===totalPages()">
+            <i class="bi bi-chevron-double-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ======================= ABA: GRUPOS ======================= -->
+  <ng-container *ngIf="aba()==='grupos'">
+
+    <!-- Loading Grupos -->
+    <div *ngIf="gruposLoading()" class="alert alert-light border-0 shadow-sm d-flex align-items-center gap-2">
+      <span class="spinner-border spinner-border-sm"></span>
+      Carregando grupos…
+    </div>
+
+    <!-- Grid de grupos -->
+    <div class="card shadow-sm border-0" *ngIf="!gruposLoading()">
+      <div class="card-body">
+
+        <div *ngIf="!gruposPaged()?.length" class="text-center text-muted py-4">
+          Nenhum grupo distribuído para você ainda.
+        </div>
+
+        <div class="row row-cols-1 row-cols-lg-2 g-3" *ngIf="gruposPaged()?.length">
+          <div class="col" *ngFor="let g of gruposPaged()">
+            <div class="crn-card h-100 d-flex flex-column">
+              <!-- Cabeçalho do grupo -->
+              <div class="crn-card__header d-flex align-items-center gap-3">
+                <div class="avatar-inicial">
+                  {{ (g.nome || '?').charAt(0) | uppercase }}
+                </div>
+                <div class="min-w-0">
+                  <div class="fw-semibold truncate-2 mb-0 text-crn-dark">
+                    {{ g.nome || 'Grupo sem nome' }}
+                  </div>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="badge text-bg-light">ID: {{ g.id }}</small>
+                    <small class="badge" [class.text-bg-secondary]="(g.status||'rascunho')==='rascunho'"
+                      [class.text-bg-success]="(g.status||'rascunho')==='ativo'"
+                      [class.text-bg-dark]="(g.status||'rascunho')==='fechado'"
+                      [class.text-bg-danger]="(g.status||'rascunho')==='cancelado'">
+                      Status: {{ g.status }}
+                    </small>
+                    <small class="badge" [class.text-bg-success]="g.situacao==='aprovado'"
+                      [class.text-bg-warning]="g.situacao==='incompleto'"
+                      [class.text-bg-danger]="g.situacao==='inapto'">
+                      Situação: {{ g.situacao }}
+                    </small>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Corpo do grupo -->
+              <div class="crn-card__body">
+                <!-- Linha 1: Cidade/UF, Capacidade, Quantidade -->
+                <div class="row g-2 mb-2">
+                  <div class="col-md-4">
+                    <div class="crn-field">
+                      <span class="crn-label">Cidade/UF</span>
+                      <span class="crn-value">
+                        {{ g.cidade || '—' }}
+                        <ng-container *ngIf="g.uf"> • {{ g.uf }}</ng-container>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="crn-field">
+                      <span class="crn-label">Capacidade</span>
+                      <span class="crn-value">{{ g.capacidadeMin }}/{{ g.capacidadeMax }}</span>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="crn-field">
+                      <span class="crn-label">Membros</span>
+                      <span class="crn-value">{{ g.membrosCount || g.membrosIds.length }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Métricas do grupo -->
+                <div class="d-flex flex-wrap gap-2 mb-3" *ngIf="$any(g)?.metrics as mt">
+                  <span class="badge text-bg-info">Agendados: {{ mt.agendados }}</span>
+                  <span class="badge text-bg-success">Visitados: {{ mt.visitados }}</span>
+                  <span class="badge text-bg-primary">Formalizados: {{ mt.formalizados }}</span>
+                  <span class="badge text-bg-warning">Desistentes: {{ mt.desistentes }}</span>
+                </div>
+
+                <!-- Coordenador -->
+                <div class="border rounded p-3 mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <strong>Coordenador</strong>
+                    <a *ngIf="g.inviteUrl" [href]="g.inviteUrl" target="_blank" rel="noopener" class="small">
+                      Link de convite <i class="bi bi-box-arrow-up-right ms-1"></i>
+                    </a>
+                  </div>
+
+                  <ng-container *ngIf="$any(g)?.coordenadorView as c; else semCoord">
+                    <div class="row g-2 align-items-center">
+                      <div class="col-12 col-md-6">
+                        <div class="text-truncate"><i class="bi bi-person me-1"></i> {{ c.nome || '—' }}</div>
+                        <div class="text-muted small">
+                          CPF {{ c.cpf || '—' }} • {{ c.telefone || 'sem telefone' }}
+                        </div>
+                        <div class="text-muted small">
+                          {{ c.endereco || '—' }} <ng-container *ngIf="c.bairro">— {{ c.bairro }}</ng-container>
+                        </div>
+                      </div>
+                      <div class="col-12 col-md-6 text-md-end mt-2 mt-md-0">
+                        <div class="btn-group btn-group-sm">
+                          <a class="btn btn-outline-success" *ngIf="whatsHrefCoordenador(g)"
+                            [href]="whatsHrefCoordenador(g)!" target="_blank" rel="noopener">
+                            <i class="bi bi-whatsapp me-1"></i> Whats
+                          </a>
+                          <button class="btn btn-outline-secondary" (click)="abrirAgendarCoordenador(g)"
+                            [disabled]="(c.agendamentoStatus||'nao_agendado')==='agendado'">
+                            <i class="bi bi-calendar-plus me-1"></i>
+                            {{ (c.agendamentoStatus||'nao_agendado')==='agendado' ? 'Já agendado' : 'Agendar' }}
+                          </button>
+                          <button class="btn btn-outline-primary"
+                            *ngIf="(c.agendamentoStatus||'nao_agendado')==='agendado'"
+                            (click)="marcarVisitadoCoordenador(g)">
+                            <i class="bi bi-check2-circle me-1"></i> Visitado
+                          </button>
+                          <button class="btn btn-outline-danger"
+                            *ngIf="(c.agendamentoStatus||'nao_agendado')==='agendado'"
+                            (click)="cancelarAgendamentoCoordenador(g)">
+                            <i class="bi bi-x-circle me-1"></i> Cancelar
+                          </button>
+                        </div>
+
+                        <div class="btn-group btn-group-sm mt-2">
+                          <button class="btn btn-outline-primary" *ngIf="c?.formalizacao?.status!=='formalizado'"
+                            (click)="marcarFormalizadoCoordenador(g)">
+                            <i class="bi bi-file-check me-1"></i> Formalizar
+                          </button>
+                          <button class="btn btn-outline-secondary" *ngIf="c?.formalizacao?.status==='formalizado'"
+                            (click)="desfazerFormalizacaoCoordenador(g)">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i> Desfazer
+                          </button>
+
+                          <button class="btn btn-outline-warning" *ngIf="c?.desistencia?.status!=='desistiu'"
+                            (click)="marcarDesistenciaCoordenador(g)">
+                            <i class="bi bi-emoji-frown me-1"></i> Desistiu
+                          </button>
+                          <button class="btn btn-outline-dark" *ngIf="c?.desistencia?.status==='desistiu'"
+                            (click)="desfazerDesistenciaCoordenador(g)">
+                            <i class="bi bi-emoji-smile me-1"></i> Reativar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </ng-container>
+                  <ng-template #semCoord>
+                    <div class="text-muted">Nenhum coordenador definido.</div>
+                  </ng-template>
+                </div>
+
+                <!-- Membros -->
+                <div>
+                  <strong class="d-block mb-2">Membros</strong>
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                      <thead class="table-light">
+                        <tr>
+                          <th>Nome</th>
+                          <th class="text-nowrap">Agendamento</th>
+                          <th class="text-nowrap">Formalização</th>
+                          <th class="text-nowrap">Desistência</th>
+                          <th class="text-end">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngFor="let m of $any(g)?.membrosView">
+                          <td>
+                            <div class="fw-semibold text-truncate" style="max-width:220px">{{ m.nome || '—' }}</div>
+                            <div class="text-muted small">
+                              CPF {{ m.cpf || '—' }} • {{ m.telefone || 'sem telefone' }}
+                            </div>
+                          </td>
+                          <td>
+                            <span class="badge"
+                              [class.text-bg-secondary]="(m.agendamentoStatus||'nao_agendado')==='nao_agendado'"
+                              [class.text-bg-info]="(m.agendamentoStatus||'nao_agendado')==='agendado'"
+                              [class.text-bg-success]="(m.agendamentoStatus||'nao_agendado')==='visitado'">
+                              {{
+                              (m.agendamentoStatus||'nao_agendado')==='nao_agendado' ? 'Não agendado' :
+                              (m.agendamentoStatus||'nao_agendado')==='agendado' ? 'Agendado' : 'Visitado'
+                              }}
+                            </span>
+                          </td>
+                          <td>
+                            <span class="badge" [class.text-bg-success]="m?.formalizacao?.status==='formalizado'"
+                              [class.text-bg-secondary]="m?.formalizacao?.status!=='formalizado'">
+                              {{ m?.formalizacao?.status==='formalizado' ? 'Formalizado' : 'Não formalizado' }}
+                            </span>
+                          </td>
+                          <td>
+                            <span class="badge" [class.text-bg-warning]="m?.desistencia?.status==='desistiu'"
+                              [class.text-bg-secondary]="m?.desistencia?.status!=='desistiu'">
+                              {{ m?.desistencia?.status==='desistiu' ? 'Desistiu' : 'Não desistiu' }}
+                            </span>
+                          </td>
+                          <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                              <a class="btn btn-outline-success" *ngIf="whatsHrefMembro(m)" [href]="whatsHrefMembro(m)!"
+                                target="_blank" rel="noopener">
+                                <i class="bi bi-whatsapp"></i>
+                              </a>
+                              <button class="btn btn-outline-secondary" (click)="abrirAgendarMembro(m)"
+                                [disabled]="(m.agendamentoStatus||'nao_agendado')==='agendado'">
+                                <i class="bi bi-calendar-plus"></i>
+                              </button>
+                              <button class="btn btn-outline-primary"
+                                *ngIf="(m.agendamentoStatus||'nao_agendado')==='agendado'"
+                                (click)="marcarVisitadoMembro(m)">
+                                <i class="bi bi-check2-circle"></i>
+                              </button>
+                              <button class="btn btn-outline-danger"
+                                *ngIf="(m.agendamentoStatus||'nao_agendado')==='agendado'"
+                                (click)="cancelarAgendamentoMembro(m)">
+                                <i class="bi bi-x-circle"></i>
+                              </button>
+                            </div>
+                            <div class="btn-group btn-group-sm mt-1">
+                              <button class="btn btn-outline-primary" *ngIf="m?.formalizacao?.status!=='formalizado'"
+                                (click)="marcarFormalizadoMembro(m)">
+                                <i class="bi bi-file-check"></i>
+                              </button>
+                              <button class="btn btn-outline-secondary" *ngIf="m?.formalizacao?.status==='formalizado'"
+                                (click)="desfazerFormalizacaoMembro(m)">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                              </button>
+
+                              <button class="btn btn-outline-warning" *ngIf="m?.desistencia?.status!=='desistiu'"
+                                (click)="marcarDesistenciaMembro(m)">
+                                <i class="bi bi-emoji-frown"></i>
+                              </button>
+                              <button class="btn btn-outline-dark" *ngIf="m?.desistencia?.status==='desistiu'"
+                                (click)="desfazerDesistenciaMembro(m)">
+                                <i class="bi bi-emoji-smile"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
         </div>
+
       </div>
 
-      <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">
-        Nenhum registro encontrado para os filtros/busca.
+      <!-- Paginação Grupos -->
+      <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          Página {{ pageGrupos() }} de {{ gruposTotalPages() }}
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-outline-secondary" (click)="gruposGoFirst()" [disabled]="pageGrupos()===1">
+            <i class="bi bi-chevron-double-left"></i>
+          </button>
+          <button class="btn btn-outline-secondary" (click)="gruposGoPrev()" [disabled]="pageGrupos()===1">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <button class="btn btn-outline-secondary" (click)="gruposGoNext()"
+            [disabled]="pageGrupos()===gruposTotalPages()">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+          <button class="btn btn-outline-secondary" (click)="gruposGoLast()"
+            [disabled]="pageGrupos()===gruposTotalPages()">
+            <i class="bi bi-chevron-double-right"></i>
+          </button>
+        </div>
       </div>
     </div>
-
-    <!-- Paginação -->
-    <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <div>
-        Página {{ page() }} de {{ totalPages() }}
-      </div>
-      <div class="btn-group">
-        <button class="btn btn-outline-secondary" (click)="goFirst()" [disabled]="page()===1">
-          <i class="bi bi-chevron-double-left"></i>
-        </button>
-        <button class="btn btn-outline-secondary" (click)="goPrev()" [disabled]="page()===1">
-          <i class="bi bi-chevron-left"></i>
-        </button>
-        <button class="btn btn-outline-secondary" (click)="goNext()" [disabled]="page()===totalPages()">
-          <i class="bi bi-chevron-right"></i>
-        </button>
-        <button class="btn btn-outline-secondary" (click)="goLast()" [disabled]="page()===totalPages()">
-          <i class="bi bi-chevron-double-right"></i>
-        </button>
-      </div>
-    </div>
-  </div>
+  </ng-container>
 </div>
 
-<!-- ===== MODAL: EDITAR (inclui Fluxo de Caixa) ===== -->
+<!-- ===== MODAL: EDITAR ===== -->
 <div *ngIf="modalEditarAberto()" class="crn-modal" role="dialog" aria-modal="true">
   <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
   <div class="crn-modal__dialog" role="document" aria-labelledby="modalEditarTitulo">
@@ -316,7 +709,6 @@
     </div>
 
     <div class="crn-modal__body" *ngIf="editModel() as m">
-      <!-- Dados básicos -->
       <div class="row g-3">
         <div class="col-md-8">
           <label class="form-label">Nome completo</label>
@@ -347,125 +739,21 @@
           <input class="form-control" [ngModel]="m.bairro" (ngModelChange)="onEditChange('bairro', $event)" />
         </div>
 
-        <div class="col-md-4">
-          <label class="form-label">Valor solicitado</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.valorSolicitado"
-            (ngModelChange)="onEditChange('valorSolicitado', $event)" />
+        <div class="col-md-8">
+          <label class="form-label">Cidade</label>
+          <input class="form-control" [ngModel]="m.cidade" (ngModelChange)="onEditChange('cidade', $event)" />
         </div>
         <div class="col-md-4">
-          <label class="form-label">Parcelas</label>
-          <input type="number" class="form-control" [ngModel]="m.parcelas"
-            (ngModelChange)="onEditChange('parcelas', $event)" />
+          <label class="form-label">UF</label>
+          <input class="form-control text-uppercase" maxlength="2" [ngModel]="m.uf"
+            (ngModelChange)="onEditChange('uf', ($event || '').toUpperCase())" />
         </div>
-        <div class="col-md-4">
-          <label class="form-label">Valor da parcela</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.valorParcela"
-            (ngModelChange)="onEditChange('valorParcela', $event)" />
-        </div>
-      </div>
-
-      <hr class="my-4">
-
-      <!-- Fluxo de Caixa -->
-      <div class="d-flex align-items-center justify-content-between">
-        <h6 class="mb-0">Fluxo de Caixa</h6>
-        <small class="text-muted">Preencha os campos para manter os dados de fluxo de caixa atualizados</small>
-      </div>
-
-      <div class="row g-3 mt-1">
-        <div class="col-md-4">
-          <label class="form-label">Faturamento mensal</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.faturamentoMensal"
-            (ngModelChange)="onFluxoNumberChange('faturamentoMensal', $event)" />
-        </div>
-      </div>
-
-      <div class="row g-3 mt-1">
-        <div class="col-12"><strong>Custos fixos</strong></div>
-        <div class="col-md-4">
-          <label class="form-label">Aluguel</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.aluguel"
-            (ngModelChange)="onFluxoNumberChange('fixos.aluguel', $event)" />
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Salários</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.salarios"
-            (ngModelChange)="onFluxoNumberChange('fixos.salarios', $event)" />
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Energia elétrica</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.energiaEletrica"
-            (ngModelChange)="onFluxoNumberChange('fixos.energiaEletrica', $event)" />
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Água</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.agua"
-            (ngModelChange)="onFluxoNumberChange('fixos.agua', $event)" />
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Telefone/Internet</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.fixos?.telefoneInternet"
-            (ngModelChange)="onFluxoNumberChange('fixos.telefoneInternet', $event)" />
-        </div>
-      </div>
-
-      <div class="row g-3 mt-3">
-        <div class="col-12"><strong>Custos variáveis</strong></div>
-        <div class="col-md-3">
-          <label class="form-label">Matéria-prima</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.materiaPrima"
-            (ngModelChange)="onFluxoNumberChange('variaveis.materiaPrima', $event)" />
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Insumos</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.insumos"
-            (ngModelChange)="onFluxoNumberChange('variaveis.insumos', $event)" />
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Frete</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.frete"
-            (ngModelChange)="onFluxoNumberChange('variaveis.frete', $event)" />
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Transporte</label>
-          <input type="number" step="0.01" class="form-control" [ngModel]="m.fluxoCaixa?.variaveis?.transporte"
-            (ngModelChange)="onFluxoNumberChange('variaveis.transporte', $event)" />
-        </div>
-
-        <div class="col-12 mt-2 d-flex align-items-center justify-content-between">
-          <strong>Outros custos variáveis</strong>
-          <button class="btn btn-sm btn-outline-primary" type="button" (click)="addOutro()">
-            <i class="bi bi-plus-lg"></i> Adicionar
-          </button>
-        </div>
-
-        <div class="col-12" *ngIf="m.fluxoCaixa?.variaveis?.outros?.length; else semOutros">
-          <div class="row g-2" *ngFor="let o of m.fluxoCaixa?.variaveis?.outros; let idx = index">
-            <div class="col-md-7">
-              <input class="form-control" placeholder="Descrição" [ngModel]="o.nome"
-                (ngModelChange)="onOutroNomeChange(idx, $event)" />
-            </div>
-            <div class="col-md-3">
-              <input type="number" step="0.01" class="form-control" placeholder="Valor" [ngModel]="o.valor"
-                (ngModelChange)="onOutroValorChange(idx, $event)" />
-            </div>
-            <div class="col-md-2 d-grid">
-              <button type="button" class="btn btn-outline-danger" (click)="removeOutro(idx)">
-                <i class="bi bi-trash"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-        <ng-template #semOutros>
-          <div class="col-12 text-muted">Nenhum item adicional.</div>
-        </ng-template>
       </div>
     </div>
 
     <div class="crn-modal__footer">
       <button class="btn btn-light" (click)="fecharModais()">Cancelar</button>
-      <button class="btn btn-success" (click)="salvarEdicao()"
-              [disabled]="saving()">
+      <button class="btn btn-success" (click)="salvarEdicao()" [disabled]="saving()">
         <i class="bi bi-check2 me-1"></i> Salvar alterações
       </button>
     </div>
@@ -504,6 +792,171 @@
       <button class="btn btn-success" (click)="salvarAgendamento()" [disabled]="agSalvando()">
         <i class="bi bi-check2 me-1"></i> Salvar agendamento
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: VER (visualização completa) ===== -->
+<div *ngIf="modalVerAberto()" class="crn-modal" role="dialog" aria-modal="true">
+  <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
+  <div class="crn-modal__dialog" role="document" aria-labelledby="modalVerTitulo">
+    <div class="crn-modal__header">
+      <h5 id="modalVerTitulo" class="mb-0">Pré-cadastro — Visualização</h5>
+      <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
+    </div>
+
+    <div class="crn-modal__body" *ngIf="viewItem() as v">
+      <div class="row g-3">
+        <div class="col-md-6"><strong>Nome:</strong>
+          <div>{{ v.nomeCompleto || '—' }}</div>
+        </div>
+        <div class="col-md-3"><strong>CPF:</strong>
+          <div>{{ v.cpf || '—' }}</div>
+        </div>
+        <div class="col-md-3"><strong>Telefone:</strong>
+          <div>{{ v.telefone || '—' }}</div>
+        </div>
+
+        <div class="col-md-6"><strong>E-mail:</strong>
+          <div>{{ v.email || '—' }}</div>
+        </div>
+        <div class="col-md-6"><strong>Origem:</strong>
+          <div>{{ v.origem || '—' }}</div>
+        </div>
+
+        <div class="col-md-8"><strong>Endereço:</strong>
+          <div class="text-break">{{ v.endereco || '—' }}</div>
+        </div>
+        <div class="col-md-2"><strong>Bairro:</strong>
+          <div>{{ v.bairro || '—' }}</div>
+        </div>
+        <div class="col-md-2"><strong>Cidade/UF:</strong>
+          <div>{{ v.cidade || '—' }} / {{ v.uf || '—' }}</div>
+        </div>
+
+        <div class="col-12" *ngIf="v.observacoes">
+          <strong>Observações:</strong>
+          <div class="text-break">{{ v.observacoes }}</div>
+        </div>
+
+        <div class="col-12">
+          <strong>Status:</strong>
+          <div class="d-flex flex-wrap gap-2 mt-1">
+            <span class="badge" [ngClass]="{
+              'text-bg-secondary': (v.agendamentoStatus||'nao_agendado')==='nao_agendado',
+              'text-bg-info': (v.agendamentoStatus||'nao_agendado')==='agendado',
+              'text-bg-success': (v.agendamentoStatus||'nao_agendado')==='visitado'
+            }">
+              Agendamento: {{
+              (v.agendamentoStatus||'nao_agendado')==='nao_agendado' ? 'Não agendado' :
+              (v.agendamentoStatus||'nao_agendado')==='agendado' ? 'Agendado' : 'Visitado'
+              }}
+            </span>
+
+            <span class="badge" [ngClass]="{
+              'text-bg-secondary': (v.aprovacao?.status || 'nao_verificado')==='nao_verificado',
+              'text-bg-danger': (v.aprovacao?.status || 'nao_verificado')==='inapto',
+              'text-bg-success': (v.aprovacao?.status || 'nao_verificado')==='apto'
+            }">
+              Aprovação: {{
+              (v.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
+              (v.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
+              }}
+            </span>
+
+            <span class="badge" [ngClass]="formalizacaoBadgeClass(v)">
+              {{ formalizacaoStatus(v) === 'formalizado' ? 'Formalizado' : 'Não formalizado' }}
+            </span>
+
+            <span class="badge" [ngClass]="desistenciaBadgeClass(v)">
+              {{ desistenciaStatus(v) === 'desistiu' ? 'Desistiu' : 'Não desistiu' }}
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="crn-modal__footer">
+      <button class="btn btn-light" (click)="fecharModais()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: OBSERVAÇÕES ===== -->
+<div *ngIf="modalObsAberto()" class="crn-modal" role="dialog" aria-modal="true">
+  <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
+  <div class="crn-modal__dialog" role="document" aria-labelledby="modalObsTitulo">
+    <div class="crn-modal__header">
+      <h5 id="modalObsTitulo" class="mb-0">Observações do Pré-cadastro</h5>
+      <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
+    </div>
+
+    <div class="crn-modal__body" *ngIf="viewItem() as v">
+      <div class="mb-2 text-muted">
+        Cliente: <strong>{{ v.nomeCompleto || '—' }}</strong>
+      </div>
+      <textarea class="form-control" rows="8" placeholder="Escreva observações adicionais…" [ngModel]="obsModel()"
+        (ngModelChange)="obsModel.set($event)"></textarea>
+    </div>
+
+    <div class="crn-modal__footer">
+      <button class="btn btn-light" (click)="fecharModais()">Cancelar</button>
+      <button class="btn btn-primary" (click)="salvarObservacoes()">
+        <i class="bi bi-save me-1"></i> Salvar observações
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: ARQUIVOS ===== -->
+<div *ngIf="modalArqsAberto()" class="crn-modal" role="dialog" aria-modal="true">
+  <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
+  <div class="crn-modal__dialog" role="document" aria-labelledby="modalArqsTitulo">
+    <div class="crn-modal__header">
+      <h5 id="modalArqsTitulo" class="mb-0">Arquivos do Pré-cadastro</h5>
+      <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
+    </div>
+
+    <div class="crn-modal__body" *ngIf="viewItem() as v">
+      <div class="mb-2 text-muted">
+        Cliente: <strong>{{ v.nomeCompleto || '—' }}</strong>
+      </div>
+
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <input type="file" class="form-control" (change)="onEscolherArquivo($event)" [disabled]="uploadEmProgresso()" />
+        <span *ngIf="uploadEmProgresso()" class="spinner-border spinner-border-sm" aria-label="Enviando..."></span>
+      </div>
+
+      <div *ngIf="arqsCarregando()" class="alert alert-light border-0 d-flex align-items-center gap-2">
+        <span class="spinner-border spinner-border-sm"></span> Carregando arquivos…
+      </div>
+
+      <div *ngIf="!arqsCarregando() && !arqsLista()?.length" class="text-muted">
+        Nenhum arquivo enviado ainda.
+      </div>
+
+      <ul class="list-group" *ngIf="!arqsCarregando() && arqsLista()?.length">
+        <li class="list-group-item d-flex justify-content-between align-items-center" *ngFor="let a of arqsLista()">
+          <div class="me-3">
+            <i class="bi bi-file-earmark me-2"></i>
+            <a [href]="a.url" target="_blank" rel="noopener">{{ a.nome }}</a>
+            <small class="text-muted ms-2" *ngIf="a.tamanho">({{ a.tamanho }} bytes)</small>
+          </div>
+          <div class="text-nowrap">
+            <a class="btn btn-sm btn-outline-secondary me-1" [href]="a.url" download>
+              <i class="bi bi-download"></i>
+            </a>
+            <button class="btn btn-sm btn-outline-danger" (click)="removerArquivo(a)">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="crn-modal__footer">
+      <button class="btn btn-light" (click)="fecharModais()">Fechar</button>
     </div>
   </div>
 </div>

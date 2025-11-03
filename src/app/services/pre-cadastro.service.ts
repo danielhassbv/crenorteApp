@@ -1,4 +1,3 @@
-// src/app/services/pre-cadastro.service.ts
 import { inject, Injectable } from '@angular/core';
 import {
   Firestore,
@@ -19,6 +18,18 @@ import {
 import { Auth } from '@angular/fire/auth';
 import { PreCadastro } from '../models/pre-cadastro.model';
 
+// ✅ Storage (upload/download/remover)
+import {
+  Storage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from '@angular/fire/storage';
+
+// Se você criou a interface no model (recomendado)
+import type { ArquivoPreCadastro } from '../models/pre-cadastro.model';
+
 type UsuarioAssessor = {
   uid: string;
   nome: string;
@@ -31,6 +42,7 @@ type UsuarioAssessor = {
 export class PreCadastroService {
   private db = inject(Firestore);
   private auth = inject(Auth);
+  private storage = inject(Storage);
 
   // coleção principal
   private colRef: CollectionReference<DocumentData> =
@@ -38,43 +50,37 @@ export class PreCadastroService {
 
   /**
    * Cria o pré-cadastro e retorna o ID do documento.
-   * Seta createdByUid/createdByNome/createdAt e default de aprovação = 'inapto'.
+   * Seta createdByUid/createdByNome/createdAt e default de aprovação = 'nao_verificado'.
    */
- // src/app/services/pre-cadastro.service.ts
-// ...imports e @Injectable inalterados...
+  async criar(
+    data: Omit<PreCadastro, 'id' | 'createdAt' | 'createdByUid' | 'createdByNome' | 'aprovacao'>
+  ): Promise<string> {
+    const user = this.auth.currentUser;
+    if (!user) throw new Error('Usuário não autenticado.');
 
-async criar(
-  data: Omit<PreCadastro, 'id' | 'createdAt' | 'createdByUid' | 'createdByNome' | 'aprovacao'>
-): Promise<string> {
-  const user = this.auth.currentUser;
-  if (!user) throw new Error('Usuário não autenticado.');
+    let createdByNome = 'Assessor';
+    try {
+      const snap = await getDoc(doc(this.db, 'colaboradores', user.uid));
+      createdByNome = (snap.data() as any)?.papel
+        ? ((snap.data() as any)?.nome || user.displayName || 'Assessor')
+        : (user.displayName || 'Assessor');
+    } catch {}
 
-  let createdByNome = 'Assessor';
-  try {
-    const snap = await getDoc(doc(this.db, 'colaboradores', user.uid));
-    createdByNome = (snap.data() as any)?.papel
-      ? ((snap.data() as any)?.nome || user.displayName || 'Assessor')
-      : (user.displayName || 'Assessor');
-  } catch {}
+    const payload = {
+      ...data,
+      aprovacao: { status: 'nao_verificado' as const },
+      encaminhamento: null,
+      createdByUid: user.uid,
+      createdByNome,
+      createdAt: serverTimestamp(),
+    };
 
-  const payload = {
-    ...data,
-    // ✅ default de aprovação
-    aprovacao: { status: 'nao_verificado' as const },
-    encaminhamento: null, // por padrão
-    createdByUid: user.uid,
-    createdByNome,
-    createdAt: serverTimestamp(),
-  };
-
-  const ref = await addDoc(this.colRef, payload);
-  return ref.id;
-}
-
+    const ref = await addDoc(this.colRef, payload);
+    return ref.id;
+  }
 
   /**
    * Vincula/espelha o fluxo de caixa ao pré-cadastro (e marca timestamp).
-   * Se quiser manter histórico, pode criar subcoleção /fluxos e addDoc lá.
    */
   async salvarFluxoCaixa(
     preCadastroId: string,
@@ -148,7 +154,6 @@ async criar(
 
   /**
    * Atualiza campos de um pré-cadastro.
-   * Sempre marca atualizadoEm, a menos que você já tenha passado no patch.
    */
   async atualizar(id: string, patch: Partial<PreCadastro>): Promise<void> {
     const clean: Record<string, any> = {};
@@ -195,18 +200,11 @@ async criar(
   // *** BLOCO: APROVAÇÃO ***
   // ============================
 
-  /**
-   * Lista registros relevantes para aprovação (analistas).
-   * Tenta filtrar por status via where('aprovacao.status','in',...), senão cai para filtro em memória.
-   * Use esta lista na tela de "Aprovação de Pré-cadastro".
-   */
   async listarParaAprovacao(): Promise<PreCadastro[]> {
     try {
-      // Pode exigir índice composto se adicionar orderBy juntos.
       const qy = query(this.colRef, where('aprovacao.status', 'in', ['inapto', 'apto']));
       const snap = await getDocs(qy);
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
-      // Ordena por createdAt desc (em memória para evitar mais índices)
       rows.sort((a: any, b: any) => {
         const ms = (x: any) =>
           x?.toMillis ? x.toMillis() :
@@ -216,10 +214,8 @@ async criar(
       });
       return rows;
     } catch {
-      // fallback: pega tudo e filtra em memória
       const snap = await getDocs(this.colRef);
-      const rows = snap.docs
-        .map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
+      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
       const filtrados = rows.filter(r => ['inapto', 'apto'].includes(r?.aprovacao?.status ?? 'inapto'));
       filtrados.sort((a: any, b: any) => {
         const ms = (x: any) =>
@@ -232,15 +228,10 @@ async criar(
     }
   }
 
-  /**
-   * Marca um pré-cadastro como APTO, registrando quem aprovou e quando.
-   * Aceita observação opcional.
-   */
   async marcarApto(preCadastroId: string, observacao?: string): Promise<void> {
     const user = this.auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado.');
 
-    // tenta pegar nome do colaborador aprovador
     let aprovadorNome = user.displayName || 'Analista';
     try {
       const snap = await getDoc(doc(this.db, 'colaboradores', user.uid));
@@ -259,13 +250,6 @@ async criar(
     } as any);
   }
 
-  /**
-   * Consulta assessores sob o comando do analista atual (ou supervisor).
-   * Regras:
-   *  - Primeiro tenta por analistaResponsavelUid == user.uid
-   *  - Se não houver, tenta por supervisorUid == user.uid
-   *  - Opcional: passe um uidSupervisor/analista explicitamente.
-   */
   async listarAssessoresDoAnalista(opts?: { usarSupervisor?: boolean; uidBase?: string }): Promise<UsuarioAssessor[]> {
     const user = this.auth.currentUser;
     if (!user && !opts?.uidBase) throw new Error('Usuário não autenticado.');
@@ -293,37 +277,27 @@ async criar(
     return snap.docs.map(d => ({ uid: d.id, ...(d.data() as any) })) as UsuarioAssessor[];
   }
 
-  // Dentro de PreCadastroService
-async listarParaCaixa(uid: string): Promise<PreCadastro[]> {
-  if (!uid) throw new Error('uid obrigatório');
+  async listarParaCaixa(uid: string): Promise<PreCadastro[]> {
+    if (!uid) throw new Error('uid obrigatório');
 
-  const rows: PreCadastro[] = [];
-  const tryGet = async (qy: any) => {
-    try {
-      const snap = await getDocs(qy);
-      snap.docs.forEach(d => rows.push({ id: d.id, ...(d.data() as any) } as PreCadastro));
-    } catch {}
-  };
+    const rows: PreCadastro[] = [];
+    const tryGet = async (qy: any) => {
+      try {
+        const snap = await getDocs(qy);
+        snap.docs.forEach(d => rows.push({ id: d.id, ...(d.data() as any) } as PreCadastro));
+      } catch {}
+    };
 
-  // Preferência: tudo que está na "caixa" do assessor
-  await tryGet(query(this.colRef, where('caixaUid', '==', uid)));
-  // Compat: itens encaminhados diretamente
-  await tryGet(query(this.colRef, where('encaminhamento.assessorUid', '==', uid)));
-  // Fallback: itens criados por ele
-  await tryGet(query(this.colRef, where('createdByUid', '==', uid)));
+    await tryGet(query(this.colRef, where('caixaUid', '==', uid)));
+    await tryGet(query(this.colRef, where('encaminhamento.assessorUid', '==', uid)));
+    await tryGet(query(this.colRef, where('createdByUid', '==', uid)));
 
-  // dedup + ordena por createdAt desc
-  const ms = (x: any) => x?.toMillis ? x.toMillis() : x?.toDate ? x.toDate().getTime() : (typeof x === 'number' ? x : 0);
-  const map = new Map<string, PreCadastro>();
-  rows.forEach(r => map.set(r.id, r));
-  return Array.from(map.values()).sort((a: any, b: any) => ms(b.createdAt) - ms(a.createdAt));
-}
+    const ms = (x: any) => x?.toMillis ? x.toMillis() : x?.toDate ? x.toDate().getTime() : (typeof x === 'number' ? x : 0);
+    const map = new Map<string, PreCadastro>();
+    rows.forEach(r => map.set(r.id, r));
+    return Array.from(map.values()).sort((a: any, b: any) => ms(b.createdAt) - ms(a.createdAt));
+  }
 
-
-  /**
-   * Define o assessor responsável por um pré-cadastro (após estar APTO).
-   * Se assessorNome não for informado, tenta descobrir no doc de colaboradores.
-   */
   async enviarParaAssessor(preCadastroId: string, assessorUid: string, assessorNome?: string): Promise<void> {
     let nome = assessorNome ?? '';
     if (!nome) {
@@ -340,5 +314,119 @@ async listarParaCaixa(uid: string): Promise<PreCadastro[]> {
       },
       atualizadoEm: serverTimestamp(),
     } as any);
+  }
+
+  // ============================
+  // *** BLOCO: OBSERVAÇÕES ***
+  // ============================
+
+  /**
+   * Atualiza o campo 'observacoes' no doc do pré-cadastro.
+   */
+  async atualizarObservacoes(preId: string, observacoes: string | null): Promise<void> {
+    if (!preId) throw new Error('ID do pré-cadastro é obrigatório');
+    await updateDoc(doc(this.db, 'pre_cadastros', preId), {
+      observacoes: observacoes ?? null,
+      atualizadoEm: serverTimestamp(),
+    });
+  }
+
+  // =======================
+  // *** BLOCO: ARQUIVOS ***
+  // =======================
+  // Estrutura sugerida:
+  // - Storage:  pre-cadastros/{preId}/{timestamp}-{nomeArquivo}
+  // - Firestore: pre_cadastros/{preId}/arquivos/{arquivoId} (metadados + storagePath)
+
+  private arquivosCol(preId: string) {
+    return collection(this.db, `pre_cadastros/${preId}/arquivos`);
+  }
+
+  /**
+   * Lista os arquivos (metadados) de um pré-cadastro.
+   */
+  async listarArquivos(preId: string): Promise<ArquivoPreCadastro[]> {
+    if (!preId) throw new Error('ID do pré-cadastro é obrigatório');
+    const qy = query(this.arquivosCol(preId), orderBy('uploadedAt', 'desc'));
+    const snap = await getDocs(qy);
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...(d.data() as any),
+    })) as ArquivoPreCadastro[];
+  }
+
+  /**
+   * Faz upload de um arquivo ao Storage e registra metadados na subcoleção.
+   * Retorna o metadado consolidado (incluindo id e URL).
+   */
+  async uploadArquivo(
+    preId: string,
+    file: File,
+    currentUser: { uid: string; nome?: string | null }
+  ): Promise<ArquivoPreCadastro> {
+    if (!preId) throw new Error('ID do pré-cadastro é obrigatório');
+    if (!file) throw new Error('Arquivo inválido.');
+
+    // Caminho recomendado no Storage
+    const time = Date.now();
+    const safeName = (file.name || 'arquivo').replace(/[^\w.\-]+/g, '_');
+    const path = `pre-cadastros/${preId}/${time}-${safeName}`;
+
+    // Upload binário
+    const ref = storageRef(this.storage, path);
+    await uploadBytes(ref, file);
+    const url = await getDownloadURL(ref);
+
+    // Metadados no Firestore
+    const meta = {
+      nome: file.name,
+      url,
+      tipo: (file as any).type || null,
+      tamanho: (file as any).size ?? null,
+      uploadedAt: serverTimestamp(),
+      uploadedByUid: currentUser.uid,
+      uploadedByNome: currentUser.nome ?? null,
+      // Guardamos o caminho do storage para facilitar remoção futura
+      storagePath: path,
+    };
+
+    const docRef = await addDoc(this.arquivosCol(preId), meta);
+    // Retorna objeto já tipado + id resolvido
+    return {
+      id: docRef.id,
+      ...(meta as any),
+      // Para coerência com o tipo (uploadedAt virá resolvido quando listar)
+    } as ArquivoPreCadastro;
+  }
+
+  /**
+   * Remove metadados do arquivo (subcoleção) e apaga o binário no Storage.
+   */
+  async removerArquivo(preId: string, arquivoId: string): Promise<void> {
+    if (!preId || !arquivoId) throw new Error('IDs obrigatórios');
+
+    const metaRef = doc(this.db, `pre_cadastros/${preId}/arquivos/${arquivoId}`);
+    const metaSnap = await getDoc(metaRef);
+    // Mesmo que o meta não exista, tentamos excluir da mesma forma para manter idempotência.
+    if (metaSnap.exists()) {
+      const data = metaSnap.data() as any;
+      const storagePath: string | undefined = data?.storagePath;
+
+      try {
+        if (storagePath) {
+          const sref = storageRef(this.storage, storagePath);
+          await deleteObject(sref);
+        } else if (data?.url) {
+          // Caso extremo: sem storagePath, mas com URL pública (tentativa de derivar o caminho é complexa).
+          // Nessa situação, apenas removemos o metadado.
+        }
+      } catch (e) {
+        // Se falhar a exclusão no storage (ex.: já não existe), prossegue para remover metadado.
+        console.warn('[removerArquivo] Falha ao remover no Storage, seguindo para remover metadados:', e);
+      }
+    }
+
+    // Remove metadados
+    await deleteDoc(metaRef);
   }
 }
