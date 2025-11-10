@@ -130,6 +130,10 @@ export interface PreCadastro {
 
   __col?: 'pre_cadastros' | 'pre-cadastros';
 
+  /** Metadados de grupo (opcionais) */
+  grupoNome?: string | null;
+  /** 'coordenador' | 'membro' */
+
 
 
   // NOVOS CAMPOS:

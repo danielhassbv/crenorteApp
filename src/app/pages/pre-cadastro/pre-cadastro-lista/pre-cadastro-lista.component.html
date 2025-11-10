@@ -45,7 +45,6 @@
         [attr.aria-selected]="aba()==='grupos' ? 'true' : 'false'">
         <i class="bi bi-people-fill me-1"></i> Grupos
       </button>
-
     </div>
   </div>
 
@@ -118,11 +117,18 @@
                   {{ (i.nomeCompleto || '?').charAt(0) | uppercase }}
                 </div>
                 <div class="min-w-0">
-                  <div class="fw-semibold truncate-2 mb-0 text-crn-dark">
+                  <div class="fw-semibold truncate-2 mb-2 mt-2 text-crn-dark">
                     {{ i.nomeCompleto || '—' }}
                   </div>
-                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                     <small class="text-muted">Pré-cadastro</small>
+                    <!-- Badge de Grupo (quando pertence a um grupo) -->
+                    <ng-container *ngIf="i.grupoId">
+                      <span class="badge text-bg-success" title="Pertence a um grupo">
+                        Grupo:
+                        {{ ($any(i).grupoNome || (i.papelNoGrupo==='coordenador' ? 'Coordenador' : 'Membro')) }}
+                      </span>
+                    </ng-container>
                   </div>
                 </div>
               </div>
@@ -161,10 +167,10 @@
                       <ng-template #noUF></ng-template>
                     </span>
                     <span *ngIf="i.uf" class="uf-flag" [ngClass]="
-                            (i.uf.toLowerCase()==='pa') ? 'flag-pa' :
-                            (i.uf.toLowerCase()==='am') ? 'flag-am' :
-                            (i.uf.toLowerCase()==='ap') ? 'flag-ap' : 'flag-br'
-                          " [title]="'Bandeira ' + (i.uf.toUpperCase() || 'BR')" aria-hidden="true"></span>
+                        (i.uf.toLowerCase()==='pa') ? 'flag-pa' :
+                        (i.uf.toLowerCase()==='am') ? 'flag-am' :
+                        (i.uf.toLowerCase()==='ap') ? 'flag-ap' : 'flag-br'
+                      " [title]="'Bandeira ' + (i.uf.toUpperCase() || 'BR')" aria-hidden="true"></span>
                   </span>
                 </div>
 
@@ -574,98 +580,6 @@
                   </ng-template>
                 </div>
 
-                <!-- Membros -->
-                <div>
-                  <strong class="d-block mb-2">Membros</strong>
-                  <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                      <thead class="table-light">
-                        <tr>
-                          <th>Nome</th>
-                          <th class="text-nowrap">Agendamento</th>
-                          <th class="text-nowrap">Formalização</th>
-                          <th class="text-nowrap">Desistência</th>
-                          <th class="text-end">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr *ngFor="let m of $any(g)?.membrosView">
-                          <td>
-                            <div class="fw-semibold text-truncate" style="max-width:220px">{{ m.nome || '—' }}</div>
-                            <div class="text-muted small">
-                              CPF {{ m.cpf || '—' }} • {{ m.telefone || 'sem telefone' }}
-                            </div>
-                          </td>
-                          <td>
-                            <span class="badge"
-                              [class.text-bg-secondary]="(m.agendamentoStatus||'nao_agendado')==='nao_agendado'"
-                              [class.text-bg-info]="(m.agendamentoStatus||'nao_agendado')==='agendado'"
-                              [class.text-bg-success]="(m.agendamentoStatus||'nao_agendado')==='visitado'">
-                              {{
-                              (m.agendamentoStatus||'nao_agendado')==='nao_agendado' ? 'Não agendado' :
-                              (m.agendamentoStatus||'nao_agendado')==='agendado' ? 'Agendado' : 'Visitado'
-                              }}
-                            </span>
-                          </td>
-                          <td>
-                            <span class="badge" [class.text-bg-success]="m?.formalizacao?.status==='formalizado'"
-                              [class.text-bg-secondary]="m?.formalizacao?.status!=='formalizado'">
-                              {{ m?.formalizacao?.status==='formalizado' ? 'Formalizado' : 'Não formalizado' }}
-                            </span>
-                          </td>
-                          <td>
-                            <span class="badge" [class.text-bg-warning]="m?.desistencia?.status==='desistiu'"
-                              [class.text-bg-secondary]="m?.desistencia?.status!=='desistiu'">
-                              {{ m?.desistencia?.status==='desistiu' ? 'Desistiu' : 'Não desistiu' }}
-                            </span>
-                          </td>
-                          <td class="text-end">
-                            <div class="btn-group btn-group-sm">
-                              <a class="btn btn-outline-success" *ngIf="whatsHrefMembro(m)" [href]="whatsHrefMembro(m)!"
-                                target="_blank" rel="noopener">
-                                <i class="bi bi-whatsapp"></i>
-                              </a>
-                              <button class="btn btn-outline-secondary" (click)="abrirAgendarMembro(m)"
-                                [disabled]="(m.agendamentoStatus||'nao_agendado')==='agendado'">
-                                <i class="bi bi-calendar-plus"></i>
-                              </button>
-                              <button class="btn btn-outline-primary"
-                                *ngIf="(m.agendamentoStatus||'nao_agendado')==='agendado'"
-                                (click)="marcarVisitadoMembro(m)">
-                                <i class="bi bi-check2-circle"></i>
-                              </button>
-                              <button class="btn btn-outline-danger"
-                                *ngIf="(m.agendamentoStatus||'nao_agendado')==='agendado'"
-                                (click)="cancelarAgendamentoMembro(m)">
-                                <i class="bi bi-x-circle"></i>
-                              </button>
-                            </div>
-                            <div class="btn-group btn-group-sm mt-1">
-                              <button class="btn btn-outline-primary" *ngIf="m?.formalizacao?.status!=='formalizado'"
-                                (click)="marcarFormalizadoMembro(m)">
-                                <i class="bi bi-file-check"></i>
-                              </button>
-                              <button class="btn btn-outline-secondary" *ngIf="m?.formalizacao?.status==='formalizado'"
-                                (click)="desfazerFormalizacaoMembro(m)">
-                                <i class="bi bi-arrow-counterclockwise"></i>
-                              </button>
-
-                              <button class="btn btn-outline-warning" *ngIf="m?.desistencia?.status!=='desistiu'"
-                                (click)="marcarDesistenciaMembro(m)">
-                                <i class="bi bi-emoji-frown"></i>
-                              </button>
-                              <button class="btn btn-outline-dark" *ngIf="m?.desistencia?.status==='desistiu'"
-                                (click)="desfazerDesistenciaMembro(m)">
-                                <i class="bi bi-emoji-smile"></i>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
               </div>
             </div>
           </div>
@@ -834,6 +748,17 @@
           <div>{{ v.cidade || '—' }} / {{ v.uf || '—' }}</div>
         </div>
 
+        <!-- 🔎 Indicação de Grupo também no modal Ver -->
+        <div class="col-12" *ngIf="v.grupoId">
+          <strong>Grupo:</strong>
+          <div>
+            <span class="badge text-bg-success me-2">
+              {{ ($any(v).grupoNome || (v.papelNoGrupo==='coordenador' ? 'Coordenador' : 'Membro')) }}
+            </span>
+            <small class="text-muted">ID {{ v.grupoId }}</small>
+          </div>
+        </div>
+
         <div class="col-12" *ngIf="v.observacoes">
           <strong>Observações:</strong>
           <div class="text-break">{{ v.observacoes }}</div>
@@ -843,10 +768,10 @@
           <strong>Status:</strong>
           <div class="d-flex flex-wrap gap-2 mt-1">
             <span class="badge" [ngClass]="{
-              'text-bg-secondary': (v.agendamentoStatus||'nao_agendado')==='nao_agendado',
-              'text-bg-info': (v.agendamentoStatus||'nao_agendado')==='agendado',
-              'text-bg-success': (v.agendamentoStatus||'nao_agendado')==='visitado'
-            }">
+                'text-bg-secondary': (v.agendamentoStatus||'nao_agendado')==='nao_agendado',
+                'text-bg-info': (v.agendamentoStatus||'nao_agendado')==='agendado',
+                'text-bg-success': (v.agendamentoStatus||'nao_agendado')==='visitado'
+              }">
               Agendamento: {{
               (v.agendamentoStatus||'nao_agendado')==='nao_agendado' ? 'Não agendado' :
               (v.agendamentoStatus||'nao_agendado')==='agendado' ? 'Agendado' : 'Visitado'
@@ -854,10 +779,10 @@
             </span>
 
             <span class="badge" [ngClass]="{
-              'text-bg-secondary': (v.aprovacao?.status || 'nao_verificado')==='nao_verificado',
-              'text-bg-danger': (v.aprovacao?.status || 'nao_verificado')==='inapto',
-              'text-bg-success': (v.aprovacao?.status || 'nao_verificado')==='apto'
-            }">
+                'text-bg-secondary': (v.aprovacao?.status || 'nao_verificado')==='nao_verificado',
+                'text-bg-danger': (v.aprovacao?.status || 'nao_verificado')==='inapto',
+                'text-bg-success': (v.aprovacao?.status || 'nao_verificado')==='apto'
+              }">
               Aprovação: {{
               (v.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
               (v.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')

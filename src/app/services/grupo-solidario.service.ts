@@ -20,12 +20,12 @@ import { Auth } from '@angular/fire/auth';
 
 import {
   GrupoSolidario,
-  GrupoStatus,            // <- usa do model integrado: 'rascunho' | 'ativo' | 'fechado' | 'cancelado'
+  GrupoStatus,            // 'rascunho' | 'ativo' | 'fechado' | 'cancelado'
   MembroGrupoView,
 } from '../models/grupo-solidario.model';
 import { PreCadastro } from '../models/pre-cadastro.model';
 
-// ======= Utils =======
+/* ========== Utils ========== */
 function randomToken(len = 12) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let out = '';
@@ -53,12 +53,11 @@ export class GrupoSolidarioService {
   private fs = inject(Firestore);
   private auth = inject(Auth);
 
-  // =========================
-  // EXISTENTES (mantidos)
-  // =========================
+  /* =========================
+   * EXISTENTES (mantidos)
+   * ========================= */
 
   async listarAptosPorPeriodo(de: string | null, ate: string | null): Promise<PreCadastro[]> {
-    // Campo usado: createdAt (Timestamp). Comparando com Date funciona.
     const colRef = collection(this.fs, 'pre_cadastros');
     const clauses: any[] = [where('aprovacao.status', '==', 'apto')];
 
@@ -101,7 +100,7 @@ export class GrupoSolidarioService {
       membrosIds: payload.membrosIds || [],
       membrosCount: (payload.membrosIds || []).length,
       status: 'rascunho' as GrupoStatus,
-      situacao: 'incompleto', // pode recalcular depois
+      situacao: 'incompleto',
       inviteToken: token,
       observacoes: payload.observacoes || null,
       coordenadorUid: payload.coordenadorUid || null,
@@ -127,67 +126,53 @@ export class GrupoSolidarioService {
     return membrosIds;
   }
 
-  // ✅ Corrigido para usar seu model e a coleção correta
   async definirStatusGrupo(grupoId: string, status: GrupoStatus): Promise<void> {
     const ref = doc(this.fs, 'grupos_solidarios', grupoId);
-    await updateDoc(ref, {
-      status,
-      atualizadoEm: serverTimestamp(),
-    });
+    await updateDoc(ref, { status, atualizadoEm: serverTimestamp() });
   }
 
-  // =========================
-  // NOVOS MÉTODOS (abas Grupos)
-  // =========================
+  /* =========================
+   * NOVOS (abas Grupos / Caixa)
+   * ========================= */
 
   /**
-   * Lista grupos atribuídos ao assessor (Minha Lista > aba Grupos).
-   * Usa distribuicao.groupAssessorUid (modelo novo). Fallback: top-level assessorUid (legado).
+   * Lista grupos atribuídos à “caixa do assessor”.
+   * Compatível com:
+   *  - distribuicao.groupAssessorUid   (novo)
+   *  - dist.grupoAssessorUid           (variação já vista em base)
+   *  - assessorUid / caixaUid          (legado)
    */
   async listarParaCaixaAssessor(assessorUid: string): Promise<GrupoSolidario[]> {
     const rows: GrupoSolidario[] = [];
+    const colRef = collection(this.fs, 'grupos_solidarios');
 
-    // Preferência: novo campo de distribuição
-    try {
-      const qy = query(
-        collection(this.fs, 'grupos_solidarios'),
-        where('distribuicao.groupAssessorUid', '==', assessorUid),
-        orderBy('criadoEm', 'desc')
-      );
-      const snap = await getDocs(qy);
-      snap.docs.forEach(d => rows.push({ id: d.id, ...(d.data() as any) } as GrupoSolidario));
-    } catch {
-      // fallback sem índice composto
-      const qy = query(
-        collection(this.fs, 'grupos_solidarios'),
-        where('distribuicao.groupAssessorUid', '==', assessorUid)
-      );
-      const snap = await getDocs(qy);
-      snap.docs.forEach(d => rows.push({ id: d.id, ...(d.data() as any) } as GrupoSolidario));
-    }
-
-    // Compatibilidade com dados antigos: assessorUid no topo
-    if (!rows.length) {
+    const tryGet = async (qy: any) => {
       try {
-        const qy2 = query(
-          collection(this.fs, 'grupos_solidarios'),
-          where('assessorUid', '==', assessorUid)
-        );
-        const snap2 = await getDocs(qy2);
-        snap2.docs.forEach(d => rows.push({ id: d.id, ...(d.data() as any) } as GrupoSolidario));
+        const snap = await getDocs(qy);
+        snap.docs.forEach(d => rows.push({ id: d.id, ...(d.data() as any) } as GrupoSolidario));
       } catch {}
-    }
+    };
 
-    // Ordena por criadoEm desc em memória (se preciso)
-    rows.sort((a: any, b: any) => {
-      const ms = (x: any) =>
-        x?.toMillis ? x.toMillis() :
-        x?.toDate ? x.toDate().getTime() :
-        (typeof x === 'number' ? x : 0);
-      return (ms(b?.criadoEm) - ms(a?.criadoEm));
-    });
+    // preferencial (novo)
+    await tryGet(query(colRef, where('distribuicao.groupAssessorUid', '==', assessorUid)));
+    // variação observada em dados (“dist”)
+    await tryGet(query(colRef, where('dist.grupoAssessorUid', '==', assessorUid)));
+    // legados
+    await tryGet(query(colRef, where('assessorUid', '==', assessorUid)));
+    await tryGet(query(colRef, where('caixaUid', '==', assessorUid)));
 
-    return rows;
+    // dedup + sort por criadoEm desc
+    const map = new Map<string, GrupoSolidario>();
+    rows.forEach(g => map.set(g.id!, g));
+    const arr = Array.from(map.values());
+
+    const ms = (x: any) =>
+      x?.toMillis ? x.toMillis() :
+      x?.toDate ? x.toDate().getTime() :
+      (typeof x === 'number' ? x : 0);
+
+    arr.sort((a: any, b: any) => (ms(b?.criadoEm) - ms(a?.criadoEm)));
+    return arr.filter(g => (g?.status ?? 'rascunho') !== 'cancelado');
   }
 
   /**
@@ -208,10 +193,12 @@ export class GrupoSolidarioService {
   }
 
   /**
-   * Define a distribuição por membro (adiciona/atualiza em distribuicao.membros).
-   * Passar um array no formato do model.
+   * Define a distribuição por membro (distribuicao.membros).
    */
-  async definirDistribuicaoMembros(grupoId: string, membros: Array<{ preCadastroId: string; assessorUid: string; assessorNome?: string }>): Promise<void> {
+  async definirDistribuicaoMembros(
+    grupoId: string,
+    membros: Array<{ preCadastroId: string; assessorUid: string; assessorNome?: string }>
+  ): Promise<void> {
     const user = this.auth.currentUser;
     const ref = doc(this.fs, 'grupos_solidarios', grupoId);
     const snap = await getDoc(ref);
@@ -246,25 +233,17 @@ export class GrupoSolidarioService {
     });
   }
 
-  // =========================
-  // JOIN para “cards” da aba Grupos
-  // =========================
+  /* =========================
+   * JOIN para “cards” da aba Grupos
+   * ========================= */
 
-  /**
-   * Monta coordenadorView, membrosView e metrics para UM grupo.
-   * - Busca o pré-cadastro do coordenador (se houver) e dos membrosIds
-   * - Calcula métricas: total, aptos, agendados, formalizados, desistentes
-   */
   async joinGrupoView(g: GrupoSolidario): Promise<GrupoSolidario> {
     const membrosIds = g.membrosIds || [];
     const idsToFetch = new Set<string>(membrosIds);
-
-    // Se o coordenadorUid também é um pré-cadastro, incluí-lo
     if (g.coordenadorUid) idsToFetch.add(g.coordenadorUid);
 
     const pres = await fetchPreCadastrosByIds(this.fs, Array.from(idsToFetch));
 
-    // Coordenador view
     const coordPre = g.coordenadorUid
       ? pres.find(p => p.id === g.coordenadorUid)
       : undefined;
@@ -284,7 +263,6 @@ export class GrupoSolidarioService {
       desistencia: coordPre.desistencia,
     } : undefined;
 
-    // Membros view
     const membrosView: MembroGrupoView[] = membrosIds.map(id => {
       const p = pres.find(x => x.id === id);
       return {
@@ -296,37 +274,24 @@ export class GrupoSolidarioService {
         agendamentoStatus: p?.agendamentoStatus || 'nao_agendado',
         formalizacao: p?.formalizacao,
         desistencia: p?.desistencia,
-        // Se houver distribuição individual:
         assessorUid: g.distribuicao?.membros?.find(m => m.preCadastroId === id)?.assessorUid ?? null,
         assessorNome: g.distribuicao?.membros?.find(m => m.preCadastroId === id)?.assessorNome ?? null,
       };
     });
 
-    // Métricas simples
     const metrics = {
       total: membrosView.length,
-      aptos: membrosView.filter(m => (p => p?.aprovacao?.status === 'apto')(pres.find(x => x.id === m.preCadastroId))).length,
+      aptos: membrosView.filter(m => (pres.find(x => x.id === m.preCadastroId)?.aprovacao?.status === 'apto')).length,
       agendados: membrosView.filter(m => (m.agendamentoStatus || 'nao_agendado') === 'agendado').length,
       formalizados: membrosView.filter(m => m.formalizacao?.status === 'formalizado').length,
       desistentes: membrosView.filter(m => m.desistencia?.status === 'desistiu').length,
     };
 
-    return {
-      ...g,
-      coordenadorView,
-      membrosView,
-      metrics,
-    };
+    return { ...g, coordenadorView, membrosView, metrics };
   }
 
-  /**
-   * Versão em lote: aplica joinGrupoView para uma lista de grupos.
-   * Faz leitura otimizada dos pré-cadastros agrupando IDs por lote de 10.
-   */
   async joinGruposView(grupos: GrupoSolidario[]): Promise<GrupoSolidario[]> {
     if (!grupos?.length) return [];
-
-    // Coletar todos os ids de uma vez para reduzir roundtrips
     const allIds = new Set<string>();
     grupos.forEach(g => {
       (g.membrosIds || []).forEach(id => allIds.add(id));
@@ -334,11 +299,9 @@ export class GrupoSolidarioService {
     });
 
     const pres = await fetchPreCadastrosByIds(this.fs, Array.from(allIds));
-
     const findPre = (id?: string | null) => id ? pres.find(p => p.id === id) : undefined;
 
     return grupos.map(g => {
-      // Coordenador
       const coordPre = findPre(g.coordenadorUid);
       const coordenadorView = coordPre ? {
         preCadastroId: coordPre.id,
@@ -355,7 +318,6 @@ export class GrupoSolidarioService {
         desistencia: coordPre.desistencia,
       } : undefined;
 
-      // Membros
       const membrosView: MembroGrupoView[] = (g.membrosIds || []).map(id => {
         const p = findPre(id);
         return {
@@ -374,18 +336,13 @@ export class GrupoSolidarioService {
 
       const metrics = {
         total: membrosView.length,
-        aptos: membrosView.filter(m => (p => p?.aprovacao?.status === 'apto')(findPre(m.preCadastroId))).length,
+        aptos: membrosView.filter(m => (findPre(m.preCadastroId)?.aprovacao?.status === 'apto')).length,
         agendados: membrosView.filter(m => (m.agendamentoStatus || 'nao_agendado') === 'agendado').length,
         formalizados: membrosView.filter(m => m.formalizacao?.status === 'formalizado').length,
         desistentes: membrosView.filter(m => m.desistencia?.status === 'desistiu').length,
       };
 
-      return {
-        ...g,
-        coordenadorView,
-        membrosView,
-        metrics,
-      };
+      return { ...g, coordenadorView, membrosView, metrics };
     });
   }
 }

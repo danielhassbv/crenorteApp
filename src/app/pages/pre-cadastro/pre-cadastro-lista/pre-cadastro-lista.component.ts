@@ -138,10 +138,10 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.sub = user(this.auth).subscribe(async u => {
       this.loading.set(true);
       try {
-        if (!u) { 
-          this.itens.set([]); 
+        if (!u) {
+          this.itens.set([]);
           this.grupos.set([]);
-          return; 
+          return;
         }
         this.currentUserUid = u.uid;
         this.currentUserNome = await this.resolveUserName(u.uid);
@@ -161,6 +161,10 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
           const desistencia = (r as any).desistencia || {};
           return {
             agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
+            // ✅ campos de grupo (se existirem no doc)
+            grupoId: (r as any).grupoId ?? null,
+            grupoNome: (r as any).grupoNome ?? null,
+            papelNoGrupo: (r as any).papelNoGrupo ?? null,
             formalizacao: {
               status: (formalizacao.status as any) || 'nao_formalizado',
               porUid: formalizacao.porUid,
@@ -184,6 +188,79 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
         // ==== Grupos (aba "Grupos") ====
         await this.loadGruposDoAssessor(u.uid);
+
+        // 🔁 MESCLA coordenador + membros dos grupos na lista de Pessoas (se ainda não estiverem)
+        {
+          const byId = new Map<string, PreCadastro>();
+          for (const p of this.itens()) if (p?.id) byId.set(p.id, p);
+
+          for (const g of this.grupos()) {
+            const grupoId = g.id;
+            const grupoNome = g.nome || null;
+
+            // Coordenador
+            const coord = g.coordenadorView;
+            if (coord?.preCadastroId && !byId.has(coord.preCadastroId)) {
+              byId.set(coord.preCadastroId, {
+                id: coord.preCadastroId,
+                nomeCompleto: (coord.nome ?? null) as any,
+                cpf: (coord.cpf ?? null) as any,
+                telefone: (coord.telefone ?? null) as any,
+                email: (coord.email ?? null) as any,
+                endereco: (coord.endereco ?? null) as any,
+                bairro: (coord.bairro ?? null) as any,
+                cidade: (coord.cidade ?? null) as any,
+                uf: (coord.uf ?? null) as any,
+
+                // 👉 status
+                agendamentoStatus: coord.agendamentoStatus || 'nao_agendado',
+                formalizacao: coord.formalizacao,
+                desistencia: coord.desistencia,
+
+                // 👉 metadados de grupo
+                grupoId,
+                grupoNome,
+                papelNoGrupo: 'coordenador'
+              } as PreCadastro);
+            } else if (coord?.preCadastroId && byId.has(coord.preCadastroId)) {
+              // Atualiza metadados de grupo se já existir
+              const cur = byId.get(coord.preCadastroId)!;
+              byId.set(coord.preCadastroId, { ...cur, grupoId, grupoNome, papelNoGrupo: 'coordenador' });
+            }
+
+            // Membros
+            for (const m of (g as any)?.membrosView || []) {
+              if (!m?.preCadastroId) continue;
+              if (!byId.has(m.preCadastroId)) {
+                byId.set(m.preCadastroId, {
+                  id: m.preCadastroId,
+                  nomeCompleto: (m.nome ?? null) as any,
+                  cpf: (m.cpf ?? null) as any,
+                  telefone: (m.telefone ?? null) as any,
+                  email: (m.email ?? null) as any,
+                  endereco: null as any,
+                  bairro: null as any,
+                  cidade: null as any,
+                  uf: null as any,
+
+                  agendamentoStatus: m.agendamentoStatus || 'nao_agendado',
+                  formalizacao: m.formalizacao,
+                  desistencia: m.desistencia,
+
+                  grupoId,
+                  grupoNome,
+                  papelNoGrupo: 'membro'
+                } as PreCadastro);
+              } else {
+                const cur = byId.get(m.preCadastroId)!;
+                byId.set(m.preCadastroId, { ...cur, grupoId, grupoNome, papelNoGrupo: 'membro' });
+              }
+            }
+          }
+
+          this.itens.set(Array.from(byId.values()));
+        }
+
       } catch (err) {
         console.error('[PreCadastro] Erro ao listar:', err);
         this.itens.set([]);
@@ -470,8 +547,9 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   }
 
   abrirObservacoes(i: PreCadastro) {
+    const texto = (i.observacoes ?? '') as any;
     this.viewItem.set(i);
-    this.obsModel.set((i.observacoes ?? '').toString());
+    this.obsModel.set(String(texto));
     this.modalObsAberto.set(true);
   }
 
@@ -976,12 +1054,13 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     if (toggle) toggle.checked = false;
   }
 
+
+
   // =====================================================================================
   // ==================================  GRUPOS  ========================================
   // =====================================================================================
 
-  /** Converte um MembroGrupoView em um objeto "pré-cadastro-like" mínimo para reutilizar as ações */
-  private preLikeFromMember(m: MembroGrupoView): PreCadastro {
+  private preLikeFromMember(m: MembroGrupoView, g?: GrupoSolidario): PreCadastro {
     return {
       id: m.preCadastroId,
       nomeCompleto: m.nome ?? null as any,
@@ -994,11 +1073,14 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       uf: null as any,
       agendamentoStatus: m.agendamentoStatus || 'nao_agendado',
       formalizacao: m.formalizacao,
-      desistencia: m.desistencia
+      desistencia: m.desistencia,
+      // ✅ metadados
+      grupoId: g?.id ?? null,
+      grupoNome: g?.nome ?? null,
+      papelNoGrupo: 'membro'
     } as unknown as PreCadastro;
   }
 
-  /** Converte coordenadorView do grupo em um "pré-cadastro-like" */
   private preLikeFromCoordenador(g: GrupoSolidario): PreCadastro | null {
     const c = g.coordenadorView;
     if (!c?.preCadastroId) return null;
@@ -1014,7 +1096,11 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       uf: c.uf ?? null as any,
       agendamentoStatus: c.agendamentoStatus || 'nao_agendado',
       formalizacao: c.formalizacao,
-      desistencia: c.desistencia
+      desistencia: c.desistencia,
+      // ✅ metadados
+      grupoId: g.id,
+      grupoNome: g.nome || null,
+      papelNoGrupo: 'coordenador'
     } as unknown as PreCadastro;
   }
 
@@ -1105,4 +1191,5 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   whatsHrefMembro(m: MembroGrupoView): string | null {
     return this.whatsHref(m.telefone || null);
   }
+
 }

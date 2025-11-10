@@ -79,7 +79,7 @@ export const routes: Routes = [
   {
     path: 'pre-cadastros',
     canActivate: [authGuard, roleGuard],
-    data: { roles: ['operacional', 'admin'] as Papel[] },
+    data: { roles: ['operacional', 'admin', 'supervisor'] as Papel[] },
     title: 'Todos os Pré-cadastros',
     loadComponent: () =>
       import('./pages/listagem-pre-cadastros/listagem-pre-cadastros.component')
@@ -90,11 +90,20 @@ export const routes: Routes = [
   {
     path: 'pre-cadastro/triagem',
     canActivate: [authGuard, roleGuard],
-    data: { roles: ['operacional', 'admin'] as Papel[] },
+    data: { roles: ['operacional', 'admin', 'supervisor'] as Papel[] },
     loadComponent: () =>
       import('./pages/triagem/triagem-pre-cadastros/triagem-pre-cadastros.component')
         .then(m => m.TriagemPreCadastrosComponent),
   },
+
+  // === novo modulo ===
+
+  {
+    path: 'novomodulo',
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ['operacional', 'admin', 'supervisor'] as Papel[] },
+    loadComponent: () =>
+      import('./pages/novomodulo/novomodulo.component').then (m => m.NovomoduloComponent) },
 
   // === Cadastros ===
   {

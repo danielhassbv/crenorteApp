@@ -1,3 +1,4 @@
+// src/app/services/pre-cadastro.service.ts
 import { inject, Injectable } from '@angular/core';
 import {
   Firestore,
@@ -14,11 +15,12 @@ import {
   getDoc,
   deleteDoc,
   updateDoc,
+  documentId,
 } from '@angular/fire/firestore';
 import { Auth } from '@angular/fire/auth';
 import { PreCadastro } from '../models/pre-cadastro.model';
 
-// ✅ Storage (upload/download/remover)
+// Storage (upload/download/remover)
 import {
   Storage,
   ref as storageRef,
@@ -27,7 +29,6 @@ import {
   deleteObject,
 } from '@angular/fire/storage';
 
-// Se você criou a interface no model (recomendado)
 import type { ArquivoPreCadastro } from '../models/pre-cadastro.model';
 
 type UsuarioAssessor = {
@@ -44,14 +45,11 @@ export class PreCadastroService {
   private auth = inject(Auth);
   private storage = inject(Storage);
 
-  // coleção principal
   private colRef: CollectionReference<DocumentData> =
     collection(this.db, 'pre_cadastros') as CollectionReference<DocumentData>;
 
-  /**
-   * Cria o pré-cadastro e retorna o ID do documento.
-   * Seta createdByUid/createdByNome/createdAt e default de aprovação = 'nao_verificado'.
-   */
+  /* ========== CRUD Básico ========== */
+
   async criar(
     data: Omit<PreCadastro, 'id' | 'createdAt' | 'createdByUid' | 'createdByNome' | 'aprovacao'>
   ): Promise<string> {
@@ -79,9 +77,6 @@ export class PreCadastroService {
     return ref.id;
   }
 
-  /**
-   * Vincula/espelha o fluxo de caixa ao pré-cadastro (e marca timestamp).
-   */
   async salvarFluxoCaixa(
     preCadastroId: string,
     fluxoCaixa: any,
@@ -95,10 +90,6 @@ export class PreCadastroService {
     });
   }
 
-  /**
-   * Salva o feedback do CLIENTE em:
-   * pre_cadastros/{id}/feedback_cliente
-   */
   async registrarFeedbackCliente(preCadastroId: string, feedback: any): Promise<void> {
     const user = this.auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado.');
@@ -112,23 +103,17 @@ export class PreCadastroService {
     });
   }
 
-  /**
-   * Lista apenas os pré-cadastros do assessor logado (ou de um uid).
-   */
+  /* ========== Listagens ========== */
+
   async listarDoAssessor(uid?: string): Promise<PreCadastro[]> {
     const useUid = uid ?? this.auth.currentUser?.uid;
     if (!useUid) throw new Error('Usuário não autenticado.');
 
     try {
-      const qy = query(
-        this.colRef,
-        where('createdByUid', '==', useUid),
-        orderBy('createdAt', 'desc')
-      );
+      const qy = query(this.colRef, where('createdByUid', '==', useUid), orderBy('createdAt', 'desc'));
       const snap = await getDocs(qy);
       return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
     } catch {
-      // fallback sem índice composto
       const qy = query(this.colRef, where('createdByUid', '==', useUid));
       const snap = await getDocs(qy);
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as PreCadastro[];
@@ -143,9 +128,6 @@ export class PreCadastroService {
     }
   }
 
-  /**
-   * Lista todos os pré-cadastros (liderança).
-   */
   async listarTodos(): Promise<PreCadastro[]> {
     const qy = query(this.colRef, orderBy('createdAt', 'desc'));
     const snap = await getDocs(qy);
@@ -153,29 +135,35 @@ export class PreCadastroService {
   }
 
   /**
-   * Atualiza campos de um pré-cadastro.
+   * NOVO: Busca por uma lista de IDs (para espelhar pessoas de grupos).
    */
+  async listarPorIds(ids: string[]): Promise<PreCadastro[]> {
+    if (!ids?.length) return [];
+    const out: PreCadastro[] = [];
+    for (let i = 0; i < ids.length; i += 10) {
+      const chunk = ids.slice(i, i + 10);
+      const qy = query(this.colRef, where(documentId(), 'in', chunk));
+      const snap = await getDocs(qy);
+      snap.docs.forEach(d => out.push({ id: d.id, ...(d.data() as any) } as PreCadastro));
+    }
+    return out;
+  }
+
+  /* ========== Atualizações / Remoções ========== */
+
   async atualizar(id: string, patch: Partial<PreCadastro>): Promise<void> {
     const clean: Record<string, any> = {};
     Object.entries(patch).forEach(([k, v]) => {
       if (v !== undefined) clean[k] = v;
     });
-    if (!('atualizadoEm' in clean)) {
-      clean['atualizadoEm'] = serverTimestamp();
-    }
+    if (!('atualizadoEm' in clean)) clean['atualizadoEm'] = serverTimestamp();
     await updateDoc(doc(this.db, 'pre_cadastros', id), clean);
   }
 
-  /**
-   * Remove um pré-cadastro pelo ID.
-   */
   async remover(id: string): Promise<void> {
     await deleteDoc(doc(this.db, 'pre_cadastros', id));
   }
 
-  /**
-   * (Opcional) Remove um pré-cadastro e subcoleções conhecidas.
-   */
   async removerDeep(id: string, opts?: { feedbackCliente?: boolean }): Promise<void> {
     if (opts?.feedbackCliente) {
       const subCol = collection(this.db, `pre_cadastros/${id}/feedback_cliente`);
@@ -190,15 +178,10 @@ export class PreCadastroService {
     status: 'nao_agendado' | 'agendado' | 'visitado',
     agendamentoId?: string | null
   ) {
-    return this.atualizar(id, {
-      agendamentoStatus: status,
-      agendamentoId: agendamentoId ?? null,
-    } as any);
+    return this.atualizar(id, { agendamentoStatus: status, agendamentoId: agendamentoId ?? null } as any);
   }
 
-  // ============================
-  // *** BLOCO: APROVAÇÃO ***
-  // ============================
+  /* ========== Aprovação ========== */
 
   async listarParaAprovacao(): Promise<PreCadastro[]> {
     try {
@@ -253,10 +236,8 @@ export class PreCadastroService {
   async listarAssessoresDoAnalista(opts?: { usarSupervisor?: boolean; uidBase?: string }): Promise<UsuarioAssessor[]> {
     const user = this.auth.currentUser;
     if (!user && !opts?.uidBase) throw new Error('Usuário não autenticado.');
-
     const baseUid = opts?.uidBase ?? user!.uid;
 
-    // 1) por analistaResponsavelUid
     let qy = query(
       collection(this.db, 'colaboradores'),
       where('papel', '==', 'assessor'),
@@ -264,7 +245,6 @@ export class PreCadastroService {
     );
     let snap = await getDocs(qy);
 
-    // 2) se vazio, por supervisorUid
     if (snap.empty || opts?.usarSupervisor) {
       qy = query(
         collection(this.db, 'colaboradores'),
@@ -316,13 +296,8 @@ export class PreCadastroService {
     } as any);
   }
 
-  // ============================
-  // *** BLOCO: OBSERVAÇÕES ***
-  // ============================
+  /* ========== Observações ========== */
 
-  /**
-   * Atualiza o campo 'observacoes' no doc do pré-cadastro.
-   */
   async atualizarObservacoes(preId: string, observacoes: string | null): Promise<void> {
     if (!preId) throw new Error('ID do pré-cadastro é obrigatório');
     await updateDoc(doc(this.db, 'pre_cadastros', preId), {
@@ -331,34 +306,19 @@ export class PreCadastroService {
     });
   }
 
-  // =======================
-  // *** BLOCO: ARQUIVOS ***
-  // =======================
-  // Estrutura sugerida:
-  // - Storage:  pre-cadastros/{preId}/{timestamp}-{nomeArquivo}
-  // - Firestore: pre_cadastros/{preId}/arquivos/{arquivoId} (metadados + storagePath)
+  /* ========== Arquivos ========== */
 
   private arquivosCol(preId: string) {
     return collection(this.db, `pre_cadastros/${preId}/arquivos`);
   }
 
-  /**
-   * Lista os arquivos (metadados) de um pré-cadastro.
-   */
   async listarArquivos(preId: string): Promise<ArquivoPreCadastro[]> {
     if (!preId) throw new Error('ID do pré-cadastro é obrigatório');
     const qy = query(this.arquivosCol(preId), orderBy('uploadedAt', 'desc'));
     const snap = await getDocs(qy);
-    return snap.docs.map(d => ({
-      id: d.id,
-      ...(d.data() as any),
-    })) as ArquivoPreCadastro[];
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as ArquivoPreCadastro[];
   }
 
-  /**
-   * Faz upload de um arquivo ao Storage e registra metadados na subcoleção.
-   * Retorna o metadado consolidado (incluindo id e URL).
-   */
   async uploadArquivo(
     preId: string,
     file: File,
@@ -367,17 +327,14 @@ export class PreCadastroService {
     if (!preId) throw new Error('ID do pré-cadastro é obrigatório');
     if (!file) throw new Error('Arquivo inválido.');
 
-    // Caminho recomendado no Storage
     const time = Date.now();
     const safeName = (file.name || 'arquivo').replace(/[^\w.\-]+/g, '_');
     const path = `pre-cadastros/${preId}/${time}-${safeName}`;
 
-    // Upload binário
     const ref = storageRef(this.storage, path);
     await uploadBytes(ref, file);
     const url = await getDownloadURL(ref);
 
-    // Metadados no Firestore
     const meta = {
       nome: file.name,
       url,
@@ -386,47 +343,31 @@ export class PreCadastroService {
       uploadedAt: serverTimestamp(),
       uploadedByUid: currentUser.uid,
       uploadedByNome: currentUser.nome ?? null,
-      // Guardamos o caminho do storage para facilitar remoção futura
       storagePath: path,
     };
 
     const docRef = await addDoc(this.arquivosCol(preId), meta);
-    // Retorna objeto já tipado + id resolvido
-    return {
-      id: docRef.id,
-      ...(meta as any),
-      // Para coerência com o tipo (uploadedAt virá resolvido quando listar)
-    } as ArquivoPreCadastro;
+    return { id: docRef.id, ...(meta as any) } as ArquivoPreCadastro;
   }
 
-  /**
-   * Remove metadados do arquivo (subcoleção) e apaga o binário no Storage.
-   */
   async removerArquivo(preId: string, arquivoId: string): Promise<void> {
     if (!preId || !arquivoId) throw new Error('IDs obrigatórios');
 
     const metaRef = doc(this.db, `pre_cadastros/${preId}/arquivos/${arquivoId}`);
     const metaSnap = await getDoc(metaRef);
-    // Mesmo que o meta não exista, tentamos excluir da mesma forma para manter idempotência.
     if (metaSnap.exists()) {
       const data = metaSnap.data() as any;
       const storagePath: string | undefined = data?.storagePath;
-
       try {
         if (storagePath) {
           const sref = storageRef(this.storage, storagePath);
           await deleteObject(sref);
-        } else if (data?.url) {
-          // Caso extremo: sem storagePath, mas com URL pública (tentativa de derivar o caminho é complexa).
-          // Nessa situação, apenas removemos o metadado.
         }
       } catch (e) {
-        // Se falhar a exclusão no storage (ex.: já não existe), prossegue para remover metadado.
-        console.warn('[removerArquivo] Falha ao remover no Storage, seguindo para remover metadados:', e);
+        console.warn('[removerArquivo] Falha ao remover no Storage, seguindo:', e);
       }
     }
 
-    // Remove metadados
     await deleteDoc(metaRef);
   }
 }
