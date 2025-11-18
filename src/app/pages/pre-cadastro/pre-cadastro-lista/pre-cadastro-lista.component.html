@@ -54,8 +54,12 @@
     <!-- Toolbar: Busca + Filtros -->
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-body py-3">
+
+        <!-- Linha 1: busca + grupo + resumo -->
         <div class="row g-3 align-items-end">
-          <div class="col-12 col-lg-4">
+
+          <!-- Busca -->
+          <div class="col-12 col-md-6">
             <label class="form-label mb-1">Buscar por nome</label>
             <div class="input-group">
               <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -64,36 +68,89 @@
             </div>
           </div>
 
-          <div class="col-6 col-lg-2">
-            <label class="form-label mb-1">Status</label>
-            <select class="form-select" [ngModel]="filtroStatus()" (ngModelChange)="filtroStatus.set($event)">
+          <!-- Grupo Solidário -->
+          <div class="col-12 col-md-4">
+            <label class="form-label mb-1">Grupo solidário</label>
+            <select class="form-select" [ngModel]="filtroGrupo()" (ngModelChange)="filtroGrupo.set($event)">
               <option value="todos">Todos</option>
-              <option value="nao_agendado">Não agendado</option>
-              <option value="agendado">Agendado</option>
-              <option value="visitado">Visita realizada</option>
+              <option value="com_grupo">Com grupo</option>
+              <option value="sem_grupo">Individuais</option>
             </select>
           </div>
 
-          <div class="col-6 col-lg-2">
-            <label class="form-label mb-1">Data início</label>
-            <input type="date" class="form-control" [ngModel]="filtroDataIni()"
-              (ngModelChange)="filtroDataIni.set($event)" />
-          </div>
-
-          <div class="col-6 col-lg-2">
-            <label class="form-label mb-1">Data fim</label>
-            <input type="date" class="form-control" [ngModel]="filtroDataFim()"
-              (ngModelChange)="filtroDataFim.set($event)" />
-          </div>
-
-          <div class="col-12 col-lg-2">
-            <div class="mt-4">
+          <!-- Resumo -->
+          <div class="col-12 col-md-2 text-md-end">
+            <label class="form-label mb-1 d-block">Resumo</label>
+            <div class="mt-md-1">
               <span class="badge-soft me-2">Total: {{ totalGeral() }}</span>
               <span class="badge-soft">Filtrados: {{ totalFiltrado() }}</span>
             </div>
           </div>
 
         </div>
+
+        <hr class="my-3">
+
+        <!-- Linha 2: bairro + filtros rápidos -->
+        <div class="row g-3 align-items-end">
+
+          <!-- Bairro -->
+          <div class="col-12 col-md-6">
+            <label class="form-label mb-1">Bairro</label>
+            <select class="form-select" [ngModel]="filtroBairro()" (ngModelChange)="filtroBairro.set($event)">
+              <option value="">Todos os bairros</option>
+              <option *ngFor="let b of bairrosDisponiveis()" [value]="b">
+                {{ b }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Filtros rápidos -->
+          <div class="col-12 col-md-6">
+            <label class="form-label mb-1 d-block">Filtros rápidos</label>
+
+            <div class="d-flex flex-wrap gap-2">
+
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="filtroFormalizados" [checked]="filtroFormalizados()"
+                  (change)="filtroFormalizados.set($any($event.target).checked)">
+                <label class="form-check-label" for="filtroFormalizados">
+                  Formalizados
+                </label>
+              </div>
+
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="filtroSomenteAgendados"
+                  [checked]="filtroSomenteAgendados()"
+                  (change)="filtroSomenteAgendados.set($any($event.target).checked)">
+                <label class="form-check-label" for="filtroSomenteAgendados">
+                  Agendados
+                </label>
+              </div>
+
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="filtroSomenteVisitados"
+                  [checked]="filtroSomenteVisitados()"
+                  (change)="filtroSomenteVisitados.set($any($event.target).checked)">
+                <label class="form-check-label" for="filtroSomenteVisitados">
+                  Visitados
+                </label>
+              </div>
+
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="filtroProximos"
+                  [checked]="filtroProximosAgendamentos()"
+                  (change)="filtroProximosAgendamentos.set($any($event.target).checked)">
+                <label class="form-check-label" for="filtroProximos">
+                  Próx. 7 dias
+                </label>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </div>
 
@@ -117,12 +174,11 @@
                   {{ (i.nomeCompleto || '?').charAt(0) | uppercase }}
                 </div>
                 <div class="min-w-0">
-                  <div class="fw-semibold truncate-2 mb-2 mt-2 text-crn-dark">
+                  <div class="fw-semibold truncate-2 mt-1 text-crn-dark">
                     {{ i.nomeCompleto || '—' }}
                   </div>
-                  <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
                     <small class="text-muted">Pré-cadastro</small>
-                    <!-- Badge de Grupo (quando pertence a um grupo) -->
                     <ng-container *ngIf="i.grupoId">
                       <span class="badge text-bg-success" title="Pertence a um grupo">
                         Grupo:
@@ -137,12 +193,16 @@
               <div class="crn-card__body">
                 <div class="crn-field">
                   <span class="crn-label">CPF</span>
-                  <span class="crn-value"><span class="badge text-bg-light fw-medium">{{ i.cpf || '—' }}</span></span>
+                  <span class="crn-value">
+                    <span class="badge text-bg-light fw-medium">{{ i.cpf || '—' }}</span>
+                  </span>
                 </div>
 
                 <div class="crn-field">
                   <span class="crn-label">Telefone</span>
-                  <span class="crn-value"><i class="bi bi-telephone text-crn me-1"></i> {{ i.telefone || '—' }}</span>
+                  <span class="crn-value">
+                    <i class="bi bi-telephone text-crn me-1"></i> {{ i.telefone || '—' }}
+                  </span>
                 </div>
 
                 <div class="crn-field">
@@ -167,10 +227,10 @@
                       <ng-template #noUF></ng-template>
                     </span>
                     <span *ngIf="i.uf" class="uf-flag" [ngClass]="
-                        (i.uf.toLowerCase()==='pa') ? 'flag-pa' :
-                        (i.uf.toLowerCase()==='am') ? 'flag-am' :
-                        (i.uf.toLowerCase()==='ap') ? 'flag-ap' : 'flag-br'
-                      " [title]="'Bandeira ' + (i.uf.toUpperCase() || 'BR')" aria-hidden="true"></span>
+                            (i.uf.toLowerCase()==='pa') ? 'flag-pa' :
+                            (i.uf.toLowerCase()==='am') ? 'flag-am' :
+                            (i.uf.toLowerCase()==='ap') ? 'flag-ap' : 'flag-br'
+                          " [title]="'Bandeira ' + (i.uf.toUpperCase() || 'BR')" aria-hidden="true"></span>
                   </span>
                 </div>
 
@@ -179,10 +239,10 @@
                   <span class="crn-label">Aprovação</span>
                   <span class="crn-value">
                     <span class="badge" [ngClass]="{
-                        'text-bg-secondary': (i.aprovacao?.status || 'nao_verificado')==='nao_verificado',
-                        'text-bg-danger':    (i.aprovacao?.status || 'nao_verificado')==='inapto',
-                        'text-bg-success':   (i.aprovacao?.status || 'nao_verificado')==='apto'
-                      }">
+                            'text-bg-secondary': (i.aprovacao?.status || 'nao_verificado')==='nao_verificado',
+                            'text-bg-danger':    (i.aprovacao?.status || 'nao_verificado')==='inapto',
+                            'text-bg-success':   (i.aprovacao?.status || 'nao_verificado')==='apto'
+                          }">
                       {{
                       (i.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
                       (i.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
@@ -199,7 +259,7 @@
 
                 <!-- Encaminhado -->
                 <div class="crn-field" *ngIf="encaminhadoParaMim(i)">
-                  <span class="crn-label">Encaminhado</span>
+                  <span class="crn-label">Distribuído</span>
                   <span class="crn-value">
                     por {{ encaminhadoPorNome(i) || 'Analista' }}
                     <small class="text-muted" *ngIf="encaminhadoQuando(i)">
@@ -213,15 +273,18 @@
                   <span class="crn-label">Agendamento</span>
                   <span class="crn-value">
                     <span class="badge" [ngClass]="{
-                        'text-bg-secondary': (i.agendamentoStatus || 'nao_agendado')==='nao_agendado',
-                        'text-bg-info':      (i.agendamentoStatus || 'nao_agendado')==='agendado',
-                        'text-bg-success':   (i.agendamentoStatus || 'nao_agendado')==='visitado'
-                      }">
+                            'text-bg-secondary': (i.agendamentoStatus || 'nao_agendado')==='nao_agendado',
+                            'text-bg-info':      (i.agendamentoStatus || 'nao_agendado')==='agendado',
+                            'text-bg-success':   (i.agendamentoStatus || 'nao_agendado')==='visitado'
+                          }">
                       {{
                       (i.agendamentoStatus || 'nao_agendado') === 'nao_agendado' ? 'Não agendado' :
                       (i.agendamentoStatus || 'nao_agendado') === 'agendado' ? 'Agendado' : 'Visitado'
                       }}
                     </span>
+                    <small class="text-muted ms-2" *ngIf="$any(i)?.agendamentoDataHora as ag">
+                      {{ (ag?.toDate ? ag.toDate() : ag) | date:'dd/MM/yyyy HH:mm' }}
+                    </small>
                   </span>
                 </div>
 
@@ -284,11 +347,10 @@
                 </label>
               </div>
 
-              <!-- 3) Modal que aparece quando o checkbox está checked -->
+              <!-- Modal de ações do card (toggle por checkbox) -->
               <div class="crn-modal-toggle-target" [attr.id]="'acoes-modal-'+i.id" role="dialog" aria-modal="true"
                 [attr.aria-labelledby]="'acoesTitulo-' + i.id">
 
-                <!-- Backdrop fecha o modal -->
                 <label class="crn-modal__backdrop" [attr.for]="'acoes-toggle-'+i.id" aria-label="Fechar"></label>
 
                 <div class="crn-modal__dialog">
@@ -310,10 +372,6 @@
                         (click)="acToggle.checked = false; abrirVer(i)">
                         <i class="bi bi-eye me-1"></i> Ver
                       </button>
-
-                      <button type="button" class="btn btn-outline-danger" (click)="acToggle.checked=false; remover(i)">
-                        <i class="bi bi-trash me-1"></i> Remover
-                      </button>
                     </div>
 
                     <!-- Observações -->
@@ -334,7 +392,7 @@
                       </button>
                     </div>
 
-                    <!-- Grupo visita -->
+                    <!-- Visita -->
                     <div class="group-title">Visita</div>
                     <div class="actions-grid">
                       <a class="btn btn-outline-success" *ngIf="i.telefone" href=""
@@ -348,11 +406,13 @@
                         <i class="bi bi-calendar-plus me-1"></i>
                         {{ (i.agendamentoStatus||'nao_agendado')==='agendado' ? 'Já agendado' : 'Marcar visita' }}
                       </button>
+
                       <button type="button" class="btn btn-outline-primary"
                         *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'"
                         (click)="acToggle.checked=false; marcarVisitado(i)">
                         <i class="bi bi-check2-circle me-1"></i> Marcar visitado
                       </button>
+
                       <button type="button" class="btn btn-outline-danger"
                         *ngIf="(i.agendamentoStatus||'nao_agendado')==='agendado'"
                         (click)="acToggle.checked=false; cancelarAgendamento(i)">
@@ -360,7 +420,7 @@
                       </button>
                     </div>
 
-                    <!-- Grupo formalização -->
+                    <!-- Formalização -->
                     <div class="group-title">Formalização</div>
                     <div class="actions-grid">
                       <button type="button" class="btn btn-outline-primary"
@@ -375,7 +435,7 @@
                       </button>
                     </div>
 
-                    <!-- Grupo desistência -->
+                    <!-- Desistência -->
                     <div class="group-title">Desistência</div>
                     <div class="actions-grid">
                       <button type="button" class="btn btn-outline-warning"
@@ -401,7 +461,7 @@
           </div>
         </div>
 
-        <div *ngIf="!pagedItems()?.length" class="text-center text-muted py-4">
+        <div *ngIf="!pagedItems().length" class="text-center text-muted py-4">
           Nenhum registro encontrado para os filtros/busca.
         </div>
       </div>
@@ -433,7 +493,7 @@
   <ng-container *ngIf="aba()==='grupos'">
 
     <!-- Loading Grupos -->
-    <div *ngIf="gruposLoading()" class="alert alert-light border-0 shadow-sm d-flex align-items-center gap-2">
+    <div *ngIf="gruposLoading()" class="alert alert-light border-0 shadow-sm d-flex align-items-center gap-2 mb-3">
       <span class="spinner-border spinner-border-sm"></span>
       Carregando grupos…
     </div>
@@ -442,67 +502,60 @@
     <div class="card shadow-sm border-0" *ngIf="!gruposLoading()">
       <div class="card-body">
 
-        <div *ngIf="!gruposPaged()?.length" class="text-center text-muted py-4">
+        <div *ngIf="!gruposPaged().length" class="text-center text-muted py-4">
           Nenhum grupo distribuído para você ainda.
         </div>
 
-        <div class="row row-cols-1 row-cols-lg-2 g-3" *ngIf="gruposPaged()?.length">
+        <div class="row row-cols-1 row-cols-lg-2 g-3" *ngIf="gruposPaged().length">
           <div class="col" *ngFor="let g of gruposPaged()">
             <div class="crn-card h-100 d-flex flex-column">
+
               <!-- Cabeçalho do grupo -->
               <div class="crn-card__header d-flex align-items-center gap-3">
                 <div class="avatar-inicial">
                   {{ (g.nome || '?').charAt(0) | uppercase }}
                 </div>
                 <div class="min-w-0">
-                  <div class="fw-semibold truncate-2 mb-0 text-crn-dark">
+                  <div class="fw-semibold truncate-2 mb-1 text-crn-dark">
                     {{ g.nome || 'Grupo sem nome' }}
                   </div>
-                  <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <small class="badge text-bg-light">ID: {{ g.id }}</small>
+
+                  <div class="d-flex flex-wrap align-items-center gap-2">
+                    <!-- Status -->
                     <small class="badge" [class.text-bg-secondary]="(g.status||'rascunho')==='rascunho'"
                       [class.text-bg-success]="(g.status||'rascunho')==='ativo'"
                       [class.text-bg-dark]="(g.status||'rascunho')==='fechado'"
                       [class.text-bg-danger]="(g.status||'rascunho')==='cancelado'">
-                      Status: {{ g.status }}
+                      Status: {{ g.status || 'rascunho' }}
                     </small>
+
+                    <!-- Situação -->
                     <small class="badge" [class.text-bg-success]="g.situacao==='aprovado'"
                       [class.text-bg-warning]="g.situacao==='incompleto'"
                       [class.text-bg-danger]="g.situacao==='inapto'">
-                      Situação: {{ g.situacao }}
+                      Situação: {{ g.situacao || '—' }}
+                    </small>
+
+                    <!-- Cidade / UF -->
+                    <small class="badge text-bg-light text-truncate">
+                      <i class="bi bi-geo-alt me-1"></i>
+                      {{ g.cidade || 'Cidade não informada' }}
+                      <ng-container *ngIf="g.uf">/ {{ g.uf }}</ng-container>
+                    </small>
+
+                    <!-- Capacidade / Membros -->
+                    <small class="badge text-bg-info">
+                      {{ g.membrosCount || g.membrosIds.length || 0 }}
+                      / {{ g.capacidadeMax || g.capacidadeMin || '?' }} membros
                     </small>
                   </div>
                 </div>
               </div>
 
               <!-- Corpo do grupo -->
-              <div class="crn-card__body">
-                <!-- Linha 1: Cidade/UF, Capacidade, Quantidade -->
-                <div class="row g-2 mb-2">
-                  <div class="col-md-4">
-                    <div class="crn-field">
-                      <span class="crn-label">Cidade/UF</span>
-                      <span class="crn-value">
-                        {{ g.cidade || '—' }}
-                        <ng-container *ngIf="g.uf"> • {{ g.uf }}</ng-container>
-                      </span>
-                    </div>
-                  </div>
-                  <div class="col-md-4">
-                    <div class="crn-field">
-                      <span class="crn-label">Capacidade</span>
-                      <span class="crn-value">{{ g.capacidadeMin }}/{{ g.capacidadeMax }}</span>
-                    </div>
-                  </div>
-                  <div class="col-md-4">
-                    <div class="crn-field">
-                      <span class="crn-label">Membros</span>
-                      <span class="crn-value">{{ g.membrosCount || g.membrosIds.length }}</span>
-                    </div>
-                  </div>
-                </div>
+              <div class="crn-card__body mt-2">
 
-                <!-- Métricas do grupo -->
+                <!-- Métricas -->
                 <div class="d-flex flex-wrap gap-2 mb-3" *ngIf="$any(g)?.metrics as mt">
                   <span class="badge text-bg-info">Agendados: {{ mt.agendados }}</span>
                   <span class="badge text-bg-success">Visitados: {{ mt.visitados }}</span>
@@ -511,73 +564,29 @@
                 </div>
 
                 <!-- Coordenador -->
-                <div class="border rounded p-3 mb-3">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <strong>Coordenador</strong>
-                    <a *ngIf="g.inviteUrl" [href]="g.inviteUrl" target="_blank" rel="noopener" class="small">
-                      Link de convite <i class="bi bi-box-arrow-up-right ms-1"></i>
-                    </a>
-                  </div>
-
-                  <ng-container *ngIf="$any(g)?.coordenadorView as c; else semCoord">
-                    <div class="row g-2 align-items-center">
-                      <div class="col-12 col-md-6">
-                        <div class="text-truncate"><i class="bi bi-person me-1"></i> {{ c.nome || '—' }}</div>
-                        <div class="text-muted small">
-                          CPF {{ c.cpf || '—' }} • {{ c.telefone || 'sem telefone' }}
-                        </div>
-                        <div class="text-muted small">
-                          {{ c.endereco || '—' }} <ng-container *ngIf="c.bairro">— {{ c.bairro }}</ng-container>
-                        </div>
+                <div class="border rounded p-3 mb-2" *ngIf="$any(g)?.coordenadorView as c">
+                  <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                    <div class="min-w-0">
+                      <div class="fw-semibold text-truncate">
+                        <i class="bi bi-person me-1"></i> Coordenador: {{ c.nome || '—' }}
                       </div>
-                      <div class="col-12 col-md-6 text-md-end mt-2 mt-md-0">
-                        <div class="btn-group btn-group-sm">
-                          <a class="btn btn-outline-success" *ngIf="whatsHrefCoordenador(g)"
-                            [href]="whatsHrefCoordenador(g)!" target="_blank" rel="noopener">
-                            <i class="bi bi-whatsapp me-1"></i> Whats
-                          </a>
-                          <button class="btn btn-outline-secondary" (click)="abrirAgendarCoordenador(g)"
-                            [disabled]="(c.agendamentoStatus||'nao_agendado')==='agendado'">
-                            <i class="bi bi-calendar-plus me-1"></i>
-                            {{ (c.agendamentoStatus||'nao_agendado')==='agendado' ? 'Já agendado' : 'Agendar' }}
-                          </button>
-                          <button class="btn btn-outline-primary"
-                            *ngIf="(c.agendamentoStatus||'nao_agendado')==='agendado'"
-                            (click)="marcarVisitadoCoordenador(g)">
-                            <i class="bi bi-check2-circle me-1"></i> Visitado
-                          </button>
-                          <button class="btn btn-outline-danger"
-                            *ngIf="(c.agendamentoStatus||'nao_agendado')==='agendado'"
-                            (click)="cancelarAgendamentoCoordenador(g)">
-                            <i class="bi bi-x-circle me-1"></i> Cancelar
-                          </button>
-                        </div>
-
-                        <div class="btn-group btn-group-sm mt-2">
-                          <button class="btn btn-outline-primary" *ngIf="c?.formalizacao?.status!=='formalizado'"
-                            (click)="marcarFormalizadoCoordenador(g)">
-                            <i class="bi bi-file-check me-1"></i> Formalizar
-                          </button>
-                          <button class="btn btn-outline-secondary" *ngIf="c?.formalizacao?.status==='formalizado'"
-                            (click)="desfazerFormalizacaoCoordenador(g)">
-                            <i class="bi bi-arrow-counterclockwise me-1"></i> Desfazer
-                          </button>
-
-                          <button class="btn btn-outline-warning" *ngIf="c?.desistencia?.status!=='desistiu'"
-                            (click)="marcarDesistenciaCoordenador(g)">
-                            <i class="bi bi-emoji-frown me-1"></i> Desistiu
-                          </button>
-                          <button class="btn btn-outline-dark" *ngIf="c?.desistencia?.status==='desistiu'"
-                            (click)="desfazerDesistenciaCoordenador(g)">
-                            <i class="bi bi-emoji-smile me-1"></i> Reativar
-                          </button>
-                        </div>
+                      <div class="text-muted small text-truncate">
+                        CPF {{ c.cpf || '—' }} • {{ c.telefone || 'sem telefone' }}
+                      </div>
+                      <div class="text-muted small text-truncate">
+                        {{ c.endereco || '—' }}
+                        <ng-container *ngIf="c.bairro"> — {{ c.bairro }}</ng-container>
                       </div>
                     </div>
-                  </ng-container>
-                  <ng-template #semCoord>
-                    <div class="text-muted">Nenhum coordenador definido.</div>
-                  </ng-template>
+                  </div>
+                </div>
+
+                <!-- Botão para modal -->
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                  <button class="btn btn-md btn-outline-success" (click)="abrirGrupo(g)">
+                    <i class="bi bi-people-fill me-1"></i>
+                    Visualizar Todos os Membros
+                  </button>
                 </div>
 
               </div>
@@ -610,7 +619,169 @@
         </div>
       </div>
     </div>
+
+    <!-- ========== MODAL CUSTOM: DETALHES DO GRUPO + MEMBROS ========== -->
+    <div class="crn-modal-overlay" *ngIf="modalGrupoAberto()">
+      <div class="crn-modal-xl">
+
+        <!-- HEADER -->
+        <div class="crn-modal-header" *ngIf="grupoSelecionado() as gSel">
+          <div>
+            <h5 class="mb-1">
+              <i class="bi bi-people-fill me-1"></i>
+              {{ gSel.nome || 'Grupo sem nome' }}
+            </h5>
+
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+
+              <!-- Status -->
+              <span class="badge" [class.text-bg-secondary]="(gSel.status||'rascunho')==='rascunho'"
+                [class.text-bg-success]="(gSel.status||'rascunho')==='ativo'"
+                [class.text-bg-dark]="(gSel.status||'rascunho')==='fechado'"
+                [class.text-bg-danger]="(gSel.status||'rascunho')==='cancelado'">
+                Status: {{ gSel.status || 'rascunho' }}
+              </span>
+
+              <!-- Situação -->
+              <span class="badge" [class.text-bg-success]="gSel.situacao==='aprovado'"
+                [class.text-bg-warning]="gSel.situacao==='incompleto'"
+                [class.text-bg-danger]="gSel.situacao==='inapto'">
+                Situação: {{ gSel.situacao || '—' }}
+              </span>
+
+              <!-- Cidade + UF + Bandeira -->
+              <span class="badge text-bg-light d-flex align-items-center gap-1">
+                <i class="bi bi-geo-alt"></i>
+                {{ gSel.cidade || 'Cidade não informada' }}
+                <ng-container *ngIf="gSel.uf">
+                  /
+                  <span class="uf-flag" [ngClass]="'flag-'+(gSel.uf.toLowerCase() || 'br')"></span>
+                  <span class="uf-text ms-1">{{ gSel.uf }}</span>
+                </ng-container>
+              </span>
+
+              <!-- Capacidade -->
+              <span class="badge text-bg-info">
+                {{ gSel.membrosCount || gSel.membrosIds.length || 0 }}
+                / {{ gSel.capacidadeMax || gSel.capacidadeMin || '?' }} membros
+              </span>
+
+            </div>
+          </div>
+
+          <button type="button" class="btn-close" (click)="fecharModalGrupo()" aria-label="Fechar"></button>
+        </div>
+
+        <!-- BODY -->
+        <div class="crn-modal-body" *ngIf="grupoSelecionado() as gSel">
+
+          <!-- MÉTRICAS -->
+          <div class="mb-3" *ngIf="$any(gSel)?.metrics as mt">
+            <h6 class="mb-2">Resumo do grupo</h6>
+            <div class="d-flex flex-wrap gap-2">
+              <span class="badge text-bg-info">Agendados: {{ mt.agendados }}</span>
+              <span class="badge text-bg-success">Visitados: {{ mt.visitados }}</span>
+              <span class="badge text-bg-primary">Formalizados: {{ mt.formalizados }}</span>
+              <span class="badge text-bg-warning">Desistentes: {{ mt.desistentes }}</span>
+            </div>
+          </div>
+
+          <h6 class="mb-3">Membros do grupo</h6>
+
+          <ng-container *ngIf="$any(gSel)?.membrosView?.length; else semMembros">
+
+            <!-- coordenador para marcar chip -->
+            <ng-container *ngIf="$any(gSel)?.coordenadorView as coord">
+
+              <div class="row row-cols-1 row-cols-md-2 g-3">
+                <div class="col" *ngFor="let m of $any(gSel).membrosView; let i = index">
+                  <div class="border rounded p-3 h-100 d-flex flex-column">
+
+                    <!-- HEADER DO CARD -->
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                      <span class="avatar-inicial" [ngClass]="{'avatar-lg': coord?.preCadastroId === m.preCadastroId}">
+                        {{ (m.nome || '?').charAt(0) | uppercase }}
+                      </span>
+                      <div class="min-w-0">
+                        <div class="d-flex align-items-center gap-2">
+                          <strong class="text-truncate d-block">{{ m.nome || 'Sem nome' }}</strong>
+
+                          <!-- chip Coordenador -->
+                          <span class="badge-soft" *ngIf="coord?.preCadastroId === m.preCadastroId">
+                            Coordenador
+                          </span>
+                        </div>
+                        <div class="text-muted small">
+                          CPF {{ m.cpf || '—' }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- ENDEREÇO / LOCAL -->
+                    <div class="text-muted small text-truncate mb-1">
+                      {{ m.bairro || coord?.bairro || '—' }}
+
+                      <ng-container *ngIf="m.cidade || gSel.cidade">
+                        • {{ m.cidade || gSel.cidade }}
+                      </ng-container>
+
+                      <ng-container *ngIf="m.uf || gSel.uf">
+                        •
+                        <span class="uf-flag" [ngClass]="'flag-'+((m.uf || gSel.uf || 'br').toLowerCase())"></span>
+                        <span class="uf-text ms-1">{{ m.uf || gSel.uf }}</span>
+                      </ng-container>
+                    </div>
+
+                    <!-- TELEFONE -->
+                    <div class="text-muted small mb-2">
+                      <i class="bi bi-telephone me-1"></i>
+                      {{ m.telefone || 'sem telefone' }}
+                    </div>
+
+                    <!-- BADGES -->
+                    <div class="d-flex flex-wrap gap-2 mt-auto small">
+                      <span class="badge"
+                        [class.text-bg-secondary]="(m.agendamentoStatus||'nao_agendado')==='nao_agendado'"
+                        [class.text-bg-primary]="m.agendamentoStatus==='agendado'"
+                        [class.text-bg-success]="m.agendamentoStatus==='visitado'">
+                        Agendamento: {{ m.agendamentoStatus || 'nao_agendado' }}
+                      </span>
+
+                      <span class="badge" [class.text-bg-success]="m?.formalizacao?.status==='formalizado'"
+                        [class.text-bg-secondary]="m?.formalizacao?.status!=='formalizado'">
+                        Formalização: {{ m?.formalizacao?.status || 'nao_formalizado' }}
+                      </span>
+
+                      <span class="badge" [class.text-bg-warning]="m?.desistencia?.status==='desistiu'"
+                        [class.text-bg-secondary]="m?.desistencia?.status!=='desistiu'">
+                        Situação: {{ m?.desistencia?.status || 'nao_desistiu' }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </ng-container>
+          </ng-container>
+
+          <ng-template #semMembros>
+            <div class="text-muted small">
+              Nenhum membro cadastrado neste grupo ainda.
+            </div>
+          </ng-template>
+
+        </div>
+
+        <!-- FOOTER -->
+        <div class="crn-modal-footer">
+          <button class="btn btn-secondary" (click)="fecharModalGrupo()">Fechar</button>
+        </div>
+
+      </div>
+    </div>
+
   </ng-container>
+
 </div>
 
 <!-- ===== MODAL: EDITAR ===== -->
@@ -686,7 +857,9 @@
     <div class="crn-modal__body" *ngIf="itemAgendar() as a">
       <p class="mb-3">
         <strong>Cliente:</strong> {{ a.nomeCompleto }} <br>
-        <small class="text-muted">CPF {{ a.cpf || '—' }} • {{ a.telefone || 'sem telefone' }}</small>
+        <small class="text-muted">
+          CPF {{ a.cpf || '—' }} • {{ a.telefone || 'sem telefone' }}
+        </small>
       </p>
 
       <div class="row g-3">
@@ -721,34 +894,42 @@
 
     <div class="crn-modal__body" *ngIf="viewItem() as v">
       <div class="row g-3">
-        <div class="col-md-6"><strong>Nome:</strong>
+        <div class="col-md-6">
+          <strong>Nome:</strong>
           <div>{{ v.nomeCompleto || '—' }}</div>
         </div>
-        <div class="col-md-3"><strong>CPF:</strong>
+        <div class="col-md-3">
+          <strong>CPF:</strong>
           <div>{{ v.cpf || '—' }}</div>
         </div>
-        <div class="col-md-3"><strong>Telefone:</strong>
+        <div class="col-md-3">
+          <strong>Telefone:</strong>
           <div>{{ v.telefone || '—' }}</div>
         </div>
 
-        <div class="col-md-6"><strong>E-mail:</strong>
+        <div class="col-md-6">
+          <strong>E-mail:</strong>
           <div>{{ v.email || '—' }}</div>
         </div>
-        <div class="col-md-6"><strong>Origem:</strong>
+        <div class="col-md-6">
+          <strong>Origem:</strong>
           <div>{{ v.origem || '—' }}</div>
         </div>
 
-        <div class="col-md-8"><strong>Endereço:</strong>
+        <div class="col-md-8">
+          <strong>Endereço:</strong>
           <div class="text-break">{{ v.endereco || '—' }}</div>
         </div>
-        <div class="col-md-2"><strong>Bairro:</strong>
+        <div class="col-md-2">
+          <strong>Bairro:</strong>
           <div>{{ v.bairro || '—' }}</div>
         </div>
-        <div class="col-md-2"><strong>Cidade/UF:</strong>
+        <div class="col-md-2">
+          <strong>Cidade/UF:</strong>
           <div>{{ v.cidade || '—' }} / {{ v.uf || '—' }}</div>
         </div>
 
-        <!-- 🔎 Indicação de Grupo também no modal Ver -->
+        <!-- Indicação de Grupo -->
         <div class="col-12" *ngIf="v.grupoId">
           <strong>Grupo:</strong>
           <div>
@@ -768,116 +949,126 @@
           <strong>Status:</strong>
           <div class="d-flex flex-wrap gap-2 mt-1">
             <span class="badge" [ngClass]="{
-                'text-bg-secondary': (v.agendamentoStatus||'nao_agendado')==='nao_agendado',
-                'text-bg-info': (v.agendamentoStatus||'nao_agendado')==='agendado',
-                'text-bg-success': (v.agendamentoStatus||'nao_agendado')==='visitado'
-              }">
-              Agendamento: {{
+                    'text-bg-secondary': (v.agendamentoStatus||'nao_agendado')==='nao_agendado',
+                    'text-bg-info': (v.agendamentoStatus||'nao_agendado')==='agendado',
+                    'text-bg-success': (v.agendamentoStatus||'nao_agendado')==='visitado'
+                  }">
+              Agendamento:
+              {{
               (v.agendamentoStatus||'nao_agendado')==='nao_agendado' ? 'Não agendado' :
               (v.agendamentoStatus||'nao_agendado')==='agendado' ? 'Agendado' : 'Visitado'
               }}
             </span>
-
-            <span class="badge" [ngClass]="{
-                'text-bg-secondary': (v.aprovacao?.status || 'nao_verificado')==='nao_verificado',
-                'text-bg-danger': (v.aprovacao?.status || 'nao_verificado')==='inapto',
-                'text-bg-success': (v.aprovacao?.status || 'nao_verificado')==='apto'
-              }">
-              Aprovação: {{
-              (v.aprovacao?.status || 'nao_verificado')==='nao_verificado' ? 'Não verificado' :
-              (v.aprovacao?.status==='apto' ? 'Apto' : 'Inapto')
-              }}
-            </span>
-
-            <span class="badge" [ngClass]="formalizacaoBadgeClass(v)">
-              {{ formalizacaoStatus(v) === 'formalizado' ? 'Formalizado' : 'Não formalizado' }}
-            </span>
-
-            <span class="badge" [ngClass]="desistenciaBadgeClass(v)">
-              {{ desistenciaStatus(v) === 'desistiu' ? 'Desistiu' : 'Não desistiu' }}
-            </span>
           </div>
         </div>
-
       </div>
-    </div>
-
-    <div class="crn-modal__footer">
-      <button class="btn btn-light" (click)="fecharModais()">Fechar</button>
     </div>
   </div>
 </div>
 
-<!-- ===== MODAL: OBSERVAÇÕES ===== -->
+<!-- ===== MODAL: OBSERVAÇÕES (EDIÇÃO) ===== -->
 <div *ngIf="modalObsAberto()" class="crn-modal" role="dialog" aria-modal="true">
   <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
   <div class="crn-modal__dialog" role="document" aria-labelledby="modalObsTitulo">
     <div class="crn-modal__header">
-      <h5 id="modalObsTitulo" class="mb-0">Observações do Pré-cadastro</h5>
+      <h5 id="modalObsTitulo" class="mb-0">Observações do pré-cadastro</h5>
       <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
     </div>
 
     <div class="crn-modal__body" *ngIf="viewItem() as v">
-      <div class="mb-2 text-muted">
-        Cliente: <strong>{{ v.nomeCompleto || '—' }}</strong>
+      <p class="mb-2">
+        <strong>Cliente:</strong> {{ v.nomeCompleto || '—' }}<br>
+        <small class="text-muted">CPF {{ v.cpf || '—' }}</small>
+      </p>
+
+      <div class="mb-3">
+        <label class="form-label">Observações</label>
+        <textarea class="form-control" rows="5" [ngModel]="obsModel()"
+          (ngModelChange)="obsModel.set($event)"></textarea>
       </div>
-      <textarea class="form-control" rows="8" placeholder="Escreva observações adicionais…" [ngModel]="obsModel()"
-        (ngModelChange)="obsModel.set($event)"></textarea>
     </div>
 
     <div class="crn-modal__footer">
       <button class="btn btn-light" (click)="fecharModais()">Cancelar</button>
-      <button class="btn btn-primary" (click)="salvarObservacoes()">
-        <i class="bi bi-save me-1"></i> Salvar observações
+      <button class="btn btn-success" (click)="salvarObservacoes()">
+        <i class="bi bi-check2 me-1"></i> Salvar observações
       </button>
     </div>
   </div>
 </div>
 
-<!-- ===== MODAL: ARQUIVOS ===== -->
+<!-- ===== MODAL: ARQUIVOS / ANEXOS ===== -->
 <div *ngIf="modalArqsAberto()" class="crn-modal" role="dialog" aria-modal="true">
   <div class="crn-modal__backdrop" (click)="fecharModais()"></div>
   <div class="crn-modal__dialog" role="document" aria-labelledby="modalArqsTitulo">
     <div class="crn-modal__header">
-      <h5 id="modalArqsTitulo" class="mb-0">Arquivos do Pré-cadastro</h5>
+      <h5 id="modalArqsTitulo" class="mb-0">Arquivos do pré-cadastro</h5>
       <button class="btn-close" (click)="fecharModais()" aria-label="Fechar"></button>
     </div>
 
     <div class="crn-modal__body" *ngIf="viewItem() as v">
-      <div class="mb-2 text-muted">
-        Cliente: <strong>{{ v.nomeCompleto || '—' }}</strong>
-      </div>
+      <p class="mb-3">
+        <strong>Cliente:</strong> {{ v.nomeCompleto || '—' }}<br>
+        <small class="text-muted">
+          CPF {{ v.cpf || '—' }} • {{ v.telefone || 'sem telefone' }}
+        </small>
+      </p>
 
-      <div class="d-flex align-items-center gap-2 mb-3">
+      <!-- Upload -->
+      <div class="mb-3">
+        <label class="form-label">Adicionar arquivo</label>
         <input type="file" class="form-control" (change)="onEscolherArquivo($event)" [disabled]="uploadEmProgresso()" />
-        <span *ngIf="uploadEmProgresso()" class="spinner-border spinner-border-sm" aria-label="Enviando..."></span>
+        <small class="text-muted d-block mt-1" *ngIf="uploadEmProgresso()">
+          Enviando arquivo… aguarde.
+        </small>
       </div>
 
-      <div *ngIf="arqsCarregando()" class="alert alert-light border-0 d-flex align-items-center gap-2">
-        <span class="spinner-border spinner-border-sm"></span> Carregando arquivos…
+      <hr>
+
+      <!-- Lista de arquivos -->
+      <div *ngIf="arqsCarregando()" class="text-muted d-flex align-items-center gap-2 mb-2">
+        <span class="spinner-border spinner-border-sm"></span>
+        Carregando arquivos…
       </div>
 
-      <div *ngIf="!arqsCarregando() && !arqsLista()?.length" class="text-muted">
-        Nenhum arquivo enviado ainda.
+      <div *ngIf="!arqsCarregando() && !arqsLista().length" class="text-muted">
+        Nenhum arquivo anexado ainda.
       </div>
 
-      <ul class="list-group" *ngIf="!arqsCarregando() && arqsLista()?.length">
-        <li class="list-group-item d-flex justify-content-between align-items-center" *ngFor="let a of arqsLista()">
-          <div class="me-3">
-            <i class="bi bi-file-earmark me-2"></i>
-            <a [href]="a.url" target="_blank" rel="noopener">{{ a.nome }}</a>
-            <small class="text-muted ms-2" *ngIf="a.tamanho">({{ a.tamanho }} bytes)</small>
+      <div class="list-group" *ngIf="!arqsCarregando() && arqsLista().length">
+        <div class="list-group-item d-flex justify-content-between align-items-start gap-2"
+          *ngFor="let arq of arqsLista()">
+          <div class="me-2">
+            <div class="fw-semibold">
+              <a [href]="arq.url" target="_blank" rel="noopener noreferrer">
+                <i class="bi bi-paperclip me-1"></i> {{ arq.nome || 'Arquivo' }}
+              </a>
+            </div>
+            <div class="text-muted small">
+              <ng-container *ngIf="$any(arq)?.contentType">
+                {{ $any(arq).contentType }} •
+              </ng-container>
+              <ng-container *ngIf="$any(arq)?.tamanhoBytes as tb">
+                {{ tb / 1024 | number:'1.0-0' }} KB
+              </ng-container>
+              <ng-container *ngIf="$any(arq)?.criadoEm as ts">
+                • {{ (ts?.toDate ? ts.toDate() : ts) | date:'dd/MM/yyyy HH:mm' }}
+              </ng-container>
+            </div>
+            <div class="text-muted small" *ngIf="$any(arq)?.subidoPorNome">
+              Enviado por {{ $any(arq).subidoPorNome }}
+            </div>
           </div>
-          <div class="text-nowrap">
-            <a class="btn btn-sm btn-outline-secondary me-1" [href]="a.url" download>
-              <i class="bi bi-download"></i>
-            </a>
-            <button class="btn btn-sm btn-outline-danger" (click)="removerArquivo(a)">
-              <i class="bi bi-trash"></i>
+
+          <div class="text-end">
+            <button type="button" class="btn btn-sm btn-outline-danger" (click)="removerArquivo(arq)"
+              [disabled]="uploadEmProgresso() || arqsCarregando()">
+              <i class="bi bi-trash me-1"></i> Remover
             </button>
           </div>
-        </li>
-      </ul>
+        </div>
+      </div>
+
     </div>
 
     <div class="crn-modal__footer">

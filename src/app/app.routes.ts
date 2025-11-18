@@ -6,6 +6,7 @@ import { AgendamentosListaComponent } from './pages/agendamentos/agendamentos-li
 import { ListagemAgendamentosComponent } from './pages/listagem-agendamentos/listagem-agendamentos.component';
 import { AprovacaoPreCadastroComponent } from './pages/aprovacao-pre-cadastro/aprovacao-pre-cadastro.component';
 
+
 export const routes: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 
@@ -79,7 +80,7 @@ export const routes: Routes = [
   {
     path: 'pre-cadastros',
     canActivate: [authGuard, roleGuard],
-    data: { roles: ['operacional', 'admin', 'supervisor'] as Papel[] },
+    data: { roles: ['operacional', 'admin', 'supervisor', 'analista'] as Papel[] },
     title: 'Todos os Pré-cadastros',
     loadComponent: () =>
       import('./pages/listagem-pre-cadastros/listagem-pre-cadastros.component')
@@ -96,6 +97,15 @@ export const routes: Routes = [
         .then(m => m.TriagemPreCadastrosComponent),
   },
 
+  {
+    path: 'triagem-supervisao',
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ['admin','analista', 'supervisor'] as Papel[] },
+    loadComponent: () =>
+      import('./pages/triagem-supervisao/triagem-supervisao.component')
+        .then(m => m.TriagemSupervisaoComponent),
+  },
+
   // === novo modulo ===
 
   {
@@ -103,7 +113,8 @@ export const routes: Routes = [
     canActivate: [authGuard, roleGuard],
     data: { roles: ['operacional', 'admin', 'supervisor'] as Papel[] },
     loadComponent: () =>
-      import('./pages/novomodulo/novomodulo.component').then (m => m.NovomoduloComponent) },
+      import('./pages/novomodulo/novomodulo.component').then(m => m.NovomoduloComponent)
+  },
 
   // === Cadastros ===
   {

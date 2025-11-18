@@ -51,13 +51,23 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   // ====== UI STATE ======
   searchTerm = signal<string>('');
 
-  // filtros
+  // filtros principais
   filtroStatus = signal<'todos' | 'nao_agendado' | 'agendado' | 'visitado'>('todos');
   filtroHasPhone = signal<'todos' | 'sim' | 'nao'>('todos');
   filtroHasEmail = signal<'todos' | 'sim' | 'nao'>('todos');
   filtroBairro = signal<string>('');
   filtroDataIni = signal<string>(''); // yyyy-MM-dd
   filtroDataFim = signal<string>(''); // yyyy-MM-dd
+
+  // ====== NOVOS FILTROS EXTRA ======
+  // grupo: todos / com / sem
+  filtroGrupo = signal<'todos' | 'com_grupo' | 'sem_grupo'>('todos');
+
+  // checkboxes rápidos
+  filtroFormalizados = signal<boolean>(false);
+  filtroSomenteAgendados = signal<boolean>(false);
+  filtroSomenteVisitados = signal<boolean>(false);
+  filtroProximosAgendamentos = signal<boolean>(false); // próximos 7 dias
 
   // paginação (PESSOAS)
   pageSize = signal<number>(9);
@@ -78,6 +88,11 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   modalVerAberto = signal(false);
   modalEditarAberto = signal(false);
   modalAgendarAberto = signal(false);
+
+  // Modal de detalhes do grupo (coordenador + membros)
+  modalGrupoAberto = signal(false);
+  grupoSelecionado = signal<GrupoSolidario | null>(null);
+
 
   // NOVOS modais (PESSOAS)
   modalObsAberto = signal(false);
@@ -120,6 +135,14 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       this.filtroBairro();
       this.filtroDataIni();
       this.filtroDataFim();
+
+      // novos filtros também resetam página
+      this.filtroGrupo();
+      this.filtroFormalizados();
+      this.filtroSomenteAgendados();
+      this.filtroSomenteVisitados();
+      this.filtroProximosAgendamentos();
+
       this.page.set(1);
     });
   }
@@ -161,7 +184,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
           const desistencia = (r as any).desistencia || {};
           return {
             agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
-            // ✅ campos de grupo (se existirem no doc)
+            // OBS: agendamentoDataHora pode já existir no doc; não sobrescrevemos
             grupoId: (r as any).grupoId ?? null,
             grupoNome: (r as any).grupoNome ?? null,
             papelNoGrupo: (r as any).papelNoGrupo ?? null,
@@ -212,18 +235,15 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
                 cidade: (coord.cidade ?? null) as any,
                 uf: (coord.uf ?? null) as any,
 
-                // 👉 status
                 agendamentoStatus: coord.agendamentoStatus || 'nao_agendado',
                 formalizacao: coord.formalizacao,
                 desistencia: coord.desistencia,
 
-                // 👉 metadados de grupo
                 grupoId,
                 grupoNome,
                 papelNoGrupo: 'coordenador'
               } as PreCadastro);
             } else if (coord?.preCadastroId && byId.has(coord.preCadastroId)) {
-              // Atualiza metadados de grupo se já existir
               const cur = byId.get(coord.preCadastroId)!;
               byId.set(coord.preCadastroId, { ...cur, grupoId, grupoNome, papelNoGrupo: 'coordenador' });
             }
@@ -307,7 +327,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     return core ? `https://wa.me/${core}` : null;
   }
 
-  /** Normaliza para o formato exigido pelo wa.me: 55 + DDD (2) + número (8 ou 9) */
   private normalizeBRPhone(v?: string | null): string | null {
     if (!v) return null;
     let d = String(v).replace(/\D+/g, '');
@@ -319,14 +338,12 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     return full;
   }
 
-  // Bandeira do estado (pasta de assets). Ex.: /assets/flags/uf-pa.svg
   ufFlagSrc(uf?: string | null): string | null {
     const code = (uf || '').toLowerCase().trim();
     if (!code || code.length !== 2) return null;
     return `/assets/flags/uf-${code}.svg`;
   }
 
-  // Nome curto do estado para tooltip (opcional simples)
   ufTitle(uf?: string | null): string {
     return (uf || '').toUpperCase();
   }
@@ -434,29 +451,70 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     const bairro = this.filtroBairro();
     const dataIni = this.filtroDataIni();
     const dataFim = this.filtroDataFim();
+    const grupoFilter = this.filtroGrupo();
+    const apenasFormal = this.filtroFormalizados();
+    const onlyAg = this.filtroSomenteAgendados();
+    const onlyVis = this.filtroSomenteVisitados();
+    const proximos = this.filtroProximosAgendamentos();
 
     const dtIni = dataIni ? new Date(dataIni + 'T00:00:00') : null;
     const dtFim = dataFim ? new Date(dataFim + 'T23:59:59') : null;
 
+    let hoje: Date | null = null;
+    let limite: Date | null = null;
+    if (proximos) {
+      hoje = new Date();
+      limite = new Date(hoje);
+      limite.setDate(hoje.getDate() + 7); // próximos 7 dias
+    }
+
     return this.itens().filter(i => {
+      // Busca por nome
       if (term) {
         const nome = this.normalize(i.nomeCompleto ?? (i as any).nome ?? '');
         if (!nome.includes(term)) return false;
       }
 
+      // Filtro status principal
       const statusAtual = (i.agendamentoStatus || 'nao_agendado') as 'nao_agendado' | 'agendado' | 'visitado';
       if (st !== 'todos' && statusAtual !== st) return false;
 
+      // Filtro por grupo
+      if (grupoFilter === 'com_grupo' && !i.grupoId) return false;
+      if (grupoFilter === 'sem_grupo' && i.grupoId) return false;
+
+      // Filtro "apenas formalizados"
+      if (apenasFormal && this.formalizacaoStatus(i) !== 'formalizado') return false;
+
+      // Checkboxes "Agendados" / "Visitados" (multi-status)
+      if (onlyAg || onlyVis) {
+        const s = (i.agendamentoStatus || 'nao_agendado') as 'nao_agendado' | 'agendado' | 'visitado';
+        const matchAg = onlyAg && s === 'agendado';
+        const matchVis = onlyVis && s === 'visitado';
+        if (!matchAg && !matchVis) return false;
+      }
+
+      // Filtro "Próximos agendamentos"
+      if (proximos && hoje && limite) {
+        const agData = this.toJSDate((i as any).agendamentoDataHora);
+        if (!agData) return false;
+        if (agData < hoje || agData > limite) return false;
+      }
+
+      // Telefone
       const temTel = !!(i.telefone && this.onlyDigits(i.telefone).length >= 10);
       if (hasPhone === 'sim' && !temTel) return false;
       if (hasPhone === 'nao' && temTel) return false;
 
+      // Email
       const temEmail = !!((i.email ?? '').trim());
       if (hasEmail === 'sim' && !temEmail) return false;
       if (hasEmail === 'nao' && temEmail) return false;
 
+      // Bairro
       if (bairro && (i.bairro ?? '') !== bairro) return false;
 
+      // Filtro por data de criação
       if (dtIni || dtFim) {
         const created = this.toJSDate(i.createdAt);
         if (!created) return false;
@@ -498,7 +556,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   setAba(aba: 'pessoas' | 'grupos') {
     this.aba.set(aba);
     if (aba === 'grupos') {
-      // opcional: recarregar grupos on-demand
       if (this.currentUserUid) this.loadGruposDoAssessor(this.currentUserUid);
     }
   }
@@ -533,6 +590,18 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     const n = Math.ceil(this.gruposTotal() / this.pageSizeGrupos());
     return Math.max(1, n || 1);
   });
+
+  // ===== MODAL DE GRUPO (detalhes + membros) =====
+  abrirGrupo(g: GrupoSolidario) {
+    this.grupoSelecionado.set(g);
+    this.modalGrupoAberto.set(true);
+  }
+
+  fecharModalGrupo() {
+    this.modalGrupoAberto.set(false);
+    this.grupoSelecionado.set(null);
+  }
+
 
   gruposGoFirst() { this.pageGrupos.set(1); }
   gruposGoPrev() { this.pageGrupos.update(p => Math.max(1, p - 1)); }
@@ -651,7 +720,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
   abrirEditar(i: PreCadastro) {
     this.viewItem.set(i);
-    this.editModel.set({ ...i }); // copia os dados atuais para edição
+    this.editModel.set({ ...i });
     this.modalEditarAberto.set(true);
   }
 
@@ -695,8 +764,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
         origem: m.origem ?? '',
         cidade: (m.cidade ?? null),
         uf: (m.uf ?? null),
-
-        // Financeiro
         valorSolicitado: typeof m.valorSolicitado === 'number' ? m.valorSolicitado : m.valorSolicitado ? Number(m.valorSolicitado) : undefined,
         parcelas: m.parcelas ?? null,
         valorParcela: typeof m.valorParcela === 'number' ? m.valorParcela : m.valorParcela ? Number(m.valorParcela) : undefined,
@@ -752,8 +819,15 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.router.navigate(['/cadastro', 'novo'], { queryParams: qp });
   }
 
-  // ====== AGENDAMENTO (PESSOAS) ======
+  // ====== AGENDAMENTO (PESSOAS E GRUPOS) ======
   abrirAgendar(i: PreCadastro) {
+    // Se o modal de grupo estiver aberto, fecha ele primeiro
+    if (this.modalGrupoAberto()) {
+      this.modalGrupoAberto.set(false);
+      this.grupoSelecionado.set(null);
+    }
+
+    // Depois abre o modal de agendamento normalmente
     this.itemAgendar.set(i);
     this.agData = '';
     this.agHora = '';
@@ -797,9 +871,14 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       await this.service.atualizar(pre.id, {
         agendamentoStatus: 'agendado',
         agendamentoId: agId,
+        agendamentoDataHora: dataHora
       } as any);
 
-      this.itens.update(list => list.map(x => (x.id === pre.id ? { ...x, agendamentoStatus: 'agendado', agendamentoId: agId } : x)));
+      this.itens.update(list => list.map(x =>
+        x.id === pre.id
+          ? { ...x, agendamentoStatus: 'agendado', agendamentoId: agId, agendamentoDataHora: dataHora } as any
+          : x
+      ));
 
       this.modalAgendarAberto.set(false);
       this.itemAgendar.set(null);
@@ -853,10 +932,15 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
 
       await this.service.atualizar(i.id, {
         agendamentoStatus: 'nao_agendado',
-        agendamentoId: null as any
+        agendamentoId: null as any,
+        agendamentoDataHora: null as any
       } as any);
 
-      this.itens.update(list => list.map(x => (x.id === i.id ? { ...x, agendamentoStatus: 'nao_agendado', agendamentoId: null } : x)));
+      this.itens.update(list => list.map(x =>
+        x.id === i.id
+          ? { ...x, agendamentoStatus: 'nao_agendado', agendamentoId: null, agendamentoDataHora: null } as any
+          : x
+      ));
       alert('Agendamento cancelado.');
     } catch (e) {
       console.error('[Agendamento] erro ao cancelar:', e);
@@ -977,9 +1061,7 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     try {
       const texto = (this.obsModel() || '').trim() || null;
       await this.service.atualizarObservacoes(i.id, texto);
-      // Atualiza local
       this.itens.update(list => list.map(x => x.id === i.id ? { ...x, observacoes: texto } : x));
-      // Atualiza no viewItem
       this.viewItem.set({ ...(i as any), observacoes: texto });
       this.modalObsAberto.set(false);
       alert('Observações salvas!');
@@ -1018,11 +1100,8 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
         uid: this.currentUserUid!,
         nome: this.currentUserNome || null
       });
-      // adiciona à lista local
       this.arqsLista.set([meta, ...this.arqsLista()]);
-      // opcional: reflete no array do documento em memória
       this.itens.update(list => list.map(x => x.id === i.id ? { ...x, arquivos: [meta, ...(x.arquivos || [])] } : x));
-      // reseta input
       input.value = '';
     } catch (e) {
       console.error('[Arquivos] upload falhou:', e);
@@ -1054,8 +1133,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     if (toggle) toggle.checked = false;
   }
 
-
-
   // =====================================================================================
   // ==================================  GRUPOS  ========================================
   // =====================================================================================
@@ -1074,7 +1151,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       agendamentoStatus: m.agendamentoStatus || 'nao_agendado',
       formalizacao: m.formalizacao,
       desistencia: m.desistencia,
-      // ✅ metadados
       grupoId: g?.id ?? null,
       grupoNome: g?.nome ?? null,
       papelNoGrupo: 'membro'
@@ -1097,7 +1173,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       agendamentoStatus: c.agendamentoStatus || 'nao_agendado',
       formalizacao: c.formalizacao,
       desistencia: c.desistencia,
-      // ✅ metadados
       grupoId: g.id,
       grupoNome: g.nome || null,
       papelNoGrupo: 'coordenador'
@@ -1191,5 +1266,4 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   whatsHrefMembro(m: MembroGrupoView): string | null {
     return this.whatsHref(m.telefone || null);
   }
-
 }

@@ -21,6 +21,8 @@ import { PreCadastro } from '../../models/pre-cadastro.model';
 type SortDir = 'asc' | 'desc';
 type Visualizacao = 'cards';
 type PreCadastroList = PreCadastro & { _path: string };
+type AprovMotivo = 'SERASA' | 'CADIN' | 'SCR';
+
 
 @Component({
   selector: 'app-listagem-pre-cadastros',
@@ -56,8 +58,16 @@ export class ListagemPreCadastrosComponent implements OnInit {
     agDataAte: '' as string | '',
     agStatus: '',
     aprovStatus: '',
-    distribuidoPara: '', // <— NOVO
+    distribuidoPara: '',
+
+    // 🔽 NOVO: motivos de reprovação (só usados quando aprovStatus = 'Inapto')
+    aprovInaptoObs: {
+      serasa: false,
+      cadin: false,
+      scr: false,
+    },
   };
+
 
   // Combos dinâmicos
   origensDisponiveis: string[] = [];
@@ -76,11 +86,28 @@ export class ListagemPreCadastrosComponent implements OnInit {
   kpiFiltrados = 0;
   kpiAgendados = 0;
   kpiSemAgendamento = 0;
+
+  // 🔽 NOVOS KPIs para inaptos por motivo
+  kpiInaptoSerasa = 0;
+  kpiInaptoCadin = 0;
+  kpiInaptoScr = 0;
+
   relDetalhes: Array<{
-    nome: string; telefone: string; criado: string; agendado: 'Sim' | 'Não';
-    agDataHora: string; agStatus: string; aprovStatus: string; bairro: string; cidade: string; uf: string; origem: string;
+    nome: string;
+    telefone: string;
+    criado: string;
+    agendado: 'Sim' | 'Não';
+    agDataHora: string;
+    agStatus: string;
+    aprovStatus: string;
+    aprovObs: string;          // 🔽 NOVO
+    bairro: string;
+    cidade: string;
+    uf: string;
+    origem: string;
     distribuidosPara: string;
   }> = [];
+
   resumoFiltros = '';
 
   // Ordenação (só afeta o array base/relatório)
@@ -95,7 +122,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
   editSaving = false;
   editItem: PreCadastroList | null = null;
   ufsBrasil = [
-    'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
+    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
   ];
   editModel: {
     nomeCompleto: string;
@@ -108,16 +135,16 @@ export class ListagemPreCadastrosComponent implements OnInit {
     uf: string;
     origem: string;
   } = {
-    nomeCompleto: '',
-    cpf: '',
-    telefone: '',
-    email: '',
-    endereco: '',
-    bairro: '',
-    cidade: '',
-    uf: '',
-    origem: '',
-  };
+      nomeCompleto: '',
+      cpf: '',
+      telefone: '',
+      email: '',
+      endereco: '',
+      bairro: '',
+      cidade: '',
+      uf: '',
+      origem: '',
+    };
 
   // =================== Ciclo de vida ===================
   async ngOnInit(): Promise<void> {
@@ -157,7 +184,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
         try {
           const cnt = await getCountFromServer(collection(db, colName));
           this.totalEstimado += (cnt.data() as any).count || 0;
-        } catch {}
+        } catch { }
       }
 
       // Carregar documentos das coleções de topo
@@ -215,7 +242,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
   private asDateFlexible(v: any): Date | null {
     if (!v) return null;
     if (v instanceof Date) return v;
-    if (typeof v === 'object' && typeof v.toDate === 'function') { try { return v.toDate(); } catch {} }
+    if (typeof v === 'object' && typeof v.toDate === 'function') { try { return v.toDate(); } catch { } }
     if (v && typeof v === 'object' && typeof v.seconds === 'number') {
       return new Date(v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6));
     }
@@ -258,7 +285,7 @@ export class ListagemPreCadastrosComponent implements OnInit {
   // ========= Distribuídos para (com fallback via UIDs) =========
   private isRoleWord(s: string): boolean {
     const n = this.normalize(s);
-    return ['analista','administrador','admin','assessor','coordenador','supervisor','operacional','rh']
+    return ['analista', 'administrador', 'admin', 'assessor', 'coordenador', 'supervisor', 'operacional', 'rh']
       .some(w => n === w || n.startsWith(w + ' '));
   }
 
@@ -303,43 +330,43 @@ export class ListagemPreCadastrosComponent implements OnInit {
     return Array.from(new Set(nomes.filter(Boolean)));
   }
 
- /** Palavras de cargo que NÃO devem contar como nome de destino */
-private readonly CARGO_WORDS = new Set([
-  'administrador','analista','coordenador','supervisor','operacional','rh','assessor'
-]);
+  /** Palavras de cargo que NÃO devem contar como nome de destino */
+  private readonly CARGO_WORDS = new Set([
+    'administrador', 'analista', 'coordenador', 'supervisor', 'operacional', 'rh', 'assessor'
+  ]);
 
-/** Extrai o nome principal do destinatário da distribuição */
-private getDistribuidoPrincipalNome(c: any): string {
-  const nome =
-    (c?.designadoParaNome ?? c?.destinatarioNome ?? '').toString().trim();
+  /** Extrai o nome principal do destinatário da distribuição */
+  private getDistribuidoPrincipalNome(c: any): string {
+    const nome =
+      (c?.designadoParaNome ?? c?.destinatarioNome ?? '').toString().trim();
 
-  if (!nome) return '';
-  // pega só a 1ª parte antes de vírgula (evita "Fulano, Administrador")
-  const first = nome.split(',')[0].trim();
-  const low = first.toLowerCase();
+    if (!nome) return '';
+    // pega só a 1ª parte antes de vírgula (evita "Fulano, Administrador")
+    const first = nome.split(',')[0].trim();
+    const low = first.toLowerCase();
 
-  // se for só um cargo, ignora
-  if (this.CARGO_WORDS.has(low)) return '';
-  return this.displayName(first);
-}
+    // se for só um cargo, ignora
+    if (this.CARGO_WORDS.has(low)) return '';
+    return this.displayName(first);
+  }
 
-/** Verdadeiro apenas se houver distribuição REAL para alguém diferente de quem criou */
-public isDistribuido(c: any): boolean {
-  const temUidDestino = !!(c?.designadoParaUid || c?.destinatarioUid);
-  const temMomento = !!c?.designadoEm; // opcional, mas ajuda a evitar falsos positivos
-  const nomeDestino = this.getDistribuidoPrincipalNome(c);
+  /** Verdadeiro apenas se houver distribuição REAL para alguém diferente de quem criou */
+  public isDistribuido(c: any): boolean {
+    const temUidDestino = !!(c?.designadoParaUid || c?.destinatarioUid);
+    const temMomento = !!c?.designadoEm; // opcional, mas ajuda a evitar falsos positivos
+    const nomeDestino = this.getDistribuidoPrincipalNome(c);
 
-  // se tiver creator e destino iguais, considera NÃO distribuído
-  const mesmoQueCriador =
-    c?.createdByUid && (c?.designadoParaUid === c?.createdByUid || c?.destinatarioUid === c?.createdByUid);
+    // se tiver creator e destino iguais, considera NÃO distribuído
+    const mesmoQueCriador =
+      c?.createdByUid && (c?.designadoParaUid === c?.createdByUid || c?.destinatarioUid === c?.createdByUid);
 
-  return !!nomeDestino && temUidDestino && !mesmoQueCriador && (temMomento || temUidDestino);
-}
+    return !!nomeDestino && temUidDestino && !mesmoQueCriador && (temMomento || temUidDestino);
+  }
 
-/** Texto final para o card/relatório */
-public getDistribuidosParaTexto(c: any): string {
-  return this.isDistribuido(c) ? this.getDistribuidoPrincipalNome(c) : 'Ainda não foi distribuído';
-}
+  /** Texto final para o card/relatório */
+  public getDistribuidosParaTexto(c: any): string {
+    return this.isDistribuido(c) ? this.getDistribuidoPrincipalNome(c) : 'Ainda não foi distribuído';
+  }
 
 
   // ========= Aprovação / Agendamento =========
@@ -356,7 +383,7 @@ public getDistribuidosParaTexto(c: any): string {
     const n = this.normalize(raw);
 
     if (/\binapto\b/.test(n) || /reprov/.test(n) || /neg/.test(n) ||
-        /\bnao[_-]?apto\b/.test(n) || /\bnão[_-]?apto\b/.test(n)) return 'inapto';
+      /\bnao[_-]?apto\b/.test(n) || /\bnão[_-]?apto\b/.test(n)) return 'inapto';
     if (['false', '0', 'nao', 'não', 'no'].includes(n)) return 'inapto';
     if (/\bapto\b/.test(n) || /aprov/.test(n)) return 'apto';
     if (['true', '1', 'sim', 'yes'].includes(n)) return 'apto';
@@ -372,6 +399,44 @@ public getDistribuidosParaTexto(c: any): string {
     if (code === 'pendente') return 'Pendente';
     return '—';
   }
+
+  // ========= Motivos da reprovação (SERASA / CADIN / SCR) =========
+  private readonly APROV_MOTIVOS: AprovMotivo[] = ['SERASA', 'CADIN', 'SCR'];
+
+  /** Lê a string de observação (ex: "SERASA/CADIN/SCR") e devolve array de motivos válidos */
+  private parseAprovMotivos(c: any): AprovMotivo[] {
+    const raw = (
+      c?.aprovacao?.observacao ??
+      c?.aprovacaoObservacao ??
+      c?.aprovacao?.motivo ??
+      ''
+    ).toString();
+
+    if (!raw) return [];
+
+    return raw
+      .split('/')
+      .map((t: string) => t.trim().toUpperCase())
+      .filter((t: string) => this.APROV_MOTIVOS.includes(t as AprovMotivo)) as AprovMotivo[];
+  }
+
+  /** Verdadeiro se o pré-cadastro tiver o motivo especificado */
+  public hasAprovMotivo(c: any, motivo: AprovMotivo): boolean {
+    return this.parseAprovMotivos(c).includes(motivo);
+  }
+
+  /** Texto pronto para exibir nos cards / relatório */
+  public getAprovMotivosTexto(c: any): string {
+    const arr = this.parseAprovMotivos(c);
+    return arr.length ? arr.join(' / ') : '';
+  }
+
+  /** Getter usado no template para saber se o filtro está em INAPTO */
+  public get aprovFiltroEhInapto(): boolean {
+    const n = this.normalize(this.filtro.aprovStatus);
+    return !!n && n.includes('inapto');
+  }
+
 
   public isAgendado(c: PreCadastroList): boolean {
     const ag: any = (c as any)?.agendamento;
@@ -419,12 +484,12 @@ public getDistribuidosParaTexto(c: any): string {
   }
 
   private recalcularOpcoesDinamicas() {
-    this.origensDisponiveis    = this.uniqSorted(this.presAll.map(c => this.getOrigem(c)));
-    this.bairrosDisponiveis    = this.uniqSorted(this.presAll.map(c => this.getBairro(c)));
-    this.cidadesDisponiveis    = this.uniqSorted(this.presAll.map(c => this.getCidade(c)));
-    this.ufsDisponiveis        = this.uniqSorted(this.presAll.map(c => this.getUF(c)));
+    this.origensDisponiveis = this.uniqSorted(this.presAll.map(c => this.getOrigem(c)));
+    this.bairrosDisponiveis = this.uniqSorted(this.presAll.map(c => this.getBairro(c)));
+    this.cidadesDisponiveis = this.uniqSorted(this.presAll.map(c => this.getCidade(c)));
+    this.ufsDisponiveis = this.uniqSorted(this.presAll.map(c => this.getUF(c)));
     this.assessoresDisponiveis = this.uniqSorted(this.presAll.map(c => this.getAssessorNome(c)).filter(a => a !== '(sem assessor)'));
-    this.agStatusDisponiveis   = this.uniqSorted(this.presAll.map(c => this.getAgendaStatus(c)));
+    this.agStatusDisponiveis = this.uniqSorted(this.presAll.map(c => this.getAgendaStatus(c)));
 
     // Distribuídos para — usando o resolvedor (pega nomes por UID também)
     this.distribuicoesDisponiveis = this.uniqSorted(
@@ -437,11 +502,17 @@ public getDistribuidosParaTexto(c: any): string {
       if (rotulo && rotulo !== '—') vistos.add(rotulo);
     });
     this.aprovStatusDisponiveis = Array.from(vistos)
-      .sort((a,b)=>this.normalize(a).localeCompare(this.normalize(b)));
+      .sort((a, b) => this.normalize(a).localeCompare(this.normalize(b)));
   }
 
   onFiltroNomeChange(v: string) { this.filtro.nome = v; this.aplicarFiltrosLocais(); }
-  onAprovacaoChange() { this.aplicarFiltrosLocais(true); }
+  onAprovacaoChange() {
+    // se não estiver filtrando por INAPTO, limpa checkboxes de motivo
+    if (!this.aprovFiltroEhInapto) {
+      this.filtro.aprovInaptoObs = { serasa: false, cadin: false, scr: false };
+    }
+    this.aplicarFiltrosLocais(true);
+  }
 
   aplicarFiltrosLocais(_resetPagina = false) {
     const nl = this.normalize(this.filtro.nome);
@@ -454,10 +525,10 @@ public getDistribuidosParaTexto(c: any): string {
       arr = arr.filter(c => this.isAgendado(c) === want);
     }
 
-    if (this.filtro.origem)   arr = arr.filter(c => this.normalize(this.getOrigem(c))  === this.normalize(this.filtro.origem));
-    if (this.filtro.bairro)   arr = arr.filter(c => this.normalize(this.getBairro(c))  === this.normalize(this.filtro.bairro));
-    if (this.filtro.cidade)   arr = arr.filter(c => this.normalize(this.getCidade(c))  === this.normalize(this.filtro.cidade));
-    if (this.filtro.uf)       arr = arr.filter(c => this.getUF(c).toUpperCase() === this.filtro.uf.toUpperCase());
+    if (this.filtro.origem) arr = arr.filter(c => this.normalize(this.getOrigem(c)) === this.normalize(this.filtro.origem));
+    if (this.filtro.bairro) arr = arr.filter(c => this.normalize(this.getBairro(c)) === this.normalize(this.filtro.bairro));
+    if (this.filtro.cidade) arr = arr.filter(c => this.normalize(this.getCidade(c)) === this.normalize(this.filtro.cidade));
+    if (this.filtro.uf) arr = arr.filter(c => this.getUF(c).toUpperCase() === this.filtro.uf.toUpperCase());
     if (this.filtro.assessor) arr = arr.filter(c => this.normalize(this.getAssessorNome(c)) === this.normalize(this.filtro.assessor));
     if (this.filtro.agStatus) arr = arr.filter(c => this.normalize(this.getAgendaStatus(c)) === this.normalize(this.filtro.agStatus));
 
@@ -465,10 +536,43 @@ public getDistribuidosParaTexto(c: any): string {
       const n = this.normalize(this.filtro.aprovStatus);
       const alvo =
         n.includes('inapto') ? 'inapto' :
-        n.includes('apto')   ? 'apto'   :
-        'pendente';
+          n.includes('apto') ? 'apto' :
+            'pendente';
       arr = arr.filter(c => this.getAprovacaoCode(c) === alvo);
     }
+
+    if (this.filtro.aprovStatus) {
+      const n = this.normalize(this.filtro.aprovStatus);
+      const alvo =
+        n.includes('inapto') ? 'inapto' :
+          n.includes('apto') ? 'apto' :
+            'pendente';
+      arr = arr.filter(c => this.getAprovacaoCode(c) === alvo);
+    }
+
+    // ✅ NOVA VERSÃO: combinação EXATA de motivos selecionados
+    if (this.aprovFiltroEhInapto) {
+      const motivosSelecionados: AprovMotivo[] = [];
+      if (this.filtro.aprovInaptoObs.serasa) motivosSelecionados.push('SERASA');
+      if (this.filtro.aprovInaptoObs.cadin) motivosSelecionados.push('CADIN');
+      if (this.filtro.aprovInaptoObs.scr) motivosSelecionados.push('SCR');
+
+      if (motivosSelecionados.length) {
+        arr = arr.filter(c => {
+          const motivos = this.parseAprovMotivos(c); // ex: ['SERASA', 'SCR']
+
+          // 1) mesma quantidade de motivos que o selecionado
+          if (motivos.length !== motivosSelecionados.length) return false;
+
+          // 2) todos os selecionados estão presentes no doc
+          const setDoc = new Set(motivos);
+          return motivosSelecionados.every(m => setDoc.has(m));
+        });
+      }
+    }
+
+
+
 
     // Filtro por "Distribuído para"
     if (this.filtro.distribuidoPara) {
@@ -503,7 +607,7 @@ public getDistribuidosParaTexto(c: any): string {
     }
 
     // Ordena e aplica
-    this.presFiltrados  = this.ordenarArray(arr, this.sortField, this.sortDir);
+    this.presFiltrados = this.ordenarArray(arr, this.sortField, this.sortDir);
   }
 
   ordenarPor(campo: 'nomeCompleto' | 'createdAt' | 'assessorNome' | 'bairro') {
@@ -606,12 +710,15 @@ public getDistribuidosParaTexto(c: any): string {
   abrirRelatorioModal() {
     const dados = this.presFiltrados;
     this.kpiCarregados = this.presAll.length;
-    this.kpiFiltrados  = dados.length;
-    this.kpiAgendados  = dados.filter(c => this.isAgendado(c)).length;
+    this.kpiFiltrados = dados.length;
+    this.kpiAgendados = dados.filter(c => this.isAgendado(c)).length;
     this.kpiSemAgendamento = this.kpiFiltrados - this.kpiAgendados;
 
     this.relDetalhes = dados.map(c => {
       const dtAg = this.getAgendaDateTime(c);
+      const code = this.getAprovacaoCode(c);
+      const obs = code === 'inapto' ? (this.getAprovMotivosTexto(c) || '—') : '—';
+
       return {
         nome: this.displayName(c.nomeCompleto || '') || '—',
         telefone: this.maskPhone(this.getPhone(c)),
@@ -620,6 +727,7 @@ public getDistribuidosParaTexto(c: any): string {
         agDataHora: dtAg ? `${this.toBRDate(dtAg)} ${this.toBRTimeFromDate(dtAg)}` : '—',
         agStatus: this.getAgendaStatus(c) || '—',
         aprovStatus: this.getAprovacaoStatus(c),
+        aprovObs: obs,                      // 🔽 NOVO
         bairro: this.getBairro(c),
         cidade: this.getCidade(c),
         uf: this.getUF(c),
@@ -627,6 +735,11 @@ public getDistribuidosParaTexto(c: any): string {
         distribuidosPara: this.getDistribuidosParaTexto(c),
       };
     });
+
+    const inaptos = dados.filter(c => this.getAprovacaoCode(c) === 'inapto');
+    this.kpiInaptoSerasa = inaptos.filter(c => this.hasAprovMotivo(c, 'SERASA')).length;
+    this.kpiInaptoCadin = inaptos.filter(c => this.hasAprovMotivo(c, 'CADIN')).length;
+    this.kpiInaptoScr = inaptos.filter(c => this.hasAprovMotivo(c, 'SCR')).length;
 
     this.resumoFiltros = this.montarResumoFiltros();
     this.relatorioGeradoEm = new Date().toLocaleString('pt-BR', { hour12: false });
@@ -648,6 +761,14 @@ public getDistribuidosParaTexto(c: any): string {
     if (f.agStatus) p.push(`Status: ${f.agStatus}`);
     if (f.aprovStatus) p.push(`Aprovação: ${f.aprovStatus}`);
     if (f.distribuidoPara) p.push(`Distribuído para: ${f.distribuidoPara}`);
+    if (f.aprovStatus) p.push(`Aprovação: ${f.aprovStatus}`);
+    if (this.aprovFiltroEhInapto) {
+      const motivos: string[] = [];
+      if (f.aprovInaptoObs.serasa) motivos.push('SERASA');
+      if (f.aprovInaptoObs.cadin) motivos.push('CADIN');
+      if (f.aprovInaptoObs.scr) motivos.push('SCR');
+      if (motivos.length) p.push(`Motivo Inapto: ${motivos.join(' / ')}`);
+    }
     return p.length ? p.join(' · ') : 'Sem filtros específicos';
   }
 
@@ -667,8 +788,9 @@ public getDistribuidosParaTexto(c: any): string {
       body: [
         ['Registros carregados', String(this.kpiCarregados)],
         ['Registros após filtros', String(this.kpiFiltrados)],
-        ['Agendados', String(this.kpiAgendados)],
-        ['Sem agendamento', String(this.kpiSemAgendamento)],
+        ['Inaptos com SERASA', String(this.kpiInaptoSerasa)],   // 🔽 NOVOS
+        ['Inaptos com CADIN', String(this.kpiInaptoCadin)],
+        ['Inaptos com SCR', String(this.kpiInaptoScr)],
       ],
       styles: { fontSize: 9 },
       headStyles: { fillColor: [30, 132, 73] },
@@ -680,12 +802,12 @@ public getDistribuidosParaTexto(c: any): string {
     autoTable(docPdf, {
       startY: 40,
       head: [[
-        'Nome','Telefone','Criado em','Agendado','Data/Hora Ag.','Status','Aprovação',
-        'Bairro','Cidade','UF','Origem','Distribuídos para'
+        'Nome', 'Telefone', 'Aprovação', 'Motivo (obs.)',
+        'Bairro', 'Cidade', 'UF', 'Origem'
       ]],
       body: this.relDetalhes.map(d => [
-        d.nome, d.telefone, d.criado, d.agendado, d.agDataHora, d.agStatus, d.aprovStatus,
-        d.bairro, d.cidade, d.uf, d.origem, d.distribuidosPara
+        d.nome, d.telefone, d.aprovStatus, d.aprovObs,
+        d.bairro, d.cidade, d.uf, d.origem
       ]),
       styles: { fontSize: 8, cellPadding: 4 },
       headStyles: { fillColor: [30, 132, 73] },
@@ -705,8 +827,8 @@ public getDistribuidosParaTexto(c: any): string {
   }
 
   // Identificador estável para *ngFor (cards/relatórios)
-trackById(index: number, c: PreCadastroList): string | number {
-  return c?._path ?? (c as any)?.id ?? index;
-}
+  trackById(index: number, c: PreCadastroList): string | number {
+    return c?._path ?? (c as any)?.id ?? index;
+  }
 
 }

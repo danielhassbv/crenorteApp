@@ -22,7 +22,9 @@ import {
   getDocs,
   where,
   orderBy,
+  writeBatch,
 } from 'firebase/firestore';
+
 
 /* =========================
    Normalização & Origens
@@ -693,6 +695,38 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.view = list;
   }
 
+  private aplicarDistribuicaoEmPessoasPorGrupo(
+    g: GrupoSolidario,
+    uid: string,
+    assessorNome: string | null
+  ) {
+    const ids = g.membrosIds || [];
+    const now = new Date();
+
+    for (const id of ids) {
+      const pc = this.getPCById(id);
+      if (!pc) continue;
+
+      const patchLocal: Partial<PreCadastroRow> = {
+        designadoParaUid: uid,
+        designadoParaNome: assessorNome || this.resolveAssessorNome(uid),
+        designadoEm: now,
+      };
+
+      // Atualiza arrays locais (all/view)
+      this.all = this.patchById(this.all, pc.id, patchLocal);
+      this.view = this.patchById(this.view, pc.id, patchLocal);
+
+      // Atualiza seleção de assessor usada pelos botões da aba Pessoas
+      this.selecaoAssessor[pc.id] = uid;
+      this.selecaoAssessorNome[pc.id] = assessorNome || this.resolveAssessorNome(uid);
+    }
+
+    // Reaplica filtros/paginação na aba pessoas sem perder página atual
+    this.reapplyPeoplePreservingPage();
+  }
+
+
   /* ===== Paginação (INDIVIDUAL) ===== */
   onPageSizeChange(val: number) {
     const n = Number(val) || 10;
@@ -931,7 +965,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
         body: g.itens.map((it, idx) => {
           const dt = it.designadoEm ? it.designadoEm : null;
           const assessorNome = it.designadoParaNome || (it.designadoParaUid ? this.resolveAssessorNome(it.designadoParaUid) : '') || (it.designadoParaUid || '');
-          return [ String(idx + 1), it.nome || '', this.cpfMask(it.cpf), dt ? dt.toLocaleString() : '—', assessorNome ];
+          return [String(idx + 1), it.nome || '', this.cpfMask(it.cpf), dt ? dt.toLocaleString() : '—', assessorNome];
         }),
         styles: { fontSize: 9 },
         columnStyles: { 0: { halign: 'center', cellWidth: 28 }, 2: { cellWidth: 110 }, 3: { cellWidth: 140 } }
@@ -1082,30 +1116,67 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     this.designandoGrupo[g.id] = true;
 
     try {
+      // 1) Pega dados do assessor
       const colabRef = doc(db, 'colaboradores', uid);
       const colabSnap = await getDoc(colabRef);
       if (!colabSnap.exists()) throw new Error('Colaborador não encontrado.');
       const colab = colabSnap.data() as any;
       const assessorNome = colab?.nome ?? colab?.displayName ?? null;
 
-      const ref = doc(db, 'grupos_solidarios', g.id);
-      await setDoc(ref, {
-        designadoParaUid: uid,
-        designadoParaNome: assessorNome || null,
-        designadoEm: serverTimestamp(),
-        caixaAtual: 'assessor',
-        caixaUid: uid,
-      }, { merge: true });
+      // 2) Cria batch para atualizar grupo + todos os membros
+      const batch = writeBatch(db);
 
-      const patchLocal = {
+      // 2.1) Atualiza o grupo
+      const refGrupo = doc(db, 'grupos_solidarios', g.id);
+      batch.set(
+        refGrupo,
+        {
+          designadoParaUid: uid,
+          designadoParaNome: assessorNome || null,
+          designadoEm: serverTimestamp(),
+          caixaAtual: 'assessor',
+          caixaUid: uid,
+        },
+        { merge: true }
+      );
+
+      // 2.2) Atualiza todos os pré-cadastros membros do grupo
+      const ids = g.membrosIds || [];
+      for (const id of ids) {
+        const pc = this.getPCById(id);
+        if (!pc) continue;
+
+        const refPc = doc(db, pc._path);
+        batch.set(
+          refPc,
+          {
+            designadoParaUid: uid,
+            designadoPara: uid,
+            designadoParaNome: assessorNome || null,
+            designadoEm: serverTimestamp(),
+            caixaAtual: 'assessor',
+            caixaUid: uid,
+          },
+          { merge: true }
+        );
+      }
+
+      // 3) Commit das alterações remotas
+      await batch.commit();
+
+      // 4) Atualiza estado LOCAL do grupo
+      const patchGrupoLocal: Partial<GrupoSolidario> = {
         designadoParaUid: uid,
         designadoParaNome: assessorNome || this.resolveAssessorNome(uid),
         designadoEm: new Date(),
-      } as Partial<GrupoSolidario>;
+      };
+      this.allGrupos = this.patchById(this.allGrupos, g.id, patchGrupoLocal);
+      this.viewGrupos = this.patchById(this.viewGrupos, g.id, patchGrupoLocal);
 
-      this.allGrupos = this.patchById(this.allGrupos, g.id, patchLocal);
-      this.viewGrupos = this.patchById(this.viewGrupos, g.id, patchLocal);
+      // 5) Atualiza estado LOCAL das pessoas (aba Pessoas)
+      this.aplicarDistribuicaoEmPessoasPorGrupo(g, uid, assessorNome || null);
 
+      // 6) Reaplica filtros/paginação da aba Grupos sem perder página
       this.reapplyGroupsPreservingPage();
     } catch (e) {
       console.error('[Triagem] designarGrupo erro:', e);
@@ -1114,6 +1185,7 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
       this.designandoGrupo[g.id] = false;
     }
   }
+
 
   /* ===== Detalhe do grupo (membros por ID) ===== */
   private getPCById(id?: string | null): PreCadastroRow | null {
