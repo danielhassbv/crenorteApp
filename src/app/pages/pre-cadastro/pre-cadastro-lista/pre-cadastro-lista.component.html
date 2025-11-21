@@ -257,7 +257,7 @@
                   </span>
                 </div>
 
-                <!-- Encaminhado -->
+                <!-- Distribuído por -->
                 <div class="crn-field" *ngIf="encaminhadoParaMim(i)">
                   <span class="crn-label">Distribuído</span>
                   <span class="crn-value">
@@ -267,6 +267,18 @@
                     </small>
                   </span>
                 </div>
+
+                <!-- ✅ Encaminhado por MIM (Analista) -->
+                <div class="crn-field" *ngIf="encaminhadoPorMim(i)">
+                  <span class="crn-label">Encaminhado:</span>
+                  <span class="crn-value">
+                    para {{ encaminhadoParaNome(i) || 'Assessor' }}
+                    <small class="text-muted" *ngIf="encaminhadoQuando(i)">
+                      — {{ encaminhadoQuando(i) | date:'dd/MM/yyyy HH:mm' }}
+                    </small>
+                  </span>
+                </div>
+
 
                 <!-- Agendamento -->
                 <div class="crn-field">

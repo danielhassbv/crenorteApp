@@ -8,20 +8,12 @@
 
   <ul class="nav crenorte-tabs mt-3">
     <li class="nav-item">
-      <button
-        class="nav-link"
-        [class.active]="activeTab === 'pessoas'"
-        (click)="setTab('pessoas')"
-      >
+      <button class="nav-link" [class.active]="activeTab === 'pessoas'" (click)="setTab('pessoas')">
         Pessoas
       </button>
     </li>
     <li class="nav-item">
-      <button
-        class="nav-link"
-        [class.active]="activeTab === 'grupos'"
-        (click)="setTab('grupos')"
-      >
+      <button class="nav-link" [class.active]="activeTab === 'grupos'" (click)="setTab('grupos')">
         Grupos
       </button>
     </li>
@@ -32,13 +24,8 @@
 <div class="container-fluid py-3 bg-light border-bottom">
   <div class="row g-2 align-items-center">
     <div class="col-12 col-md-6">
-      <input
-        type="text"
-        class="form-control"
-        placeholder="Buscar por nome, CPF, endereço, rota, cidade/UF…"
-        [ngModel]="busca"
-        (ngModelChange)="onBusca($event)"
-      />
+      <input type="text" class="form-control" placeholder="Buscar por nome, CPF, endereço, rota, cidade/UF…"
+        [ngModel]="busca" (ngModelChange)="onBusca($event)" />
     </div>
 
     <!-- Filtros rápidos da aba Pessoas -->
@@ -46,62 +33,36 @@
       <div class="d-flex flex-wrap gap-2 justify-content-md-end">
         <!-- Status aprovação -->
         <div class="btn-group btn-group-sm" role="group" aria-label="Status">
-          <button
-            class="btn btn-outline-success"
-            [class.active]="statusFilter === 'todos'"
-            (click)="setStatus('todos')"
-          >
+          <button class="btn btn-outline-success" [class.active]="statusFilter === 'todos'"
+            (click)="setStatus('todos')">
             Todos
           </button>
-          <button
-            class="btn btn-outline-success"
-            [class.active]="statusFilter === 'nao'"
-            (click)="setStatus('nao')"
-          >
+          <button class="btn btn-outline-success" [class.active]="statusFilter === 'nao'" (click)="setStatus('nao')">
             Não verificado
           </button>
-          <button
-            class="btn btn-outline-success"
-            [class.active]="statusFilter === 'apto'"
-            (click)="setStatus('apto')"
-          >
+          <button class="btn btn-outline-success" [class.active]="statusFilter === 'apto'" (click)="setStatus('apto')">
             Apto
           </button>
-          <button
-            class="btn btn-outline-success"
-            [class.active]="statusFilter === 'inapto'"
-            (click)="setStatus('inapto')"
-          >
+          <button class="btn btn-outline-success" [class.active]="statusFilter === 'inapto'"
+            (click)="setStatus('inapto')">
             Inapto
           </button>
         </div>
 
         <!-- Filtro Encaminhado / Não encaminhado -->
         <div class="btn-group btn-group-sm" role="group" aria-label="Envio">
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            [class.active]="envioFilter === 'todos'"
-            (click)="setEnvio('todos')"
-          >
+          <button type="button" class="btn btn-outline-secondary" [class.active]="envioFilter === 'todos'"
+            (click)="setEnvio('todos')">
             Todos
           </button>
 
-          <button
-            type="button"
-            class="btn btn-outline-success"
-            [class.active]="envioFilter === 'encaminhado'"
-            (click)="setEnvio('encaminhado')"
-          >
+          <button type="button" class="btn btn-outline-success" [class.active]="envioFilter === 'encaminhado'"
+            (click)="setEnvio('encaminhado')">
             Encaminhados
           </button>
 
-          <button
-            type="button"
-            class="btn btn-outline-warning"
-            [class.active]="envioFilter === 'nao_encaminhado'"
-            (click)="setEnvio('nao_encaminhado')"
-          >
+          <button type="button" class="btn btn-outline-warning" [class.active]="envioFilter === 'nao_encaminhado'"
+            (click)="setEnvio('nao_encaminhado')">
             Não encaminhados
           </button>
         </div>
@@ -120,20 +81,14 @@
 
 <!-- ================= PESSOAS ================= -->
 <div class="container-fluid" *ngIf="activeTab === 'pessoas'">
-  <div
-    class="d-flex flex-wrap align-items-center justify-content-between gap-2 my-3"
-  >
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 my-3">
     <div class="text-muted small">
       Mostrando {{ view.length ? pageStart + 1 : 0 }}–{{ pageEnd }} de
       {{ view.length }} pessoas
     </div>
     <div class="d-flex align-items-center gap-2">
       <label class="small text-nowrap">Itens por página</label>
-      <select
-        class="form-select form-select-sm w-auto"
-        [ngModel]="pageSize"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
+      <select class="form-select form-select-sm w-auto" [ngModel]="pageSize" (ngModelChange)="onPageSizeChange($event)">
         <option [ngValue]="10">10</option>
         <option [ngValue]="20">20</option>
         <option [ngValue]="50">50</option>
@@ -148,27 +103,19 @@
         Nenhum registro encontrado.
       </div>
 
-      <div
-        class="list-group-item"
-        *ngFor="let r of pageItems; trackBy: trackById"
-      >
-        <div
-          class="d-flex flex-wrap align-items-start justify-content-between gap-3"
-        >
+      <div class="list-group-item" *ngFor="let r of pageItems; trackBy: trackById">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
           <!-- Lado esquerdo: dados do cliente -->
           <div>
             <div class="fw-semibold d-flex align-items-center gap-2">
               <span>{{ r.nome || '(sem nome)' }}</span>
-              <span
-                class="ms-2 badge"
-                [ngClass]="{
+              <span class="ms-2 badge" [ngClass]="{
                   'chip-status': 1,
                   'is-apto': r.statusAprovacao === 'apto',
                   'is-inapto': r.statusAprovacao === 'inapto',
                   'is-nao':
                     !r.statusAprovacao || r.statusAprovacao === 'nao'
-                }"
-              >
+                }">
                 {{ statusIcon(r.statusAprovacao) }}
                 {{ statusLabel(r.statusAprovacao) }}
               </span>
@@ -183,16 +130,13 @@
             </div>
 
             <!-- Informação de encaminhamento / assessor atual -->
-            <div
-              class="text-muted small"
-              *ngIf="r.encaminhadoParaUid || r.designadoParaUid"
-            >
+            <div class="text-muted small" *ngIf="r.encaminhadoParaUid || r.designadoParaUid">
               Distribuído para:
               {{
-                r.encaminhadoParaNome ||
-                r.designadoParaNome ||
-                r.encaminhadoParaUid ||
-                r.designadoParaUid
+              r.encaminhadoParaNome ||
+              r.designadoParaNome ||
+              r.encaminhadoParaUid ||
+              r.designadoParaUid
               }}
             </div>
             <div class="text-muted small" *ngIf="r.encaminhadoPorUid">
@@ -205,45 +149,35 @@
           <!-- Lado direito: status + ações -->
           <div class="d-flex flex-wrap align-items-center gap-2">
             <!-- Badge Encaminhado / Não encaminhado -->
-            <span
-              class="badge"
-              [ngClass]="{
+            <span class="badge" [ngClass]="{
                 'bg-success': r.encaminhadoParaUid,
                 'bg-warning text-dark': !r.encaminhadoParaUid
-              }"
-            >
+              }">
               {{
-                r.encaminhadoParaUid ? 'Encaminhado' : 'Não encaminhado'
+              r.encaminhadoParaUid ? 'Encaminhado' : 'Não encaminhado'
               }}
             </span>
 
             <!-- Botão abrir modal -->
-            <button
-              class="btn btn-sm btn-outline-success"
-              (click)="abrirModalAssessor(r)"
-            >
+            <button class="btn btn-sm btn-outline-success" (click)="abrirModalAssessor(r)">
               {{
-                r.encaminhadoParaUid
-                  ? 'Trocar assessor'
-                  : 'Escolher assessor'
+              r.encaminhadoParaUid
+              ? 'Trocar assessor'
+              : 'Escolher assessor'
               }}
             </button>
 
             <!-- Botão principal de encaminhar -->
-            <button
-              class="btn btn-sm btn-success"
-              [disabled]="
+            <button class="btn btn-sm btn-success" [disabled]="
                 !r.id ||
                 !selectedAssessorUid ||
                 (selectedAssessorUid === r.encaminhadoParaUid &&
                   r.encaminhadoEm)
-              "
-              (click)="designarParaAssessor(r, selectedAssessorUid)"
-            >
+              " (click)="designarParaAssessor(r, selectedAssessorUid)">
               {{
-                r.encaminhadoParaUid
-                  ? 'Atualizar encaminhamento'
-                  : 'Encaminhar'
+              r.encaminhadoParaUid
+              ? 'Atualizar encaminhamento'
+              : 'Encaminhar'
               }}
             </button>
           </div>
@@ -253,10 +187,7 @@
   </div>
 
   <!-- Paginação -->
-  <div
-    class="d-flex align-items-center justify-content-between my-3"
-    *ngIf="totalPages > 1"
-  >
+  <div class="d-flex align-items-center justify-content-between my-3" *ngIf="totalPages > 1">
     <div class="text-muted small">
       Página {{ currentPage }} de {{ totalPages }}
     </div>
@@ -276,21 +207,15 @@
 
 <!-- ================= GRUPOS ================= -->
 <div class="container-fluid" *ngIf="activeTab === 'grupos'">
-  <div
-    class="d-flex flex-wrap align-items-center justify-content-between gap-2 my-3"
-  >
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 my-3">
     <div class="text-muted small">
       Mostrando {{ viewGrupos.length ? pageStartG + 1 : 0 }}–{{ pageEndG }} de
       {{ viewGrupos.length }} grupos
-      
     </div>
     <div class="d-flex align-items-center gap-2">
       <label class="small text-nowrap">Itens por página</label>
-      <select
-        class="form-select form-select-sm w-auto"
-        [ngModel]="pageSizeG"
-        (ngModelChange)="onPageSizeChangeG($event)"
-      >
+      <select class="form-select form-select-sm w-auto" [ngModel]="pageSizeG"
+        (ngModelChange)="onPageSizeChangeG($event)">
         <option [ngValue]="10">10</option>
         <option [ngValue]="20">20</option>
         <option [ngValue]="50">50</option>
@@ -303,25 +228,20 @@
     <div class="p-4" *ngIf="!viewGrupos.length">Nenhum grupo encontrado.</div>
 
     <div *ngIf="viewGrupos.length">
-      <div
-        class="triagem-card px-4 py-3 border-bottom"
-        *ngFor="let g of pageItemsG; trackBy: trackByGrupoId"
-      >
-        <div
-          class="d-flex flex-wrap align-items-start justify-content-between gap-3"
-        >
+      <div class="triagem-card px-4 py-3 border-bottom" *ngFor="let g of pageItemsG; trackBy: trackByGrupoId">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
           <!-- Dados do grupo -->
           <div>
             <div class="fw-semibold d-flex align-items-center gap-2">
-              <span>GRUPO &gt; {{ g.codigo || g.coordenadorNome}}
-              </span>
+              <span>GRUPO &gt; {{ g.codigo || g.coordenadorNome }}</span>
             </div>
 
             <div class="text-muted small">
               <span *ngIf="g.coordenadorNome">
                 Coordenador: {{ g.coordenadorNome }}
               </span>
-              <span *ngIf="g.cidade || g.estado"> <br>
+              <span *ngIf="g.cidade || g.estado">
+                <br />
                 <span *ngIf="g.coordenadorNome"> </span>
                 {{ g.cidade || '—' }}
                 <span *ngIf="g.estado">/{{ g.estado }}</span>
@@ -329,14 +249,8 @@
             </div>
 
             <div class="text-muted small">
-              Membros:
-              {{
-                (g.membrosView?.length || 0) ||
-                  g.membrosIds.length ||
-                  (g.membrosRaw?.length || 0)
-              }}
+              Membros: {{ g.membrosIds.length || 0 }}
             </div>
-
 
             <div class="text-muted small mt-1" *ngIf="g.encaminhadoParaUid">
               Distribuído para:
@@ -352,37 +266,28 @@
           <!-- Ações grupo -->
           <div class="d-flex flex-wrap align-items-center gap-2">
             <!-- Badge Encaminhado / Não encaminhado -->
-            <span
-              class="badge"
-              [ngClass]="{
+            <span class="badge" [ngClass]="{
                 'bg-success': g.encaminhadoParaUid,
                 'bg-warning text-dark': !g.encaminhadoParaUid
-              }"
-            >
+              }">
               {{
-                g.encaminhadoParaUid
-                  ? 'Encaminhado'
-                  : 'Não encaminhado'
+              g.encaminhadoParaUid
+              ? 'Encaminhado'
+              : 'Não encaminhado'
               }}
             </span>
 
             <!-- Botão Detalhes -->
-            <button
-              class="btn btn-sm btn-outline-success"
-              (click)="abrirDetalheGrupo(g)"
-            >
+            <button class="btn btn-sm btn-outline-success" (click)="abrirDetalheGrupo(g)">
               Detalhes
             </button>
 
             <!-- Botão Encaminhar / Atualizar -->
-            <button
-              class="btn btn-sm btn-success"
-              (click)="abrirModalAssessorGrupo(g)"
-            >
+            <button class="btn btn-sm btn-success" (click)="abrirModalAssessorGrupo(g)">
               {{
-                g.encaminhadoParaUid
-                  ? 'Atualizar encaminhamento'
-                  : 'Encaminhar'
+              g.encaminhadoParaUid
+              ? 'Atualizar encaminhamento'
+              : 'Encaminhar'
               }}
             </button>
           </div>
@@ -392,10 +297,7 @@
   </div>
 
   <!-- Paginação -->
-  <div
-    class="d-flex align-items-center justify-content-between my-3"
-    *ngIf="totalPagesG > 1"
-  >
+  <div class="d-flex align-items-center justify-content-between my-3" *ngIf="totalPagesG > 1">
     <div class="text-muted small">
       Página {{ currentPageG }} de {{ totalPagesG }}
     </div>
@@ -416,9 +318,7 @@
   <div class="overlay" *ngIf="showGrupoDetalhe">
     <div class="overlay__backdrop" (click)="fecharDetalheGrupo()"></div>
     <div class="overlay__panel">
-      <div
-        class="d-flex align-items-center justify-content-between border-bottom mb-2"
-      >
+      <div class="d-flex align-items-center justify-content-between border-bottom mb-2">
         <div class="py-2">
           <div class="fw-semibold d-flex align-items-center gap-2">
             <span>
@@ -431,45 +331,31 @@
             {{ grupoSelecionado.coordenadorNome || '—' }}
           </div>
         </div>
-        <button
-          class="btn-close"
-          aria-label="Fechar"
-          (click)="fecharDetalheGrupo()"
-        ></button>
+        <button class="btn-close" aria-label="Fechar" (click)="fecharDetalheGrupo()"></button>
       </div>
 
       <div class="py-2">
-        <h6 class="mt-1">
-          Membros ({{ membrosPC.length }})
-        </h6>
+        <h6 class="mt-1">Membros ({{ membrosPC.length }})</h6>
 
         <div class="row g-3">
-          <div
-            class="col-12 col-md-6 col-lg-4"
-            *ngFor="let m of membrosPC"
-          >
+          <div class="col-12 col-md-6 col-lg-4" *ngFor="let m of membrosPC">
             <div class="card h-100">
               <div class="card-body">
-                <div
-                  class="d-flex align-items-center justify-content-between mb-1"
-                >
+                <div class="d-flex align-items-center justify-content-between mb-1">
                   <div class="fw-semibold">
                     {{ m.nome || m.cpf || m.id }}
                   </div>
                 </div>
 
                 <div class="mb-2" *ngIf="m.statusAprovacao">
-                  <span
-                    class="badge"
-                    [ngClass]="{
+                  <span class="badge" [ngClass]="{
                       'chip-status': 1,
                       'is-apto': m.statusAprovacao === 'apto',
                       'is-inapto': m.statusAprovacao === 'inapto',
                       'is-nao':
                         !m.statusAprovacao ||
                         m.statusAprovacao === 'nao'
-                    }"
-                  >
+                    }">
                     {{ statusIcon(m.statusAprovacao) }}
                     {{ statusLabel(m.statusAprovacao) }}
                   </span>
@@ -497,16 +383,10 @@
         </div>
 
         <div class="d-flex gap-2 mt-3">
-          <button
-            class="btn btn-outline-secondary"
-            (click)="fecharDetalheGrupo()"
-          >
+          <button class="btn btn-outline-secondary" (click)="fecharDetalheGrupo()">
             Fechar
           </button>
-          <button
-            class="btn btn-success"
-            (click)="abrirModalAssessorGrupo(grupoSelecionado!)"
-          >
+          <button class="btn btn-success" (click)="abrirModalAssessorGrupo(grupoSelecionado!)">
             Encaminhar
           </button>
         </div>
@@ -518,42 +398,30 @@
 <!-- Modal Selecionar Assessor (Pessoas) -->
 <div class="overlay" *ngIf="showAssessorModal">
   <div class="overlay__backdrop" (click)="fecharModalAssessor()"></div>
-  <div
-    class="overlay__panel"
-    (keyup.escape)="fecharModalAssessor()"
-    tabindex="0"
-  >
-    <div
-      class="d-flex align-items-center justify-content-between border-bottom mb-2"
-    >
+  <div class="overlay__panel" (keyup.escape)="fecharModalAssessor()" tabindex="0">
+    <div class="d-flex align-items-center justify-content-between border-bottom mb-2">
       <div class="py-2">
         <div class="fw-semibold">Selecionar assessor</div>
         <small class="text-muted d-block" *ngIf="rowSelecionado">
           Pré-Cadastro:
           {{
-            rowSelecionado.nome ||
-            rowSelecionado.cpf ||
-            rowSelecionado.id
+          rowSelecionado.nome ||
+          rowSelecionado.cpf ||
+          rowSelecionado.id
           }}
           <span *ngIf="rowSelecionado.cpf">
             • CPF: {{ cpfMask(rowSelecionado.cpf) }}
           </span>
         </small>
       </div>
-      <button
-        class="btn-close"
-        aria-label="Fechar"
-        (click)="fecharModalAssessor()"
-      ></button>
+      <button class="btn-close" aria-label="Fechar" (click)="fecharModalAssessor()"></button>
     </div>
 
     <div class="py-2">
       <!-- Lista de assessores -->
       <ul class="list-group">
-        <li
-          class="list-group-item d-flex align-items-center justify-content-between gap-3"
-          *ngFor="let a of assessoresFiltrados"
-        >
+        <li class="list-group-item d-flex align-items-center justify-content-between gap-3"
+          *ngFor="let a of assessoresFiltrados">
           <div>
             <div class="fw-semibold">
               {{ a.nome || a.email || a.uid }}
@@ -563,40 +431,27 @@
             </div>
           </div>
           <div class="d-flex gap-2">
-            <button
-              type="button"
-              class="btn btn-success btn-sm px-3"
-              (click)="
+            <button type="button" class="btn btn-success btn-sm px-3" (click)="
                 designarParaAssessor(rowSelecionado!, a.uid);
                 fecharModalAssessor()
-              "
-            >
+              ">
               Encaminhar
             </button>
           </div>
         </li>
-        <li
-          class="list-group-item text-muted py-3"
-          *ngIf="!assessoresFiltrados.length"
-        >
+        <li class="list-group-item text-muted py-3" *ngIf="!assessoresFiltrados.length">
           Nenhum assessor encontrado.
         </li>
       </ul>
     </div>
-
   </div>
 </div>
 
 <!-- Modal Selecionar Assessor (Grupos) -->
 <div class="overlay" *ngIf="showAssessorModalGrupo">
-  <div
-    class="overlay__backdrop"
-    (click)="fecharModalAssessorGrupo()"
-  ></div>
+  <div class="overlay__backdrop" (click)="fecharModalAssessorGrupo()"></div>
   <div class="overlay__panel">
-    <div
-      class="d-flex align-items-center justify-content-between border-bottom mb-2"
-    >
+    <div class="d-flex align-items-center justify-content-between border-bottom mb-2">
       <div class="py-2">
         <div class="fw-semibold">Selecionar assessor (Grupo)</div>
         <small class="text-muted d-block" *ngIf="grupoSelecionado">
@@ -604,20 +459,14 @@
           {{ grupoSelecionado.coordenadorNome || '—' }}
         </small>
       </div>
-      <button
-        class="btn-close"
-        aria-label="Fechar"
-        (click)="fecharModalAssessorGrupo()"
-      ></button>
+      <button class="btn-close" aria-label="Fechar" (click)="fecharModalAssessorGrupo()"></button>
     </div>
 
     <div class="py-2">
       <!-- Lista de assessores -->
       <ul class="list-group">
-        <li
-          class="list-group-item d-flex align-items-center justify-content-between gap-3"
-          *ngFor="let a of assessoresFiltradosGrupo"
-        >
+        <li class="list-group-item d-flex align-items-center justify-content-between gap-3"
+          *ngFor="let a of assessoresFiltradosGrupo">
           <div>
             <div class="fw-semibold">
               {{ a.nome || a.email || a.uid }}
@@ -627,21 +476,15 @@
             </div>
           </div>
           <div class="d-flex gap-2">
-            <button
-              class="btn btn-success btn-sm px-3"
-              (click)="
+            <button class="btn btn-success btn-sm px-3" (click)="
                 designarGrupo(grupoSelecionado!, a.uid);
                 fecharModalAssessorGrupo()
-              "
-            >
+              ">
               Encaminhar
             </button>
           </div>
         </li>
-        <li
-          class="list-group-item text-muted py-3"
-          *ngIf="!assessoresFiltradosGrupo.length"
-        >
+        <li class="list-group-item text-muted py-3" *ngIf="!assessoresFiltradosGrupo.length">
           Nenhum assessor encontrado.
         </li>
       </ul>

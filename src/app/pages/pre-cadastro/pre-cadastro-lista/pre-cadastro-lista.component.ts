@@ -93,7 +93,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   modalGrupoAberto = signal(false);
   grupoSelecionado = signal<GrupoSolidario | null>(null);
 
-
   // NOVOS modais (PESSOAS)
   modalObsAberto = signal(false);
   modalArqsAberto = signal(false);
@@ -172,22 +171,67 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
         // ==== Pessoas (pré-cadastros) ====
         let rows: PreCadastro[] = [];
         const svcAny = this.service as any;
+
         if (typeof svcAny.listarParaCaixa === 'function') {
+          // Caixa normal (assessor/analista) – o que já vinha antes
           rows = await svcAny.listarParaCaixa(u.uid);
         } else {
           rows = await this.service.listarDoAssessor(u.uid);
         }
 
-        // Normalização local (PESSOAS)
-        const norm = rows.map(r => {
+        // 🔹 EXTRA: também trazer os pré-cadastros que ESTE usuário encaminhou
+        const encaminhados = await this.buscarPreCadastrosEncaminhadosPor(u.uid);
+
+        // 🔹 Mesclar os dois conjuntos (caixa + encaminhados), sem duplicar
+        const mapRows = new Map<string, PreCadastro>();
+
+        for (const r of rows || []) {
+          if (r?.id) {
+            mapRows.set(r.id, r);
+          }
+        }
+
+        for (const e of encaminhados || []) {
+          if (!e?.id) continue;
+          const atual = mapRows.get(e.id);
+          // se já existir, mescla; se não existir, adiciona do jeito que veio
+          mapRows.set(e.id, { ...(atual as any), ...(e as any) });
+        }
+
+        // Aqui você passa a trabalhar só com "mergedRows"
+        const mergedRows = Array.from(mapRows.values());
+
+        const norm = mergedRows.map(r => {
           const formalizacao = (r as any).formalizacao || {};
           const desistencia = (r as any).desistencia || {};
+
+          // 🔎 Tenta mapear o grupo a partir de vários formatos possíveis
+          const rawGrupo: any = (r as any).grupo || null;
+
+          const grupoId =
+            (r as any).grupoId ??
+            (r as any).grupoSolidarioId ??      // ex: se você salvou com esse nome
+            (rawGrupo?.id ?? null);
+
+          const grupoNome =
+            (r as any).grupoNome ??
+            rawGrupo?.nome ??
+            null;
+
+          const papelNoGrupo =
+            (r as any).papelNoGrupo ??
+            (r as any).grupoPapel ??
+            rawGrupo?.papel ??
+            null;
+
           return {
             agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
-            // OBS: agendamentoDataHora pode já existir no doc; não sobrescrevemos
-            grupoId: (r as any).grupoId ?? null,
-            grupoNome: (r as any).grupoNome ?? null,
-            papelNoGrupo: (r as any).papelNoGrupo ?? null,
+
+            // ✅ agora a badge enxerga o grupo
+            grupoId,
+            grupoNome,
+            papelNoGrupo,
+
             formalizacao: {
               status: (formalizacao.status as any) || 'nao_formalizado',
               porUid: formalizacao.porUid,
@@ -207,79 +251,19 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
             ...r
           } as PreCadastro;
         });
+
+
         this.itens.set(norm);
+
 
         // ==== Grupos (aba "Grupos") ====
         await this.loadGruposDoAssessor(u.uid);
 
-        // 🔁 MESCLA coordenador + membros dos grupos na lista de Pessoas (se ainda não estiverem)
-        {
-          const byId = new Map<string, PreCadastro>();
-          for (const p of this.itens()) if (p?.id) byId.set(p.id, p);
+        // ==== Grupos (aba "Grupos") ====
+        await this.loadGruposDoAssessor(u.uid);
 
-          for (const g of this.grupos()) {
-            const grupoId = g.id;
-            const grupoNome = g.nome || null;
-
-            // Coordenador
-            const coord = g.coordenadorView;
-            if (coord?.preCadastroId && !byId.has(coord.preCadastroId)) {
-              byId.set(coord.preCadastroId, {
-                id: coord.preCadastroId,
-                nomeCompleto: (coord.nome ?? null) as any,
-                cpf: (coord.cpf ?? null) as any,
-                telefone: (coord.telefone ?? null) as any,
-                email: (coord.email ?? null) as any,
-                endereco: (coord.endereco ?? null) as any,
-                bairro: (coord.bairro ?? null) as any,
-                cidade: (coord.cidade ?? null) as any,
-                uf: (coord.uf ?? null) as any,
-
-                agendamentoStatus: coord.agendamentoStatus || 'nao_agendado',
-                formalizacao: coord.formalizacao,
-                desistencia: coord.desistencia,
-
-                grupoId,
-                grupoNome,
-                papelNoGrupo: 'coordenador'
-              } as PreCadastro);
-            } else if (coord?.preCadastroId && byId.has(coord.preCadastroId)) {
-              const cur = byId.get(coord.preCadastroId)!;
-              byId.set(coord.preCadastroId, { ...cur, grupoId, grupoNome, papelNoGrupo: 'coordenador' });
-            }
-
-            // Membros
-            for (const m of (g as any)?.membrosView || []) {
-              if (!m?.preCadastroId) continue;
-              if (!byId.has(m.preCadastroId)) {
-                byId.set(m.preCadastroId, {
-                  id: m.preCadastroId,
-                  nomeCompleto: (m.nome ?? null) as any,
-                  cpf: (m.cpf ?? null) as any,
-                  telefone: (m.telefone ?? null) as any,
-                  email: (m.email ?? null) as any,
-                  endereco: null as any,
-                  bairro: null as any,
-                  cidade: null as any,
-                  uf: null as any,
-
-                  agendamentoStatus: m.agendamentoStatus || 'nao_agendado',
-                  formalizacao: m.formalizacao,
-                  desistencia: m.desistencia,
-
-                  grupoId,
-                  grupoNome,
-                  papelNoGrupo: 'membro'
-                } as PreCadastro);
-              } else {
-                const cur = byId.get(m.preCadastroId)!;
-                byId.set(m.preCadastroId, { ...cur, grupoId, grupoNome, papelNoGrupo: 'membro' });
-              }
-            }
-          }
-
-          this.itens.set(Array.from(byId.values()));
-        }
+        // 🔁 NOVO: usa membrosIds dos grupos para popular a aba Pessoas
+        await this.mesclarPreCadastrosDeGrupos();
 
       } catch (err) {
         console.error('[PreCadastro] Erro ao listar:', err);
@@ -393,6 +377,95 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     return nome;
   }
 
+  // ===== Busca extra: pré-cadastros que ESTE usuário ENCAMINHOU (analista) =====
+  private async buscarPreCadastrosEncaminhadosPor(uid: string): Promise<PreCadastro[]> {
+    try {
+      console.log('[PreCadastro] buscarPreCadastrosEncaminhadosPor UID =', uid);
+
+      // 🔴 ANTES
+      // const ref = collection(this.afs, 'pre-cadastros');
+
+      // ✅ AGORA (igual ao nome real da coleção no banco)
+      const ref = collection(this.afs, 'pre_cadastros');
+
+      const q = fsQuery(
+        ref,
+        where('encaminhadoPorUid', '==', uid)
+      );
+
+      const snap = await getDocs(q);
+
+      console.log('[PreCadastro] snapshot size =', snap.size);
+
+      const lista: PreCadastro[] = [];
+      snap.forEach(docSnap => {
+        const data = docSnap.data() as any;
+
+        console.log('[PreCadastro] enc doc:', docSnap.id, {
+          encaminhadoPorUid: data?.encaminhadoPorUid,
+          caixaAtual: data?.caixaAtual,
+          caixaUid: data?.caixaUid,
+          encaminhadoParaUid: data?.encaminhadoParaUid
+        });
+
+        lista.push({
+          id: docSnap.id,
+          ...data
+        } as PreCadastro);
+      });
+
+      console.log('[PreCadastro] Encaminhados por', uid, '=>', lista.length, 'doc(s)');
+      return lista;
+
+    } catch (e) {
+      console.error('[PreCadastro] erro ao buscar encaminhados por uid:', e);
+      return [];
+    }
+  }
+
+// ===== Busca extra: GRUPOS que ESTE usuário ENCAMINHOU (analista) =====
+private async buscarGruposEncaminhadosPor(uid: string): Promise<GrupoSolidario[]> {
+  try {
+    console.log('[Grupos] buscarGruposEncaminhadosPor UID =', uid);
+
+    // Ajuste o nome da coleção se no seu banco estiver diferente
+    // (ex.: 'grupos_solidarios' ou 'grupos-solidarios')
+    const ref = collection(this.afs, 'grupos_solidarios');
+
+    const q = fsQuery(
+      ref,
+      where('encaminhadoPorUid', '==', uid)
+    );
+
+    const snap = await getDocs(q);
+    console.log('[Grupos] snapshot encaminhados size =', snap.size);
+
+    const lista: GrupoSolidario[] = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data() as any;
+
+      console.log('[Grupos] enc doc:', docSnap.id, {
+        encaminhadoPorUid: data?.encaminhadoPorUid,
+        encaminhadoParaUid: data?.encaminhadoParaUid,
+        caixaAtual: data?.caixaAtual,
+        caixaUid: data?.caixaUid
+      });
+
+      lista.push({
+        id: docSnap.id,
+        ...data
+      } as GrupoSolidario);
+    });
+
+    console.log('[Grupos] Encaminhados por', uid, '=>', lista.length, 'grupo(s)');
+    return lista;
+  } catch (e) {
+    console.error('[Grupos] erro ao buscar grupos encaminhados por uid:', e);
+    return [];
+  }
+}
+
+
   // ======= HELPERS: aprovação & encaminhamento & formalização & desistência =======
   aprovacaoStatus(i: PreCadastro): 'apto' | 'inapto' {
     return ((i as any)?.aprovacao?.status === 'apto') ? 'apto' : 'inapto';
@@ -400,18 +473,59 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   aprovacaoBadgeClass(i: PreCadastro) {
     return this.aprovacaoStatus(i) === 'apto' ? 'text-bg-success' : 'text-bg-danger';
   }
+
   encaminhadoParaMim(i: PreCadastro): boolean {
     const uid = this.currentUserUid;
-    const encUid = (i as any)?.encaminhamento?.assessorUid;
+    if (!uid) return false;
+
+    const encUidPlano = (i as any)?.encaminhadoParaUid;
+    const encUidNested = (i as any)?.encaminhamento?.assessorUid;
     const caixa = (i as any)?.caixaUid;
     const criador = (i as any)?.createdByUid;
-    return !!uid && (encUid === uid || caixa === uid) && criador !== uid;
+    const encPorUid = (i as any)?.encaminhadoPorUid;
+
+    // aparece como distribuído se:
+    // - eu sou o destino (assessor)
+    // - ou está na minha caixa
+    // - ou fui eu que encaminhei
+    return (
+      encUidPlano === uid ||
+      encUidNested === uid ||
+      caixa === uid ||
+      encPorUid === uid
+    );
   }
+
+
   encaminhadoPorNome(i: PreCadastro): string | null {
-    return ((i as any)?.aprovacao?.porNome) || ((i as any)?.encaminhamento?.porNome) || null;
+    return (
+      (i as any)?.encaminhadoPorNome ||
+      (i as any)?.aprovacao?.porNome ||
+      (i as any)?.encaminhamento?.porNome ||
+      null
+    );
   }
+
+  encaminhadoPorMim(i: PreCadastro): boolean {
+    const uid = this.currentUserUid;
+    const encPor = (i as any)?.encaminhadoPorUid;
+    return !!uid && encPor === uid;
+  }
+
+  encaminhadoParaNome(i: PreCadastro): string | null {
+    const plano = (i as any)?.encaminhadoParaNome;
+    const nestedAssessor = (i as any)?.encaminhamento?.assessorNome;
+    const nestedDest = (i as any)?.encaminhamento?.destinatarioNome;
+
+    return plano || nestedAssessor || nestedDest || null;
+  }
+
+
   encaminhadoQuando(i: PreCadastro): Date | null {
-    const ts = (i as any)?.encaminhamento?.em || (i as any)?.aprovacao?.em;
+    const ts =
+      (i as any)?.encaminhadoEm ||
+      (i as any)?.encaminhamento?.em ||
+      (i as any)?.aprovacao?.em;
     return this.toJSDate(ts);
   }
 
@@ -561,11 +675,41 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
   }
 
   // ====== GRUPOS: carregamento e paginação ======
+  // ====== GRUPOS: carregamento e paginação ======
   private async loadGruposDoAssessor(uid: string) {
     this.gruposLoading.set(true);
     try {
+      // 1) Grupos que estão na MINHA caixa (assessor/analista),
+      //    via service padrão
       const base = await this.gruposSvc.listarParaCaixaAssessor(uid);
-      const join = await this.gruposSvc.joinGruposView(base);
+
+      // 2) Grupos que EU encaminhei (analista) para algum assessor,
+      //    mas que quero continuar vendo na MINHA lista
+      const encaminhadosPorMim = await this.buscarGruposEncaminhadosPor(uid);
+
+      // 3) Mesclar os dois conjuntos sem duplicar (por id)
+      const map = new Map<string, GrupoSolidario>();
+
+      for (const g of base || []) {
+        const id = (g as any).id;
+        if (!id) continue;
+        map.set(id, g);
+      }
+
+      for (const g of encaminhadosPorMim || []) {
+        const id = (g as any).id;
+        if (!id) continue;
+
+        const atual = map.get(id);
+        // se já existir, mescla; se não existir, adiciona direto
+        map.set(id, { ...(atual as any), ...(g as any) } as GrupoSolidario);
+      }
+
+      const merged = Array.from(map.values());
+
+      // 4) Rodar o join para montar coordenadorView, membrosView, metrics etc.
+      const join = await this.gruposSvc.joinGruposView(merged);
+
       this.grupos.set(join || []);
       this.pageGrupos.set(1);
     } catch (e) {
@@ -575,6 +719,101 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
       this.gruposLoading.set(false);
     }
   }
+
+  /**
+ * Mescla na lista de Pessoas todos os pré-cadastros que pertencem
+ * aos grupos da caixa do assessor, usando os IDs em `membrosIds`.
+ *
+ * - Se o pré-cadastro já existir em `this.itens`, só injeta grupoId/grupoNome/papelNoGrupo.
+ * - Se não existir, busca em `pre_cadastros` pelo ID e adiciona na lista.
+ */
+  private async mesclarPreCadastrosDeGrupos() {
+    try {
+      const atuais = new Map<string, PreCadastro>();
+      for (const p of this.itens()) {
+        if (p?.id) atuais.set(p.id, p);
+      }
+
+      const grupos = this.grupos() || [];
+      const faltando = new Map<string, { grupoId: string; grupoNome: string | null }>();
+
+      // 1) Passa por todos os grupos e marca o que já existe,
+      //    e coleta os IDs que ainda precisamos buscar no Firestore.
+      for (const g of grupos) {
+        const grupoId = (g as any).id;
+        const grupoNome = (g as any).nome || null;
+        const membrosIds: string[] = ((g as any).membrosIds || []) as string[];
+
+        if (!grupoId || !membrosIds?.length) continue;
+
+        for (const preId of membrosIds) {
+          if (!preId) continue;
+
+          if (atuais.has(preId)) {
+            // Já existe na lista => só injeta dados do grupo
+            const cur = atuais.get(preId)!;
+            atuais.set(preId, {
+              ...cur,
+              grupoId,
+              grupoNome,
+              papelNoGrupo: (cur as any).papelNoGrupo ?? 'membro'
+            } as PreCadastro);
+          } else {
+            // Ainda não temos esse pré-cadastro => agenda pra buscar no banco
+            if (!faltando.has(preId)) {
+              faltando.set(preId, { grupoId, grupoNome });
+            }
+          }
+        }
+      }
+
+      // 2) Busca, um por um, os pré-cadastros que ainda não estavam em `this.itens`
+      for (const [preId, info] of faltando.entries()) {
+        try {
+          const snap = await getDoc(doc(this.afs, 'pre_cadastros', preId));
+          if (!snap.exists()) {
+            console.warn('[Grupos->Pessoas] pre_cadastro não encontrado para membroId =', preId);
+            continue;
+          }
+
+          const data = snap.data() as any;
+
+          const pre: PreCadastro = {
+            id: preId,
+            nomeCompleto: (data.nomeCompleto ?? data.nome ?? null) as any,
+            cpf: (data.cpf ?? null) as any,
+            telefone: (data.telefone ?? null) as any,
+            email: (data.email ?? null) as any,
+            endereco: (data.endereco ?? null) as any,
+            bairro: (data.bairro ?? null) as any,
+            cidade: (data.cidade ?? null) as any,
+            uf: (data.uf ?? null) as any,
+
+            agendamentoStatus: (data.agendamentoStatus || 'nao_agendado') as any,
+            formalizacao: data.formalizacao,
+            desistencia: data.desistencia,
+
+            grupoId: info.grupoId,
+            grupoNome: info.grupoNome,
+            papelNoGrupo: 'membro',
+
+            // mantém o resto dos campos do documento original
+            ...data
+          } as PreCadastro;
+
+          atuais.set(preId, pre);
+        } catch (e) {
+          console.error('[Grupos->Pessoas] erro ao buscar pre_cadastro', preId, e);
+        }
+      }
+
+      this.itens.set(Array.from(atuais.values()));
+      console.log('[Grupos->Pessoas] total na aba Pessoas após merge =', this.itens().length);
+    } catch (e) {
+      console.error('[Grupos->Pessoas] erro geral ao mesclar membrosIds:', e);
+    }
+  }
+
 
   gruposTotal = computed(() => this.grupos().length);
 
@@ -601,7 +840,6 @@ export class PreCadastroListaComponent implements OnInit, OnDestroy {
     this.modalGrupoAberto.set(false);
     this.grupoSelecionado.set(null);
   }
-
 
   gruposGoFirst() { this.pageGrupos.set(1); }
   gruposGoPrev() { this.pageGrupos.update(p => Math.max(1, p - 1)); }

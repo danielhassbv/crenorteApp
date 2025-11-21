@@ -1192,6 +1192,8 @@ export class TriagemPreCadastrosComponent implements OnInit, OnDestroy {
     if (!id) return null;
     return this.pcById.get(String(id)) || null;
   }
+
+  
   private montarMembrosPorIds(g: GrupoSolidario): PreCadastroRow[] {
     const ids = g.membrosIds || [];
     const itens: PreCadastroRow[] = [];

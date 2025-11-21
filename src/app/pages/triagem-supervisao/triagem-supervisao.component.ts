@@ -1,36 +1,127 @@
-import { Component, OnInit, OnDestroy, signal, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+
 import { HeaderComponent } from '../shared/header/header.component';
 
-// Firestore
+import { db } from '../../firebase.config';
 import {
-  collection,
   collectionGroup,
-  query,
-  where,
   onSnapshot,
+  query,
   Unsubscribe,
-  getDocs,
   doc,
   getDoc,
   setDoc,
   serverTimestamp,
-  limit,
+  collection,
+  getDocs,
+  where,
   writeBatch,
-  documentId,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 
-import { db } from '../../firebase.config';
-
-// Auth
 import { getAuth, User } from 'firebase/auth';
 
-// Grupos (service / model) – ajuste os caminhos se necessário
-import { GrupoSolidarioService } from '../../services/grupo-solidario.service';
-import { GrupoSolidario } from '../../models/grupo-solidario.model';
+/* =========================
+   Normalização & Origens
+   ========================= */
+function normalizeBasic(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-/** ===== Tipos base ===== */
+function titleCase(s: string): string {
+  return (s || '').toLowerCase().replace(/(^|\s)\S/g, (t) => t.toUpperCase());
+}
+
+const ORIGEM_SYNONYMS: Record<string, string> = {
+  panfleto: 'panfleto',
+  panfletos: 'panfleto',
+  online: 'online',
+  'on-line': 'online',
+  site: 'online',
+  formulario: 'online',
+  formulário: 'online',
+  telefone: 'telefone',
+  tel: 'telefone',
+  celular: 'telefone',
+  cel: 'telefone',
+  whatsapp: 'whatsapp',
+  wpp: 'whatsapp',
+  zap: 'whatsapp',
+  wtz: 'whatsapp',
+  whats: 'whatsapp',
+  igreja: 'igreja',
+  presencial: 'presencial',
+  visita: 'presencial',
+  'visita presencial': 'presencial',
+  'cadastro presencial': 'presencial',
+  indicacao: 'indicacao',
+  indicação: 'indicacao',
+  proprio: 'proprio',
+  próprio: 'proprio',
+  própria: 'proprio',
+};
+
+const ORIGEM_LABELS: Record<string, string> = {
+  panfleto: 'Panfleto',
+  online: 'Online',
+  telefone: 'Telefone',
+  whatsapp: 'WhatsApp',
+  igreja: 'Igreja',
+  presencial: 'Presencial',
+  indicacao: 'Indicação',
+  proprio: 'Próprio',
+  outros: 'Outros',
+};
+
+type StatusAprovacao = 'nao' | 'apto' | 'inapto';
+
+function coerceStatusToUi(x: any): StatusAprovacao {
+  const n = normalizeBasic(String(x || ''));
+  if (n.startsWith('apto')) return 'apto';
+  if (n.startsWith('ina')) return 'inapto';
+  return 'nao';
+}
+
+function canonicalizeOrigem(raw: string): { key: string; label: string } {
+  const n = normalizeBasic(raw);
+
+  if (n in ORIGEM_SYNONYMS) {
+    const key = ORIGEM_SYNONYMS[n];
+    return {
+      key,
+      label: ORIGEM_LABELS[key as keyof typeof ORIGEM_LABELS] || titleCase(key),
+    };
+  }
+  if (/whats|zap|wpp/.test(n))
+    return { key: 'whatsapp', label: ORIGEM_LABELS['whatsapp'] };
+  if (/on\s?-?\s?line|site|formul/.test(n))
+    return { key: 'online', label: ORIGEM_LABELS['online'] };
+  if (/telefone|tel|cel/.test(n))
+    return { key: 'telefone', label: ORIGEM_LABELS['telefone'] };
+  if (/igreja/.test(n))
+    return { key: 'igreja', label: ORIGEM_LABELS['igreja'] };
+  if (/presencial|visita/.test(n))
+    return { key: 'presencial', label: ORIGEM_LABELS['presencial'] };
+  if (/indic/.test(n))
+    return { key: 'indicacao', label: ORIGEM_LABELS['indicacao'] };
+  if (/propri/.test(n))
+    return { key: 'proprio', label: ORIGEM_LABELS['proprio'] };
+
+  if (n) return { key: n, label: titleCase(raw) };
+  return { key: 'outros', label: ORIGEM_LABELS['outros'] };
+}
+
+/* =========================
+   Tipos
+   ========================= */
 export type Papel =
   | 'admin'
   | 'supervisor'
@@ -47,19 +138,11 @@ export interface Colaborador {
   nome: string;
   email: string;
   papel: Papel;
-  cargo?: string | null;
-  rota: string;
-  status: 'ativo' | 'inativo';
+  rota?: string;
+  status?: 'ativo' | 'inativo';
   supervisorId?: string | null;
   analistaId?: string | null;
-  cpf?: string | null;
-  telefone?: string | null;
-  photoURL?: string | null;
-  criadoEm: number;
-  id?: string;
 }
-
-type StatusAprovacao = 'nao' | 'apto' | 'inapto';
 
 type PreCadastroRow = {
   id: string;
@@ -85,50 +168,46 @@ type PreCadastroRow = {
   designadoParaUid?: string | null;
   designadoParaNome?: string | null;
 
-  // ➕ NOVO: controle de encaminhamento
   encaminhadoParaUid?: string | null;
   encaminhadoParaNome?: string | null;
   encaminhadoEm?: Date | null;
   encaminhadoPorUid?: string | null;
   encaminhadoPorNome?: string | null;
+
+  caixaAtual?: string | null;
+  caixaUid?: string | null;
 
   _path: string;
   _eDeAssessor?: boolean;
 
   createdByUid?: string | null;
   createdByNome?: string | null;
-
-  caixaAtual?: string | null;
-  caixaUid?: string | null;
 };
 
 export type StatusGrupo = 'em_qa' | 'aprovado_basa' | 'reprovado_basa';
 
-/**
- * Mantém o slim que você já usava, mas agora com campos de "view"
- * que vêm do joinGruposView (coordenadorView, membrosView, metrics).
- */
-type GrupoSlim = {
+type GrupoRow = {
   id: string;
   codigo?: string;
   coordenadorCpf?: string;
   coordenadorNome?: string;
 
   membrosIds: string[];
-  membrosRaw?: any[];
 
-  bairro: string;
-  cidade: string;
-  estado: string;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
   status: StatusGrupo;
+
   criadoEm: Date | null;
-  criadoPorUid: string | null;
-  criadoPorNome: string | null;
-  totalSolicitado: number;
-  observacoes: string;
-  designadoEm: Date | null;
-  designadoParaUid: string | null;
-  designadoParaNome: string | null;
+  criadoPorUid?: string | null;
+  criadoPorNome?: string | null;
+  totalSolicitado?: number;
+  observacoes?: string;
+
+  designadoEm?: Date | null;
+  designadoParaUid?: string | null;
+  designadoParaNome?: string | null;
 
   encaminhadoParaUid?: string | null;
   encaminhadoParaNome?: string | null;
@@ -136,19 +215,8 @@ type GrupoSlim = {
   encaminhadoPorUid?: string | null;
   encaminhadoPorNome?: string | null;
 
-  caixaAtual: string | null;
-  caixaUid: string | null;
-
-  // ➕ campos "view" vindos do joinGruposView
-  membrosView?: any[];
-  coordenadorView?: any;
-  metrics?: {
-    agendados?: number;
-    visitados?: number;
-    formalizados?: number;
-    desistentes?: number;
-    [k: string]: any;
-  };
+  caixaAtual?: string | null;
+  caixaUid?: string | null;
 };
 
 type Assessor = {
@@ -160,38 +228,9 @@ type Assessor = {
   rota?: string;
 };
 
-/** ===== Helpers ===== */
-function normalizeBasic(s: string): string {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function toDateSafe(v: any): Date | null {
-  try {
-    if (!v) return null;
-    if (typeof v?.toDate === 'function') return v.toDate();
-    if (v instanceof Date) return v;
-    if (typeof v === 'number') return new Date(v);
-  } catch {}
-  return null;
-}
-
-function statusFrom(x: any): StatusAprovacao {
-  const n = normalizeBasic(String(x || ''));
-  if (n.startsWith('apto')) return 'apto';
-  if (n.startsWith('ina')) return 'inapto';
-  return 'nao';
-}
-
-function normCpf(v: any): string {
-  return String(v ?? '').replace(/\D+/g, '');
-}
-
-/** ====== Componente ====== */
+/* =========================
+   Componente
+   ========================= */
 @Component({
   standalone: true,
   selector: 'app-triagem-supervisao',
@@ -200,59 +239,41 @@ function normCpf(v: any): string {
   styleUrls: ['./triagem-supervisao.component.css'],
 })
 export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
-  /** ========== Estado base / UI ========== */
   carregando = signal(false);
   erro = signal<string | null>(null);
 
-  // service de grupos (joinGruposView)
-  private gruposSvc = inject(GrupoSolidarioService);
+  // Quem está logado
+  me: { uid: string; papel: Papel; nome: string } | null = null;
 
-  // Usuário atual (supervisor/analista)
-  me: Pick<Colaborador, 'uid' | 'papel' | 'nome'> | null = null;
-
-  // Pessoas
-  private unsubPC?: Unsubscribe;
-  all: PreCadastroRow[] = [];
-  view: PreCadastroRow[] = [];
-  pcById = new Map<string, PreCadastroRow>();
-
-  // Grupos
-  private unsubGrupos?: Unsubscribe;
-  allGrupos: GrupoSlim[] = [];
-  viewGrupos: GrupoSlim[] = [];
-
-  // Assessores do meu time
-  assessores: Assessor[] = [];
-  assessoresFiltrados: Assessor[] = [];
-  assessoresFiltradosGrupo: Assessor[] = [];
-
-  // Modal/seleções
-  showAssessorModal = false;
-  rowSelecionado: PreCadastroRow | null = null;
-  selectedAssessorUid: string | null = null;
-
-  showAssessorModalGrupo = false;
-  grupoSelecionado: GrupoSlim | null = null;
-  selectedAssessorUidGrupo: string | null = null;
-
-  // modal de detalhe de grupo
-  showGrupoDetalhe = false;
-  membrosPC: PreCadastroRow[] = [];
-
-  // campos de busca nos modais
-  assessorBusca: string = '';
-  assessorBuscaGrupo: string = '';
-
-  // Filtros simples
+  // abas
   activeTab: 'pessoas' | 'grupos' = 'pessoas';
+  setTab(tab: 'pessoas' | 'grupos') {
+    this.activeTab = tab;
+    this.onBusca(this.busca);
+  }
+
+  // busca & filtros (PESSOAS)
   busca = '';
-
-  // “Encaminhado / Não encaminhado”
   envioFilter: 'todos' | 'encaminhado' | 'nao_encaminhado' = 'todos';
+  statusFilter: 'todos' | StatusAprovacao = 'todos';
 
-  statusFilter: StatusAprovacao | 'todos' = 'todos';
+  setEnvio(k: 'todos' | 'encaminhado' | 'nao_encaminhado') {
+    this.envioFilter = this.envioFilter === k ? 'todos' : k;
+    this.aplicarFiltrosPessoas();
+  }
+  setStatus(k: 'todos' | StatusAprovacao) {
+    this.statusFilter = this.statusFilter === k ? 'todos' : k;
+    this.aplicarFiltrosPessoas();
+  }
 
-  // paginação pessoas
+  // ===== Dados PESSOAS =====
+  private unsubPC?: Unsubscribe;
+  private pcById = new Map<string, PreCadastroRow>();
+  private basePessoas: PreCadastroRow[] = []; // somente o que está na "minha" caixa
+  all: PreCadastroRow[] = []; // base + membros de grupos
+  view: PreCadastroRow[] = [];
+
+  // paginação PESSOAS
   pageSize = 20;
   currentPage = 1;
   get totalItems() {
@@ -265,13 +286,33 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
     return this.totalItems ? (this.currentPage - 1) * this.pageSize : 0;
   }
   get pageEnd() {
-    return Math.min(this.pageStart + this.pageSize, this.pageSize * this.currentPage);
+    return Math.min(
+      this.pageStart + this.pageSize,
+      this.pageSize * this.currentPage
+    );
   }
   get pageItems() {
     return this.view.slice(this.pageStart, this.pageEnd);
   }
 
-  // paginação grupos
+  onPageSizeChange(n: number) {
+    this.pageSize = +n || 20;
+    this.currentPage = 1;
+    this.view = [...this.view];
+  }
+  nextPage() {
+    if (this.currentPage < this.totalPages) this.currentPage++;
+  }
+  prevPage() {
+    if (this.currentPage > 1) this.currentPage--;
+  }
+
+  // ===== Dados GRUPOS =====
+  private unsubGrupos?: Unsubscribe;
+  allGrupos: GrupoRow[] = [];
+  viewGrupos: GrupoRow[] = [];
+
+  // paginação GRUPOS
   pageSizeG = 20;
   currentPageG = 1;
   get totalItemsG() {
@@ -284,19 +325,58 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
     return this.totalItemsG ? (this.currentPageG - 1) * this.pageSizeG : 0;
   }
   get pageEndG() {
-    return Math.min(this.pageStartG + this.pageSizeG, this.pageSizeG * this.currentPageG);
+    return Math.min(
+      this.pageStartG + this.pageSizeG,
+      this.pageSizeG * this.currentPageG
+    );
   }
   get pageItemsG() {
     return this.viewGrupos.slice(this.pageStartG, this.pageEndG);
   }
 
-  /** Limites “sem índice” */
-  private readonly PC_LIMIT = 1200;
-  private readonly GRUPOS_LIMIT = 600;
+  onPageSizeChangeG(n: number) {
+    this.pageSizeG = +n || 20;
+    this.currentPageG = 1;
+    this.viewGrupos = [...this.viewGrupos];
+  }
+  nextPageG() {
+    if (this.currentPageG < this.totalPagesG) this.currentPageG++;
+  }
+  prevPageG() {
+    if (this.currentPageG > 1) this.currentPageG--;
+  }
 
-  ngOnInit(): void {
+  // ===== Assessores =====
+  assessores: Assessor[] = [];
+  assessoresFiltrados: Assessor[] = [];
+  assessoresFiltradosGrupo: Assessor[] = [];
+
+  // Modal Pessoas
+  showAssessorModal = false;
+  rowSelecionado: PreCadastroRow | null = null;
+  selectedAssessorUid: string | null = null;
+  assessorBusca = '';
+
+  // Modal Grupo
+  showAssessorModalGrupo = false;
+  grupoSelecionado: GrupoRow | null = null;
+  selectedAssessorUidGrupo: string | null = null;
+  assessorBuscaGrupo = '';
+
+  // Detalhe Grupo
+  showGrupoDetalhe = false;
+  membrosPC: PreCadastroRow[] = [];
+
+  // flags de carregamento duplo (pessoas + grupos)
+  private pcLoaded = false;
+  private gruposLoaded = false;
+
+  /* =========================
+     Ciclo de vida
+     ========================= */
+  async ngOnInit(): Promise<void> {
     this.carregando.set(true);
-    this.initMeAndBootstrap();
+    await this.initMeAndBootstrap();
   }
 
   ngOnDestroy(): void {
@@ -304,9 +384,9 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
     this.unsubGrupos?.();
   }
 
-  /** Resolve o usuário (me) e só então carrega dados */
   private async initMeAndBootstrap() {
     try {
+      // Descobre "me"
       const auth = getAuth();
       const authUser: User | null = auth.currentUser;
 
@@ -316,7 +396,7 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
           const x = meSnap.data() as any;
           this.me = {
             uid: authUser.uid,
-            papel: x?.papel || 'supervisor',
+            papel: (x?.papel as Papel) || 'supervisor',
             nome: x?.nome || authUser.displayName || '',
           };
         } else {
@@ -328,7 +408,8 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
         }
       } else {
         const lsUid = localStorage.getItem('meUid') || '';
-        const lsPapel = (localStorage.getItem('mePapel') as Papel) || 'supervisor';
+        const lsPapel =
+          (localStorage.getItem('mePapel') as Papel) || 'supervisor';
         if (lsUid) {
           this.me = {
             uid: lsUid,
@@ -341,28 +422,36 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
       }
 
       await this.carregarAssessoresDoMeuTime();
-      this.carregarPreCadastrosSemIndex();
-      this.carregarGruposSemIndiceComFiltroSeguro();
+      this.carregarPreCadastros();
+      this.carregarGrupos();
     } catch (e) {
-      console.error('[Triagem-supervisão] falha ao inicializar:', e);
-      this.erro.set('Falha ao inicializar a triagem.');
-    } finally {
+      console.error('[Triagem-supervisao] falha ao inicializar:', e);
+      this.erro.set('Falha ao inicializar a central de triagem.');
       this.carregando.set(false);
     }
   }
 
-  /** ===== Assessores do meu time (subordinados) ===== */
+  private checkLoaded() {
+    if (this.pcLoaded && this.gruposLoaded) {
+      this.carregando.set(false);
+    }
+  }
+
+  /* =========================
+     Assessores (meu time)
+     ========================= */
   private async carregarAssessoresDoMeuTime(): Promise<void> {
     try {
       const meUid = this.me?.uid || null;
       if (!meUid) {
         this.assessores = [];
+        this.assessoresFiltrados = [];
+        this.assessoresFiltradosGrupo = [];
         return;
       }
 
       const col = collection(db, 'colaboradores');
 
-      // assessores cujo supervisorId == meUid
       const qSup = query(
         col,
         where('status', '==', 'ativo'),
@@ -371,7 +460,6 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
       );
       const supSnap = await getDocs(qSup);
 
-      // assessores cujo analistaId == meUid
       const qAna = query(
         col,
         where('status', '==', 'ativo'),
@@ -403,344 +491,34 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
       this.assessoresFiltrados = [...this.assessores];
       this.assessoresFiltradosGrupo = [...this.assessores];
     } catch (e) {
-      console.warn('[Triagem] Falha ao carregar subordinados do supervisor/analista', e);
+      console.error('[Triagem] Falha ao carregar assessores do meu time:', e);
       this.assessores = [];
       this.assessoresFiltrados = [];
       this.assessoresFiltradosGrupo = [];
     }
   }
 
-  /** ================================
-   *  PRÉ-CADASTROS — SEM ÍNDICE
-   *  ================================ */
-  private carregarPreCadastrosSemIndex(): void {
-    this.unsubPC?.();
-
-    const base = collectionGroup(db, 'pre_cadastros');
-    const qy = query(base, limit(this.PC_LIMIT)); // sem where => sem índice composto
-
-    this.unsubPC = onSnapshot(
-      qy,
-      (snap) => {
-        try {
-          const rows: PreCadastroRow[] = snap.docs.map((d) => {
-            const x = d.data() as any;
-
-            const origemRaw = String(x?.origem ?? '').trim();
-            const origemKey = normalizeBasic(origemRaw || 'outros');
-            const origemLabel = origemRaw || 'Outros';
-
-            const designadoParaUid: string | null =
-              (x?.designadoParaUid ?? x?.designadoPara ?? null) || null;
-            const designadoParaNome: string | null = x?.designadoParaNome ?? null;
-
-            const r: PreCadastroRow = {
-              id: d.id,
-              data: toDateSafe(x?.createdAt ?? x?.criadoEm),
-              nome: String(x?.nomeCompleto ?? x?.nome ?? '').trim(),
-              cpf: String(x?.cpf ?? '').trim(),
-              telefone: String(x?.telefone ?? x?.contato ?? '').trim(),
-              email: String(x?.email ?? '').trim(),
-              endereco: String(x?.endereco ?? x?.enderecoCompleto ?? '').trim(),
-              bairro: String(x?.bairro ?? '').trim(),
-              rota: String(x?.rota ?? '').trim(),
-              cidade: String(x?.cidade ?? '').trim(),
-              uf: String(x?.uf ?? x?.estado ?? '').trim(),
-
-              origem: origemLabel,
-              origemKey,
-              origemLabel,
-
-              statusAprovacao: statusFrom(x?.aprovacao?.status ?? x?.statusAprovacao),
-
-              designadoEm: toDateSafe(x?.designadoEm) ?? null,
-              designadoParaUid,
-              designadoParaNome,
-
-              // 🔽 NOVOS campos vindo do firestore
-              encaminhadoParaUid: x?.encaminhadoParaUid ?? null,
-              encaminhadoParaNome: x?.encaminhadoParaNome ?? null,
-              encaminhadoEm: toDateSafe(x?.encaminhadoEm) ?? null,
-              encaminhadoPorUid: x?.encaminhadoPorUid ?? null,
-              encaminhadoPorNome: x?.encaminhadoPorNome ?? null,
-
-              _path: d.ref.path,
-              _eDeAssessor: d.ref.path.startsWith('colaboradores/'),
-
-              createdByUid: x?.createdByUid ?? null,
-              createdByNome: x?.createdByNome ?? null,
-
-              caixaAtual: x?.caixaAtual ?? null,
-              caixaUid: x?.caixaUid ?? null,
-            };
-            return r;
-          });
-
-          const meuUid = this.me?.uid || null;
-
-          // ✅ Regra da central de triagem:
-          // - entra se AINDA está na minha caixa (caixaUid == me)
-          //   OU se foi encaminhado por mim (encaminhadoPorUid == me)
-          const baseList = rows
-            .filter((r) => {
-              if (!meuUid) return false;
-              const emMinhaCaixa = r.caixaUid === meuUid;
-              const encaminhadoPorMim = r.encaminhadoPorUid === meuUid;
-              return emMinhaCaixa || encaminhadoPorMim;
-            })
-            .sort((a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0));
-
-          // 👇 Índice com TODOS os pré-cadastros carregados (rows), não só os filtrados
-          this.pcById.clear();
-          for (const r of rows) this.pcById.set(r.id, r);
-
-          // 🔁 Garante que todos os membros dos grupos da minha caixa também apareçam na aba Pessoas
-          this.all = this.mergePessoasComGrupos(baseList);
-
-          this.aplicarFiltrosPessoas();
-        } catch (e) {
-          console.error('[Triagem] Falha ao mapear pré-cadastros:', e);
-          this.erro.set('Falha ao processar pré-cadastros.');
-        }
-      },
-      (err) => {
-        console.error('[Triagem] Snapshot pré-cadastros (sem índice) falhou:', err);
-        this.erro.set('Falha ao carregar pré-cadastros.');
-      }
-    );
+  /* =========================
+     Helpers gerais
+     ========================= */
+  private toDate(x: unknown): Date | null {
+    if (!x) return null;
+    if (typeof (x as any)?.toDate === 'function') return (x as any).toDate();
+    if (x instanceof Date) return x;
+    if (typeof x === 'number') return new Date(x);
+    return null;
   }
 
-  /** =========================================
-   *  GRUPOS — sem índice composto + joinGruposView
-   *  ========================================= */
-  private carregarGruposSemIndiceComFiltroSeguro(): void {
-    this.unsubGrupos?.();
-
-    const colRef = collection(db, 'grupos_solidarios');
-    const qy = query(colRef, limit(this.GRUPOS_LIMIT));
-
-    this.unsubGrupos = onSnapshot(
-      qy,
-      async (snap) => {
-        try {
-          const meuUid = this.me?.uid || null;
-
-          // 1) Mapear docs do Firestore para um objeto base
-          const baseArr: GrupoSlim[] = snap.docs.map((d): GrupoSlim => {
-            const x = d.data() as any;
-
-            const membrosIds: string[] = Array.isArray(x?.membrosIds)
-              ? x.membrosIds
-              : [];
-            const membrosRaw: any[] = Array.isArray(x?.membros) ? x.membros : [];
-
-            return {
-              id: String(d.id),
-              codigo: x?.codigo,
-              coordenadorCpf: x?.coordenadorCpf ?? undefined,
-              coordenadorNome: x?.coordenadorNome ?? undefined,
-
-              membrosIds,
-              membrosRaw,
-
-              bairro: x?.bairro || '',
-              cidade: x?.cidade || '',
-              estado: x?.estado || x?.uf || '',
-              status: (x?.status || 'em_qa') as StatusGrupo,
-              criadoEm: toDateSafe(x?.criadoEm) || new Date(),
-              criadoPorUid: x?.criadoPorUid ?? null,
-              criadoPorNome: x?.criadoPorNome ?? null,
-              totalSolicitado: x?.totalSolicitado || 0,
-              observacoes: x?.observacoes || '',
-              designadoEm: toDateSafe(x?.designadoEm) || null,
-              designadoParaUid: x?.designadoParaUid || null,
-              designadoParaNome: x?.designadoParaNome || null,
-
-              encaminhadoParaUid: x?.encaminhadoParaUid ?? null,
-              encaminhadoParaNome: x?.encaminhadoParaNome ?? null,
-              encaminhadoEm: toDateSafe(x?.encaminhadoEm) ?? null,
-              encaminhadoPorUid: x?.encaminhadoPorUid ?? null,
-              encaminhadoPorNome: x?.encaminhadoPorNome ?? null,
-
-              caixaAtual: x?.caixaAtual ?? null,
-              caixaUid: x?.caixaUid ?? null,
-
-              membrosView: undefined,
-              coordenadorView: undefined,
-              metrics: undefined,
-            };
-          });
-
-          // 2) Filtro de "caixa" do supervisor/analista (igual sua regra antiga)
-          let list = baseArr;
-          if (meuUid) {
-            list = baseArr.filter((g) => {
-              const emMinhaCaixa = g.caixaUid === meuUid;
-              const encaminhadoPorMim = g.encaminhadoPorUid === meuUid;
-              return emMinhaCaixa || encaminhadoPorMim;
-            });
-          } else {
-            list = [];
-          }
-
-          // 3) Ordena por data de criação (mais recente primeiro)
-          list.sort(
-            (a, b) =>
-              (b.criadoEm?.getTime?.() || 0) - (a.criadoEm?.getTime?.() || 0)
-          );
-
-          // 4) Enriquecer com joinGruposView (padrão da Minha Lista)
-          const joined = await this.gruposSvc.joinGruposView(
-            list as unknown as GrupoSolidario[]
-          );
-
-          const enriched: GrupoSlim[] = (joined as any[]).map((g: any) => ({
-            id: String(g.id),
-            codigo: g.codigo,
-            coordenadorCpf: g.coordenadorCpf ?? undefined,
-            coordenadorNome: g.coordenadorNome ?? undefined,
-
-            membrosIds: Array.isArray(g.membrosIds) ? g.membrosIds : [],
-            membrosRaw: Array.isArray(g.membrosRaw)
-              ? g.membrosRaw
-              : Array.isArray(g.membros)
-              ? g.membros
-              : [],
-
-            bairro: g.bairro || '',
-            cidade: g.cidade || '',
-            estado: g.estado || g.uf || '',
-            status: (g.status || 'em_qa') as StatusGrupo,
-            criadoEm: toDateSafe(g.criadoEm) || new Date(),
-            criadoPorUid: g.criadoPorUid ?? null,
-            criadoPorNome: g.criadoPorNome ?? null,
-            totalSolicitado: g.totalSolicitado || 0,
-            observacoes: g.observacoes || '',
-            designadoEm: toDateSafe(g.designadoEm) || null,
-            designadoParaUid: g.designadoParaUid || null,
-            designadoParaNome: g.designadoParaNome || null,
-
-            encaminhadoParaUid: g.encaminhadoParaUid ?? null,
-            encaminhadoParaNome: g.encaminhadoParaNome ?? null,
-            encaminhadoEm: toDateSafe(g.encaminhadoEm) ?? null,
-            encaminhadoPorUid: g.encaminhadoPorUid ?? null,
-            encaminhadoPorNome: g.encaminhadoPorNome ?? null,
-
-            caixaAtual: g.caixaAtual ?? null,
-            caixaUid: g.caixaUid ?? null,
-
-            membrosView: g.membrosView,
-            coordenadorView: g.coordenadorView,
-            metrics: g.metrics,
-          }));
-
-          // 5) Ordena de novo por criadoEm só por garantia
-          enriched.sort(
-            (a, b) =>
-              (b.criadoEm?.getTime?.() || 0) - (a.criadoEm?.getTime?.() || 0)
-          );
-
-          this.allGrupos = enriched;
-          this.filtrarGrupos();
-
-          // 🔁 Sempre que os grupos mudam, remerge os membros na lista de Pessoas
-          this.all = this.mergePessoasComGrupos(this.all);
-          this.aplicarFiltrosPessoas();
-        } catch (e) {
-          console.error('[Triagem] Falha ao mapear grupos (joinGruposView):', e);
-          this.erro.set('Falha ao processar grupos.');
-        }
-      },
-      (err) => {
-        console.error('[Triagem] Snapshot de grupos falhou:', err);
-        this.erro.set('Falha ao carregar grupos.');
-      }
-    );
+  private normalize(s: string): string {
+    return normalizeBasic(s);
   }
 
-  /** ===== Filtros Pessoas ===== */
-  aplicarFiltrosPessoas(): void {
-    let list = [...this.all];
-
-    // “Encaminhado / Não encaminhado”
-    if (this.envioFilter !== 'todos') {
-      list = list.filter((p) => {
-        const enc = !!p.encaminhadoParaUid;
-        return this.envioFilter === 'encaminhado' ? enc : !enc;
-      });
-    }
-
-    if (this.statusFilter !== 'todos') {
-      list = list.filter(
-        (p) => (p.statusAprovacao || 'nao') === this.statusFilter
-      );
-    }
-
-    const term = normalizeBasic(this.busca);
-    if (term) {
-      list = list.filter((p) => {
-        const blob = normalizeBasic(
-          `${p.nome} ${p.cpf} ${p.telefone} ${p.email} ${p.endereco} ${p.bairro} ${p.rota} ${p.cidade} ${p.uf} ${p.origemLabel}`
-        );
-        return blob.includes(term);
-      });
-    }
-
-    list.sort((a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0));
-
-    this.view = list;
-    this.currentPage = 1;
+  cpfMask(val?: string | null): string {
+    const d = String(val ?? '').replace(/\D+/g, '');
+    if (d.length !== 11) return val ?? '';
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   }
 
-  filtrarGrupos(): void {
-    const term = normalizeBasic(this.busca);
-    let list = [...this.allGrupos];
-
-    if (term) {
-      list = list.filter((g) => {
-        const blob = normalizeBasic(
-          `${g.codigo || ''} ${g.coordenadorNome || ''} ${g.bairro || ''} ${g.cidade || ''} ${g.estado || ''}`
-        );
-        return blob.includes(term);
-      });
-    }
-
-    this.viewGrupos = list;
-    this.currentPageG = 1;
-  }
-
-  setTab(tab: 'pessoas' | 'grupos') {
-    this.activeTab = tab;
-    if (tab === 'pessoas') this.aplicarFiltrosPessoas();
-    else this.filtrarGrupos();
-  }
-
-  onBusca(v: string) {
-    this.busca = (v ?? '').trim();
-    if (this.activeTab === 'pessoas') this.aplicarFiltrosPessoas();
-    else this.filtrarGrupos();
-  }
-
-  setStatus(k: StatusAprovacao | 'todos') {
-    this.statusFilter = this.statusFilter === k ? 'todos' : k;
-    this.aplicarFiltrosPessoas();
-  }
-
-  // valores: 'encaminhado' | 'nao_encaminhado'
-  setEnvio(k: 'todos' | 'encaminhado' | 'nao_encaminhado') {
-    this.envioFilter = this.envioFilter === k ? 'todos' : k;
-    this.aplicarFiltrosPessoas();
-  }
-
-  /** ===== trackBy ===== */
-  trackById(_i: number, r: { id?: string } | null): string | undefined {
-    return r?.id;
-  }
-  trackByGrupoId(_i: number, g: { id?: string } | null): string | undefined {
-    return g?.id;
-  }
-
-  /** ===== UI helpers (pessoas) ===== */
   statusLabel(s?: StatusAprovacao | null): string {
     switch (s) {
       case 'apto':
@@ -763,13 +541,14 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
     }
   }
 
-  cpfMask(val?: string | null): string {
-    const d = String(val ?? '').replace(/\D+/g, '');
-    if (d.length !== 11) return val ?? '';
-    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  trackById(_i: number, r: { id?: string } | null): string | undefined {
+    return r?.id;
   }
 
-  /** ===== UI helpers (grupos) ===== */
+  trackByGrupoId(_i: number, g: { id?: string } | null): string | undefined {
+    return g?.id;
+  }
+
   grupoStatusChipClass(st?: StatusGrupo | null): string {
     switch (st) {
       case 'aprovado_basa':
@@ -803,153 +582,414 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * Constrói a lista de membros de um grupo, tentando sempre
-   * reaproveitar o pré-cadastro REAL (pcById) antes de cair no raw.
-   */
-  private buildMembrosFromGrupo(g: GrupoSlim): PreCadastroRow[] {
-    const membrosView: any[] = Array.isArray((g as any).membrosView)
-      ? (g as any).membrosView
-      : [];
+  /* =========================
+     Snapshot de PRÉ-CADASTROS
+     ========================= */
+  private carregarPreCadastros(): void {
+    this.unsubPC?.();
 
-    const membrosRaw: any[] = Array.isArray((g as any).membrosRaw)
-      ? (g as any).membrosRaw
-      : Array.isArray((g as any).membros)
-      ? (g as any).membros
-      : [];
+    const base = collectionGroup(db, 'pre_cadastros');
+    const qy = query(base, limit(1500)); // limite de segurança
 
-    const membrosIdsRaw: string[] = Array.isArray(g.membrosIds)
-      ? g.membrosIds
-      : [];
+    this.unsubPC = onSnapshot(
+      qy,
+      (snap) => {
+        try {
+          const rows: PreCadastroRow[] = snap.docs.map((d) => {
+            const data = d.data() as any;
+            const path = d.ref.path;
 
-    const membros: PreCadastroRow[] = [];
+            const origemRaw = String(data?.origem ?? '').trim();
+            const canon = canonicalizeOrigem(origemRaw);
 
-    const idSet = new Set<string>(); // pra não repetir por ID
-    const cpfSet = new Set<string>(); // pra não repetir por CPF
+            // status UI igual TriagemPreCadastros
+            let uiStatus: StatusAprovacao = 'nao';
+            if (data?.aprovacao?.status) {
+              const novo = String(data.aprovacao.status);
+              const n = normalizeBasic(novo);
+              uiStatus = n === 'apto' ? 'apto' : n === 'inapto' ? 'inapto' : 'nao';
+            } else {
+              uiStatus = coerceStatusToUi(data?.statusAprovacao);
+            }
 
-    // mapa auxiliar por CPF, usando os pré-cadastros reais
-    const pcByCpf = new Map<string, PreCadastroRow>();
-    this.pcById.forEach((row) => {
-      const k = normCpf(row.cpf);
-      if (k && !pcByCpf.has(k)) pcByCpf.set(k, row);
-    });
+            const designadoParaUid: string | null =
+              (data?.designadoParaUid ?? data?.designadoPara ?? null) || null;
+            const designadoParaNome: string | null =
+              data?.designadoParaNome ?? null;
 
-    // ===== 1) MONTA A PARTIR DO membrosView (PRIORITÁRIO) =====
-    membrosView.forEach((mv, index) => {
-      const rawId = mv?.preCadastroId || mv?.cadastroId || mv?.id || '';
-      let id = String(rawId || '').trim();
-      const cpfKey = normCpf(mv?.cpf);
+            return {
+              id: d.id,
+              data: this.toDate(data?.createdAt ?? data?.criadoEm),
 
-      let pc: PreCadastroRow | undefined;
+              nome: String(data?.nomeCompleto ?? data?.nome ?? '').trim(),
+              cpf: String(data?.cpf ?? '').trim(),
+              telefone: String(data?.telefone ?? data?.contato ?? '').trim(),
+              email: String(data?.email ?? '').trim(),
+              endereco: String(
+                data?.endereco ?? data?.enderecoCompleto ?? ''
+              ).trim(),
+              bairro: String(data?.bairro ?? '').trim(),
+              rota: String(data?.rota ?? '').trim(),
+              cidade: String(data?.cidade ?? '').trim(),
+              uf: String(data?.uf ?? data?.estado ?? '').trim(),
 
-      if (id) pc = this.pcById.get(id);
-      if (!pc && cpfKey) pc = pcByCpf.get(cpfKey);
+              origem: canon.label,
+              origemKey: canon.key,
+              origemLabel: canon.label,
 
-      if (!pc) {
-        if (!id) id = cpfKey ? `cpf-${cpfKey}` : `view-${index}`;
-        pc = this.mapRawToPreCadastroRow(id, mv || {});
-      }
+              statusAprovacao: uiStatus,
 
-      const finalCpfKey = normCpf(pc.cpf);
+              designadoEm: this.toDate(data?.designadoEm) ?? null,
+              designadoParaUid,
+              designadoParaNome,
 
-      if (id && idSet.has(id)) return;
-      if (finalCpfKey && cpfSet.has(finalCpfKey)) return;
+              encaminhadoParaUid: data?.encaminhadoParaUid ?? null,
+              encaminhadoParaNome: data?.encaminhadoParaNome ?? null,
+              encaminhadoEm: this.toDate(data?.encaminhadoEm) ?? null,
+              encaminhadoPorUid: data?.encaminhadoPorUid ?? null,
+              encaminhadoPorNome: data?.encaminhadoPorNome ?? null,
 
-      if (id) idSet.add(id);
-      if (finalCpfKey) cpfSet.add(finalCpfKey);
+              caixaAtual: data?.caixaAtual ?? null,
+              caixaUid: data?.caixaUid ?? null,
 
-      membros.push(pc);
-    });
+              _path: path,
+              _eDeAssessor: path.startsWith('colaboradores/'),
 
-    // ===== 2) COMPLETA COM membrosIds QUE NÃO ESTÃO NO membrosView =====
-    membrosIdsRaw.forEach((rawId) => {
-      const id = String(rawId || '').trim();
-      if (!id || idSet.has(id)) return;
+              createdByUid: data?.createdByUid ?? null,
+              createdByNome: data?.createdByNome ?? null,
+            };
+          });
 
-      let pc = this.pcById.get(id);
-      if (!pc) {
-        const raw = membrosRaw.find(
-          (m: any) =>
-            m?.cadastroId === id || m?.preCadastroId === id || m?.id === id
+          // índice global por ID, usado pelos grupos
+          this.pcById.clear();
+          for (const r of rows) {
+            this.pcById.set(String(r.id), r);
+          }
+
+          const meUid = this.me?.uid || null;
+
+          // basePessoas = só o que está na minha caixa OU que eu encaminhei
+          const baseList = rows
+            .filter((r) => {
+              if (!meUid) return false;
+              const emMinhaCaixa = r.caixaUid === meUid;
+              const encaminhadoPorMim = r.encaminhadoPorUid === meUid;
+              return emMinhaCaixa || encaminhadoPorMim;
+            })
+            .sort(
+              (a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0)
+            );
+
+          this.basePessoas = baseList;
+
+          // all = base + membros dos grupos (via membrosIds)
+          this.all = this.mergePessoasComGrupos(this.basePessoas);
+          this.aplicarFiltrosPessoas();
+
+          this.pcLoaded = true;
+          this.checkLoaded();
+        } catch (e) {
+          console.error('[Triagem] Falha ao processar pré-cadastros:', e);
+          this.erro.set('Falha ao processar pré-cadastros.');
+          this.carregando.set(false);
+        }
+      },
+      (err) => {
+        console.error('[Triagem] onSnapshot pré-cadastros error:', err);
+        this.erro.set(
+          err?.message ?? 'Falha ao carregar pré-cadastros da triagem.'
         );
-        pc = this.mapRawToPreCadastroRow(id, raw || {});
+        this.carregando.set(false);
       }
-
-      const cpfKey = normCpf(pc.cpf);
-      if (cpfKey && cpfSet.has(cpfKey)) return;
-
-      idSet.add(id);
-      if (cpfKey) cpfSet.add(cpfKey);
-
-      membros.push(pc);
-    });
-
-    return membros;
+    );
   }
 
-  /**
-   * Pega a lista base de Pessoas (já com regra de caixa)
-   * e garante que todos os membros dos grupos visíveis
-   * também entrem nessa lista.
-   */
+  /* =========================
+     Snapshot de GRUPOS
+     ========================= */
+  private carregarGrupos(): void {
+    this.unsubGrupos?.();
+
+    const colRef = collection(db, 'grupos_solidarios');
+    const qy = query(colRef, orderBy('criadoEm', 'desc'));
+
+    this.unsubGrupos = onSnapshot(
+      qy,
+      (snap) => {
+        try {
+          const arr: GrupoRow[] = snap.docs.map((d) => {
+            const x = d.data() as any;
+
+            // suporte a legado: se não houver membrosIds, tenta extrair de membros[].cadastroId
+            const ids: string[] = Array.isArray(x.membrosIds)
+              ? x.membrosIds
+              : Array.isArray(x.membros)
+              ? x.membros
+                  .map((m: any) => m?.cadastroId)
+                  .filter((v: any) => !!v)
+              : [];
+
+            return {
+              id: d.id,
+              codigo: x.codigo,
+              coordenadorCpf: x.coordenadorCpf,
+              coordenadorNome: x.coordenadorNome,
+
+              membrosIds: ids,
+
+              bairro: x.bairro || '',
+              cidade: x.cidade || '',
+              estado: x.estado || x.uf || '',
+              status: (x.status || 'em_qa') as StatusGrupo,
+              criadoEm: x.criadoEm?.toDate?.() || null,
+              criadoPorUid: x.criadoPorUid ?? null,
+              criadoPorNome: x.criadoPorNome ?? null,
+              totalSolicitado: x.totalSolicitado || 0,
+              observacoes: x.observacoes || '',
+
+              designadoEm: x.designadoEm?.toDate?.() || null,
+              designadoParaUid: x.designadoParaUid || null,
+              designadoParaNome: x.designadoParaNome || null,
+
+              encaminhadoParaUid: x.encaminhadoParaUid ?? null,
+              encaminhadoParaNome: x.encaminhadoParaNome ?? null,
+              encaminhadoEm: x.encaminhadoEm?.toDate?.() || null,
+              encaminhadoPorUid: x.encaminhadoPorUid ?? null,
+              encaminhadoPorNome: x.encaminhadoPorNome ?? null,
+
+              caixaAtual: x.caixaAtual ?? null,
+              caixaUid: x.caixaUid ?? null,
+            };
+          });
+
+          // Filtra para mostrar só grupos relacionados ao "me"
+          const meUid = this.me?.uid || null;
+          let list = arr;
+          if (meUid) {
+            list = arr.filter((g) => {
+              const emMinhaCaixa = g.caixaUid === meUid;
+              const encaminhadoPorMim = g.encaminhadoPorUid === meUid;
+              return emMinhaCaixa || encaminhadoPorMim;
+            });
+          } else {
+            list = [];
+          }
+
+          list.sort(
+            (a, b) =>
+              (b.criadoEm?.getTime?.() || 0) - (a.criadoEm?.getTime?.() || 0)
+          );
+
+          this.allGrupos = list;
+          this.filtrarGrupos();
+
+          // Re-monta all (pessoas + membros dos grupos)
+          this.all = this.mergePessoasComGrupos(this.basePessoas);
+          this.aplicarFiltrosPessoas();
+
+          this.gruposLoaded = true;
+          this.checkLoaded();
+        } catch (e) {
+          console.error('[Triagem] Falha ao processar grupos:', e);
+          this.erro.set('Falha ao processar grupos.');
+          this.carregando.set(false);
+        }
+      },
+      (err) => {
+        console.error('[Triagem] Snapshot grupos error:', err);
+        this.erro.set(err?.message ?? 'Falha ao carregar grupos.');
+        this.carregando.set(false);
+      }
+    );
+  }
+
+  /* =========================
+     Merge Pessoas + Membros de Grupos
+     ========================= */
+  private getPCById(id?: string | null): PreCadastroRow | null {
+    if (!id) return null;
+    return this.pcById.get(String(id)) || null;
+  }
+
+  private montarMembrosPorIds(g: GrupoRow): PreCadastroRow[] {
+    const ids = g.membrosIds || [];
+    const itens: PreCadastroRow[] = [];
+    for (const id of ids) {
+      const pc = this.getPCById(id);
+      if (pc) itens.push(pc);
+    }
+    return itens;
+  }
+
   private mergePessoasComGrupos(baseList: PreCadastroRow[]): PreCadastroRow[] {
     const result = [...baseList];
-    const existing = new Set(result.map((p) => p.id));
+    const indexById = new Map<string, number>();
 
-    for (const g of this.allGrupos) {
-      const membros = this.buildMembrosFromGrupo(g);
+    result.forEach((p, idx) => {
+      if (p.id) indexById.set(p.id, idx);
+    });
+
+    const meUid = this.me?.uid || null;
+
+    const gruposRelevantes = this.allGrupos.filter((g) => {
+      if (!meUid) return false;
+      const emMinhaCaixa = g.caixaUid === meUid;
+      const encaminhadoPorMim = g.encaminhadoPorUid === meUid;
+      return emMinhaCaixa || encaminhadoPorMim;
+    });
+
+    for (const g of gruposRelevantes) {
+      const membros = this.montarMembrosPorIds(g);
       for (const pc of membros) {
-        if (!pc?.id || existing.has(pc.id)) continue;
-        result.push(pc);
-        existing.add(pc.id);
+        if (!pc?.id) continue;
+
+        const idx = indexById.get(pc.id);
+        if (idx != null) {
+          // se já existe na lista, posso só garantir que a "caixa" não fique vazia
+          const current = result[idx];
+          const merged: PreCadastroRow = {
+            ...current,
+            caixaAtual: current.caixaAtual ?? g.caixaAtual ?? null,
+            caixaUid: current.caixaUid ?? g.caixaUid ?? null,
+          };
+          result[idx] = merged;
+        } else {
+          const clone: PreCadastroRow = {
+            ...pc,
+            caixaAtual: pc.caixaAtual ?? g.caixaAtual ?? null,
+            caixaUid: pc.caixaUid ?? g.caixaUid ?? null,
+          };
+          indexById.set(clone.id, result.length);
+          result.push(clone);
+        }
       }
     }
 
+    result.sort(
+      (a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0)
+    );
     return result;
   }
 
-  private aplicarEncaminhamentoEmPessoasPorGrupo(
-    g: GrupoSlim,
-    aUid: string,
-    assessorNome: string | null,
-    meUid: string | null,
-    meNome: string | null
-  ) {
-    const ids = g.membrosIds || [];
-    const now = new Date();
-
-    for (const id of ids) {
-      const pc = this.pcById.get(id);
-      if (!pc) continue;
-
-      const patch: Partial<PreCadastroRow> = {
-        designadoParaUid: aUid,
-        designadoParaNome: assessorNome || '',
-        designadoEm: now,
-
-        encaminhadoParaUid: aUid,
-        encaminhadoParaNome: assessorNome || '',
-        encaminhadoEm: now,
-        encaminhadoPorUid: meUid,
-        encaminhadoPorNome: meNome || undefined,
-
-        caixaAtual: 'assessor',
-        caixaUid: aUid,
-      };
-
-      const idx = this.all.findIndex((x) => x.id === pc.id);
-      if (idx >= 0) this.all[idx] = { ...this.all[idx], ...patch };
-
-      const idx2 = this.view.findIndex((x) => x.id === pc.id);
-      if (idx2 >= 0) this.view[idx2] = { ...this.view[idx2], ...patch };
-    }
-
-    // Reaplica filtros pra refletir o novo estado (encaminhado / não encaminhado)
-    this.aplicarFiltrosPessoas();
+  /* =========================
+     Filtros PESSOAS
+     ========================= */
+  onBusca(v: string) {
+    this.busca = (v ?? '').trim();
+    if (this.activeTab === 'pessoas') this.aplicarFiltrosPessoas();
+    else this.filtrarGrupos();
   }
 
-  /** ===== Designar pessoas/grupos ===== */
-  async designarParaAssessor(r: PreCadastroRow, uid?: string | null) {
+  aplicarFiltrosPessoas() {
+    let list = [...this.all];
+
+    if (this.envioFilter !== 'todos') {
+      list = list.filter((p) => {
+        const enc = !!p.encaminhadoParaUid;
+        return this.envioFilter === 'encaminhado' ? enc : !enc;
+      });
+    }
+
+    if (this.statusFilter !== 'todos') {
+      list = list.filter(
+        (p) => (p.statusAprovacao || 'nao') === this.statusFilter
+      );
+    }
+
+    const term = this.normalize(this.busca);
+    if (term) {
+      list = list.filter((p) => {
+        const blob = this.normalize(
+          `${p.nome} ${p.cpf} ${p.telefone} ${p.email} ${p.endereco} ${p.bairro} ${p.rota} ${p.cidade} ${p.uf} ${p.origemLabel}`
+        );
+        return blob.includes(term);
+      });
+    }
+
+    list.sort(
+      (a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0)
+    );
+    this.view = list;
+    this.currentPage = 1;
+  }
+
+  /* =========================
+     Filtros GRUPOS
+     ========================= */
+  filtrarGrupos() {
+    let list = [...this.allGrupos];
+    const term = this.normalize(this.busca);
+
+    if (term) {
+      list = list.filter((g) => {
+        const blob = this.normalize(
+          `${g.codigo || ''} ${g.coordenadorNome || ''} ${g.bairro || ''} ${g.cidade || ''} ${g.estado || ''}`
+        );
+        return blob.includes(term);
+      });
+    }
+
+    this.viewGrupos = list;
+    this.currentPageG = 1;
+  }
+
+  /* =========================
+     MODAL Pessoas – Escolher Assessor
+     ========================= */
+  abrirModalAssessor(row: PreCadastroRow) {
+    this.rowSelecionado = row;
+    this.selectedAssessorUid = row.encaminhadoParaUid || row.designadoParaUid || null;
+    this.assessorBusca = '';
+    this.assessoresFiltrados = [...this.assessores];
+    this.showAssessorModal = true;
+  }
+
+  fecharModalAssessor() {
+    this.showAssessorModal = false;
+    this.rowSelecionado = null;
+    this.selectedAssessorUid = null;
+  }
+
+  /* =========================
+     MODAL Grupo – Escolher Assessor
+     ========================= */
+  abrirModalAssessorGrupo(g: GrupoRow) {
+    this.grupoSelecionado = g;
+    this.selectedAssessorUidGrupo =
+      g.encaminhadoParaUid || g.designadoParaUid || null;
+    this.assessorBuscaGrupo = '';
+    this.assessoresFiltradosGrupo = [...this.assessores];
+    this.showAssessorModalGrupo = true;
+  }
+
+  fecharModalAssessorGrupo() {
+    this.showAssessorModalGrupo = false;
+    this.grupoSelecionado = null;
+    this.selectedAssessorUidGrupo = null;
+  }
+
+  /* =========================
+     Detalhe Grupo – membrosPC
+     ========================= */
+  abrirDetalheGrupo(g: GrupoRow) {
+    this.grupoSelecionado = g;
+    this.membrosPC = this.montarMembrosPorIds(g);
+    this.showGrupoDetalhe = true;
+  }
+
+  fecharDetalheGrupo() {
+    this.showGrupoDetalhe = false;
+    this.grupoSelecionado = null;
+    this.membrosPC = [];
+  }
+
+  /* =========================
+     Designar / Encaminhar PESSOA
+     ========================= */
+  async designarParaAssessor(
+    r: PreCadastroRow,
+    uid?: string | null
+  ): Promise<void> {
     const aUid = uid || this.selectedAssessorUid;
     if (!r || !aUid) return;
 
@@ -972,20 +1012,19 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
           designadoParaNome: assessorNome || null,
           designadoEm: serverTimestamp(),
 
-          // ➕ dados de encaminhamento
           encaminhadoParaUid: aUid,
           encaminhadoParaNome: assessorNome || null,
           encaminhadoEm: serverTimestamp(),
           encaminhadoPorUid: meUid,
           encaminhadoPorNome: meNome,
 
-          // mantém o modelo de "caixa" pro assessor receber na lista dele
           caixaAtual: 'assessor',
           caixaUid: aUid,
         },
         { merge: true }
       );
 
+      // Atualiza local
       const patch: Partial<PreCadastroRow> = {
         designadoParaUid: aUid,
         designadoParaNome: assessorNome || '',
@@ -998,10 +1037,10 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
         caixaAtual: 'assessor',
         caixaUid: aUid,
       };
-      const idx = this.all.findIndex((x) => x.id === r.id);
-      if (idx >= 0) this.all[idx] = { ...this.all[idx], ...patch };
-      const idx2 = this.view.findIndex((x) => x.id === r.id);
-      if (idx2 >= 0) this.view[idx2] = { ...this.view[idx2], ...patch };
+
+      this.all = this.all.map((x) => (x.id === r.id ? { ...x, ...patch } : x));
+      this.view = this.view.map((x) => (x.id === r.id ? { ...x, ...patch } : x));
+      this.pcById.set(r.id, { ...(this.pcById.get(r.id) || r), ...patch });
 
       this.aplicarFiltrosPessoas();
     } catch (e) {
@@ -1010,7 +1049,10 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
     }
   }
 
-  async designarGrupo(g: GrupoSlim, uid?: string | null) {
+  /* =========================
+     Designar / Encaminhar GRUPO
+     ========================= */
+  async designarGrupo(g: GrupoRow, uid?: string | null): Promise<void> {
     const aUid = uid || this.selectedAssessorUidGrupo;
     if (!g || !aUid) return;
 
@@ -1024,10 +1066,9 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
       const meUid = this.me?.uid ?? null;
       const meNome = this.me?.nome ?? null;
 
-      // 👇 Batch pra atualizar GRUPO + TODOS os membros
       const batch = writeBatch(db);
 
-      // 1) Atualiza o grupo
+      // grupo
       const refGrupo = doc(db, 'grupos_solidarios', g.id);
       batch.set(
         refGrupo,
@@ -1048,10 +1089,10 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
         { merge: true }
       );
 
-      // 2) Atualiza todos os pré-cadastros membros do grupo
+      // membros (pré-cadastros)
       const ids = g.membrosIds || [];
       for (const id of ids) {
-        const pc = this.pcById.get(id);
+        const pc = this.getPCById(id);
         if (!pc) continue;
 
         const refPc = doc(db, pc._path);
@@ -1076,11 +1117,10 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
         );
       }
 
-      // 3) Aplica tudo no Firestore
       await batch.commit();
 
-      // 4) Atualiza estado local do grupo
-      const patchGrupo: Partial<GrupoSlim> = {
+      // Atualiza localmente grupo
+      const patchGrupo: Partial<GrupoRow> = {
         designadoParaUid: aUid,
         designadoParaNome: assessorNome || '',
         designadoEm: new Date(),
@@ -1092,246 +1132,50 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
         caixaAtual: 'assessor',
         caixaUid: aUid,
       };
-      const idx = this.allGrupos.findIndex((x) => x.id === g.id);
-      if (idx >= 0) this.allGrupos[idx] = { ...this.allGrupos[idx], ...patchGrupo };
-      const idx2 = this.viewGrupos.findIndex((x) => x.id === g.id);
-      if (idx2 >= 0) this.viewGrupos[idx2] = { ...this.viewGrupos[idx2], ...patchGrupo };
 
-      // 5) Atualiza estado local das PESSOAS do grupo
-      this.aplicarEncaminhamentoEmPessoasPorGrupo(
-        g,
-        aUid,
-        assessorNome || null,
-        meUid,
-        meNome
+      this.allGrupos = this.allGrupos.map((x) =>
+        x.id === g.id ? { ...x, ...patchGrupo } : x
+      );
+      this.viewGrupos = this.viewGrupos.map((x) =>
+        x.id === g.id ? { ...x, ...patchGrupo } : x
       );
 
-      // 6) Reaplica lista de grupos
+      // Atualiza localmente os pré-cadastros (pessoas)
+      const now = new Date();
+      const patchPC: Partial<PreCadastroRow> = {
+        designadoParaUid: aUid,
+        designadoParaNome: assessorNome || '',
+        designadoEm: now,
+        encaminhadoParaUid: aUid,
+        encaminhadoParaNome: assessorNome || '',
+        encaminhadoEm: now,
+        encaminhadoPorUid: meUid,
+        encaminhadoPorNome: meNome || undefined,
+        caixaAtual: 'assessor',
+        caixaUid: aUid,
+      };
+
+      const idSet = new Set(g.membrosIds || []);
+
+      this.all = this.all.map((pc) =>
+        idSet.has(pc.id) ? { ...pc, ...patchPC } : pc
+      );
+      this.view = this.view.map((pc) =>
+        idSet.has(pc.id) ? { ...pc, ...patchPC } : pc
+      );
+
+      for (const id of idSet) {
+        const old = this.pcById.get(id);
+        if (old) this.pcById.set(id, { ...old, ...patchPC });
+      }
+
+      // Recalcula merge para garantir consistência
+      this.all = this.mergePessoasComGrupos(this.basePessoas);
+      this.aplicarFiltrosPessoas();
       this.filtrarGrupos();
     } catch (e) {
       console.error('[Triagem] Falha ao designar grupo:', e);
       alert('Não foi possível encaminhar o grupo. Tente novamente.');
     }
-  }
-
-  /** ===== Modais ===== */
-  abrirModalAssessor(row: PreCadastroRow) {
-    this.rowSelecionado = row;
-    this.selectedAssessorUid =
-      row.encaminhadoParaUid || row.designadoParaUid || null;
-    this.assessorBusca = '';
-    this.assessoresFiltrados = [...this.assessores];
-    this.showAssessorModal = true;
-  }
-
-  abrirModalAssessorGrupo(g: GrupoSlim) {
-    this.grupoSelecionado = g;
-    this.selectedAssessorUidGrupo =
-      g.encaminhadoParaUid || g.designadoParaUid || null;
-    this.assessorBuscaGrupo = '';
-    this.assessoresFiltradosGrupo = [...this.assessores];
-    this.showAssessorModalGrupo = true;
-  }
-
-  fecharModalAssessor() {
-    this.showAssessorModal = false;
-    this.rowSelecionado = null;
-    this.selectedAssessorUid = null;
-  }
-
-  fecharModalAssessorGrupo() {
-    this.showAssessorModalGrupo = false;
-    this.grupoSelecionado = null;
-    this.selectedAssessorUidGrupo = null;
-  }
-
-  private async carregarPreCadastroPorId(
-    id: string
-  ): Promise<PreCadastroRow | null> {
-    try {
-      const cg = collectionGroup(db, 'pre_cadastros');
-      const qy = query(cg, where(documentId(), '==', id), limit(1));
-      const snap = await getDocs(qy);
-
-      if (snap.empty) return null;
-
-      const d = snap.docs[0];
-      const x = d.data() as any;
-
-      const origemRaw = String(x?.origem ?? '').trim();
-      const origemKey = normalizeBasic(origemRaw || 'outros');
-      const origemLabel = origemRaw || 'Outros';
-
-      const designadoParaUid: string | null =
-        (x?.designadoParaUid ?? x?.designadoPara ?? null) || null;
-      const designadoParaNome: string | null = x?.designadoParaNome ?? null;
-
-      const r: PreCadastroRow = {
-        id: d.id,
-        data: toDateSafe(x?.createdAt ?? x?.criadoEm),
-
-        nome: String(x?.nomeCompleto ?? x?.nome ?? '').trim(),
-        cpf: String(x?.cpf ?? '').trim(),
-        telefone: String(x?.telefone ?? x?.contato ?? '').trim(),
-        email: String(x?.email ?? '').trim(),
-        endereco: String(x?.endereco ?? x?.enderecoCompleto ?? '').trim(),
-        bairro: String(x?.bairro ?? '').trim(),
-        rota: String(x?.rota ?? '').trim(),
-        cidade: String(x?.cidade ?? '').trim(),
-        uf: String(x?.uf ?? x?.estado ?? '').trim(),
-
-        origem: origemLabel,
-        origemKey,
-        origemLabel,
-
-        statusAprovacao: statusFrom(x?.aprovacao?.status ?? x?.statusAprovacao),
-
-        designadoEm: toDateSafe(x?.designadoEm) ?? null,
-        designadoParaUid,
-        designadoParaNome,
-
-        encaminhadoParaUid: x?.encaminhadoParaUid ?? null,
-        encaminhadoParaNome: x?.encaminhadoParaNome ?? null,
-        encaminhadoEm: toDateSafe(x?.encaminhadoEm) ?? null,
-        encaminhadoPorUid: x?.encaminhadoPorUid ?? null,
-        encaminhadoPorNome: x?.encaminhadoPorNome ?? null,
-
-        _path: d.ref.path,
-        _eDeAssessor: d.ref.path.startsWith('colaboradores/'),
-
-        createdByUid: x?.createdByUid ?? null,
-        createdByNome: x?.createdByNome ?? null,
-
-        caixaAtual: x?.caixaAtual ?? null,
-        caixaUid: x?.caixaUid ?? null,
-      };
-
-      // guarda no mapa pra reuso
-      this.pcById.set(r.id, r);
-      return r;
-    } catch (e) {
-      console.error('Falha ao carregar pré-cadastro por id', id, e);
-      return null;
-    }
-  }
-
-  abrirDetalheGrupo(g: GrupoSlim) {
-    this.grupoSelecionado = g;
-    this.showGrupoDetalhe = true;
-
-    const membros = this.buildMembrosFromGrupo(g);
-    this.membrosPC = membros;
-
-    // garante que estes membros também estejam na base de Pessoas
-    const idsExistentes = new Set(this.all.map((p) => p.id));
-    for (const pc of membros) {
-      if (!pc?.id || idsExistentes.has(pc.id)) continue;
-      this.all.push(pc);
-      idsExistentes.add(pc.id);
-    }
-
-    this.aplicarFiltrosPessoas();
-  }
-
-  private mapRawToPreCadastroRow(id: string, raw: any): PreCadastroRow {
-    return {
-      id,
-      data: null,
-
-      nome: String(raw?.nomeCompleto ?? raw?.nome ?? '').trim(),
-      cpf: String(raw?.cpf ?? '').trim(),
-      telefone: String(raw?.telefone ?? '').trim(),
-      email: String(raw?.email ?? '').trim(),
-      endereco: String(raw?.endereco ?? '').trim(),
-      bairro: String(raw?.bairro ?? '').trim(),
-      rota: '',
-      cidade: String(raw?.cidade ?? '').trim(),
-      uf: String(raw?.uf ?? '').trim(),
-
-      origem: '',
-      origemKey: '',
-      origemLabel: '',
-
-      statusAprovacao: 'nao',
-
-      designadoEm: null,
-      designadoParaUid: null,
-      designadoParaNome: null,
-
-      encaminhadoParaUid: null,
-      encaminhadoParaNome: null,
-      encaminhadoEm: null,
-      encaminhadoPorUid: null,
-      encaminhadoPorNome: null,
-
-      _path: '', // não usamos pra editar aqui
-      _eDeAssessor: false,
-
-      createdByUid: null,
-      createdByNome: null,
-
-      caixaAtual: null,
-      caixaUid: null,
-    };
-  }
-
-  fecharDetalheGrupo() {
-    this.showGrupoDetalhe = false;
-    this.grupoSelecionado = null;
-    this.membrosPC = [];
-  }
-
-  /** ===== Busca nos modais ===== */
-  filtrarAssessoresPessoas() {
-    const term = (this.assessorBusca || '').trim().toLowerCase();
-    const base = this.assessores;
-    this.assessoresFiltrados = term
-      ? base.filter((a) =>
-          `${a.nome ?? ''} ${a.email ?? ''} ${a.rota ?? ''}`
-            .toLowerCase()
-            .includes(term)
-        )
-      : [...base];
-  }
-
-  filtrarAssessoresGrupo() {
-    const term = (this.assessorBuscaGrupo || '').trim().toLowerCase();
-    const base = this.assessores;
-    this.assessoresFiltradosGrupo = term
-      ? base.filter((a) =>
-          `${a.nome ?? ''} ${a.email ?? ''} ${a.rota ?? ''}`
-            .toLowerCase()
-            .includes(term)
-        )
-      : [...base];
-  }
-
-  /** ===== Paginação ===== */
-  onPageSizeChange(n: number) {
-    this.pageSize = +n || 20;
-    this.currentPage = 1;
-    this.view = [...this.view];
-  }
-
-  nextPage() {
-    if (this.currentPage < this.totalPages) this.currentPage++;
-  }
-
-  prevPage() {
-    if (this.currentPage > 1) this.currentPage--;
-  }
-
-  onPageSizeChangeG(n: number) {
-    this.pageSizeG = +n || 20;
-    this.currentPageG = 1;
-    this.viewGrupos = [...this.viewGrupos];
-  }
-
-  nextPageG() {
-    if (this.currentPageG < this.totalPagesG) this.currentPageG++;
-  }
-
-  prevPageG() {
-    if (this.currentPageG > 1) this.currentPageG--;
   }
 }
