@@ -93,6 +93,13 @@ export interface GrupoSolidario {
     distribuidoPorNome?: string;
   };
 
+  // ✅ Adicione estes (usados na triagem e relatório)
+  encaminhadoParaUid?: string | null;
+  encaminhadoParaNome?: string | null;
+  encaminhadoEm?: any | null;
+  encaminhadoPorUid?: string | null;
+  encaminhadoPorNome?: string | null;
+
   /** Convite de grupo */
   inviteToken: string;              // token curto
   inviteUrl?: string;               // URL pronta para compartilhar

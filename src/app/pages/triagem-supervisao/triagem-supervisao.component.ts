@@ -1,483 +1,230 @@
-import { Component, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { HeaderComponent } from '../shared/header/header.component';
 
-import { db } from '../../firebase.config';
+import { PreCadastroService } from '../../services/pre-cadastro.service';
+import { GrupoSolidarioService } from '../../services/grupo-solidario.service';
+
+import { PreCadastro } from '../../models/pre-cadastro.model';
+import { GrupoSolidario, MembroGrupoView } from '../../models/grupo-solidario.model';
+
+import { Auth, user } from '@angular/fire/auth';
 import {
+  Firestore,
+  collection,
   collectionGroup,
-  onSnapshot,
-  query,
-  Unsubscribe,
   doc,
   getDoc,
+  getDocs,
+  query as fsQuery,
+  where,
+  limit,
   setDoc,
   serverTimestamp,
-  collection,
-  getDocs,
-  where,
   writeBatch,
-  orderBy,
-  limit,
-} from 'firebase/firestore';
+} from '@angular/fire/firestore';
+import { Subscription } from 'rxjs';
 
-import { getAuth, User } from 'firebase/auth';
+type Aba = 'pessoas' | 'grupos';
 
-/* =========================
-   Normalização & Origens
-   ========================= */
-function normalizeBasic(s: string): string {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function titleCase(s: string): string {
-  return (s || '').toLowerCase().replace(/(^|\s)\S/g, (t) => t.toUpperCase());
-}
-
-const ORIGEM_SYNONYMS: Record<string, string> = {
-  panfleto: 'panfleto',
-  panfletos: 'panfleto',
-  online: 'online',
-  'on-line': 'online',
-  site: 'online',
-  formulario: 'online',
-  formulário: 'online',
-  telefone: 'telefone',
-  tel: 'telefone',
-  celular: 'telefone',
-  cel: 'telefone',
-  whatsapp: 'whatsapp',
-  wpp: 'whatsapp',
-  zap: 'whatsapp',
-  wtz: 'whatsapp',
-  whats: 'whatsapp',
-  igreja: 'igreja',
-  presencial: 'presencial',
-  visita: 'presencial',
-  'visita presencial': 'presencial',
-  'cadastro presencial': 'presencial',
-  indicacao: 'indicacao',
-  indicação: 'indicacao',
-  proprio: 'proprio',
-  próprio: 'proprio',
-  própria: 'proprio',
-};
-
-const ORIGEM_LABELS: Record<string, string> = {
-  panfleto: 'Panfleto',
-  online: 'Online',
-  telefone: 'Telefone',
-  whatsapp: 'WhatsApp',
-  igreja: 'Igreja',
-  presencial: 'Presencial',
-  indicacao: 'Indicação',
-  proprio: 'Próprio',
-  outros: 'Outros',
-};
-
-type StatusAprovacao = 'nao' | 'apto' | 'inapto';
-
-function coerceStatusToUi(x: any): StatusAprovacao {
-  const n = normalizeBasic(String(x || ''));
-  if (n.startsWith('apto')) return 'apto';
-  if (n.startsWith('ina')) return 'inapto';
-  return 'nao';
-}
-
-function canonicalizeOrigem(raw: string): { key: string; label: string } {
-  const n = normalizeBasic(raw);
-
-  if (n in ORIGEM_SYNONYMS) {
-    const key = ORIGEM_SYNONYMS[n];
-    return {
-      key,
-      label: ORIGEM_LABELS[key as keyof typeof ORIGEM_LABELS] || titleCase(key),
-    };
-  }
-  if (/whats|zap|wpp/.test(n))
-    return { key: 'whatsapp', label: ORIGEM_LABELS['whatsapp'] };
-  if (/on\s?-?\s?line|site|formul/.test(n))
-    return { key: 'online', label: ORIGEM_LABELS['online'] };
-  if (/telefone|tel|cel/.test(n))
-    return { key: 'telefone', label: ORIGEM_LABELS['telefone'] };
-  if (/igreja/.test(n))
-    return { key: 'igreja', label: ORIGEM_LABELS['igreja'] };
-  if (/presencial|visita/.test(n))
-    return { key: 'presencial', label: ORIGEM_LABELS['presencial'] };
-  if (/indic/.test(n))
-    return { key: 'indicacao', label: ORIGEM_LABELS['indicacao'] };
-  if (/propri/.test(n))
-    return { key: 'proprio', label: ORIGEM_LABELS['proprio'] };
-
-  if (n) return { key: n, label: titleCase(raw) };
-  return { key: 'outros', label: ORIGEM_LABELS['outros'] };
-}
-
-/* =========================
-   Tipos
-   ========================= */
-export type Papel =
-  | 'admin'
-  | 'supervisor'
-  | 'coordenador'
-  | 'assessor'
-  | 'analista'
-  | 'operacional'
-  | 'rh'
-  | 'financeiro'
-  | 'qualidade';
-
-export interface Colaborador {
-  uid: string;
-  nome: string;
-  email: string;
-  papel: Papel;
-  rota?: string;
-  status?: 'ativo' | 'inativo';
-  supervisorId?: string | null;
-  analistaId?: string | null;
-}
-
-type PreCadastroRow = {
-  id: string;
-  data: Date | null;
-
-  nome: string;
-  cpf: string;
-  telefone: string;
-  email: string;
-  endereco: string;
-  bairro: string;
-  rota: string;
-  cidade?: string;
-  uf?: string;
-
-  origem: string;
-  origemKey: string;
-  origemLabel: string;
-
-  statusAprovacao?: StatusAprovacao;
-
-  designadoEm?: Date | null;
-  designadoParaUid?: string | null;
-  designadoParaNome?: string | null;
-
-  encaminhadoParaUid?: string | null;
-  encaminhadoParaNome?: string | null;
-  encaminhadoEm?: Date | null;
-  encaminhadoPorUid?: string | null;
-  encaminhadoPorNome?: string | null;
-
-  caixaAtual?: string | null;
-  caixaUid?: string | null;
-
-  _path: string;
-  _eDeAssessor?: boolean;
-
-  createdByUid?: string | null;
-  createdByNome?: string | null;
-};
-
-export type StatusGrupo = 'em_qa' | 'aprovado_basa' | 'reprovado_basa';
-
-type GrupoRow = {
-  id: string;
-  codigo?: string;
-  coordenadorCpf?: string;
-  coordenadorNome?: string;
-
-  membrosIds: string[];
-
-  bairro?: string;
-  cidade?: string;
-  estado?: string;
-  status: StatusGrupo;
-
-  criadoEm: Date | null;
-  criadoPorUid?: string | null;
-  criadoPorNome?: string | null;
-  totalSolicitado?: number;
-  observacoes?: string;
-
-  designadoEm?: Date | null;
-  designadoParaUid?: string | null;
-  designadoParaNome?: string | null;
-
-  encaminhadoParaUid?: string | null;
-  encaminhadoParaNome?: string | null;
-  encaminhadoEm?: Date | null;
-  encaminhadoPorUid?: string | null;
-  encaminhadoPorNome?: string | null;
-
-  caixaAtual?: string | null;
-  caixaUid?: string | null;
-};
+type FiltroEnvio = 'todos' | 'encaminhado' | 'nao_encaminhado';
 
 type Assessor = {
   uid: string;
-  nome?: string;
-  email?: string;
-  status?: string;
-  papel?: string;
-  rota?: string;
+  nome: string;
+  email?: string | null;
+  rota?: string | null;
 };
 
-/* =========================
-   Componente
-   ========================= */
 @Component({
-  standalone: true,
   selector: 'app-triagem-supervisao',
+  standalone: true,
   imports: [CommonModule, FormsModule, HeaderComponent],
   templateUrl: './triagem-supervisao.component.html',
   styleUrls: ['./triagem-supervisao.component.css'],
 })
 export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
-  carregando = signal(false);
-  erro = signal<string | null>(null);
+  // ====== injeções ======
+  private preSvc = inject(PreCadastroService);
+  private gruposSvc = inject(GrupoSolidarioService);
+  private auth = inject(Auth);
+  private afs = inject(Firestore);
 
-  // Quem está logado
-  me: { uid: string; papel: Papel; nome: string } | null = null;
+  // ====== estado usuário atual ======
+  currentUserUid: string | null = null;
+  currentUserNome: string | null = null;
+  private subUser?: Subscription;
 
-  // abas
-  activeTab: 'pessoas' | 'grupos' = 'pessoas';
-  setTab(tab: 'pessoas' | 'grupos') {
-    this.activeTab = tab;
-    this.onBusca(this.busca);
-  }
+  // cache de nomes para não ficar lendo o mesmo colaborador sempre
+  private nomeCache = new Map<string, string>();
 
-  // busca & filtros (PESSOAS)
-  busca = '';
-  envioFilter: 'todos' | 'encaminhado' | 'nao_encaminhado' = 'todos';
-  statusFilter: 'todos' | StatusAprovacao = 'todos';
+  // ====== abas / UI básica ======
+  loading = false;
+  aba: Aba = 'pessoas';
 
-  setEnvio(k: 'todos' | 'encaminhado' | 'nao_encaminhado') {
-    this.envioFilter = this.envioFilter === k ? 'todos' : k;
-    this.aplicarFiltrosPessoas();
-  }
-  setStatus(k: 'todos' | StatusAprovacao) {
-    this.statusFilter = this.statusFilter === k ? 'todos' : k;
-    this.aplicarFiltrosPessoas();
-  }
+  searchTerm = '';
+  filtroEnvio: FiltroEnvio = 'todos';
 
-  // ===== Dados PESSOAS =====
-  private unsubPC?: Unsubscribe;
-  private pcById = new Map<string, PreCadastroRow>();
-  private basePessoas: PreCadastroRow[] = []; // somente o que está na "minha" caixa
-  all: PreCadastroRow[] = []; // base + membros de grupos
-  view: PreCadastroRow[] = [];
+  // ====== pessoas ======
+  pessoas: PreCadastro[] = [];      // base completa (caixa + encaminhados + membros de grupos)
+  pessoasView: PreCadastro[] = [];  // filtradas pela busca/filtros
 
-  // paginação PESSOAS
-  pageSize = 20;
-  currentPage = 1;
-  get totalItems() {
-    return this.view.length;
-  }
-  get totalPages() {
-    return Math.max(1, Math.ceil(this.totalItems / this.pageSize));
-  }
-  get pageStart() {
-    return this.totalItems ? (this.currentPage - 1) * this.pageSize : 0;
-  }
-  get pageEnd() {
-    return Math.min(
-      this.pageStart + this.pageSize,
-      this.pageSize * this.currentPage
-    );
-  }
-  get pageItems() {
-    return this.view.slice(this.pageStart, this.pageEnd);
-  }
+  // ====== grupos ======
+  grupos: GrupoSolidario[] = [];       // grupos da lista
+  gruposView: GrupoSolidario[] = [];   // filtrados pela busca
 
-  onPageSizeChange(n: number) {
-    this.pageSize = +n || 20;
-    this.currentPage = 1;
-    this.view = [...this.view];
-  }
-  nextPage() {
-    if (this.currentPage < this.totalPages) this.currentPage++;
-  }
-  prevPage() {
-    if (this.currentPage > 1) this.currentPage--;
-  }
-
-  // ===== Dados GRUPOS =====
-  private unsubGrupos?: Unsubscribe;
-  allGrupos: GrupoRow[] = [];
-  viewGrupos: GrupoRow[] = [];
-
-  // paginação GRUPOS
-  pageSizeG = 20;
-  currentPageG = 1;
-  get totalItemsG() {
-    return this.viewGrupos.length;
-  }
-  get totalPagesG() {
-    return Math.max(1, Math.ceil(this.totalItemsG / this.pageSizeG));
-  }
-  get pageStartG() {
-    return this.totalItemsG ? (this.currentPageG - 1) * this.pageSizeG : 0;
-  }
-  get pageEndG() {
-    return Math.min(
-      this.pageStartG + this.pageSizeG,
-      this.pageSizeG * this.currentPageG
-    );
-  }
-  get pageItemsG() {
-    return this.viewGrupos.slice(this.pageStartG, this.pageEndG);
-  }
-
-  onPageSizeChangeG(n: number) {
-    this.pageSizeG = +n || 20;
-    this.currentPageG = 1;
-    this.viewGrupos = [...this.viewGrupos];
-  }
-  nextPageG() {
-    if (this.currentPageG < this.totalPagesG) this.currentPageG++;
-  }
-  prevPageG() {
-    if (this.currentPageG > 1) this.currentPageG--;
-  }
-
-  // ===== Assessores =====
+  // ====== assessores (time do analista) ======
   assessores: Assessor[] = [];
   assessoresFiltrados: Assessor[] = [];
-  assessoresFiltradosGrupo: Assessor[] = [];
 
-  // Modal Pessoas
-  showAssessorModal = false;
-  rowSelecionado: PreCadastroRow | null = null;
-  selectedAssessorUid: string | null = null;
-  assessorBusca = '';
+  // ====== modal encaminhar PESSOA ======
+  showAssessorPessoaModal = false;
+  pessoaSelecionada: PreCadastro | null = null;
+  selectedAssessorUidPessoa: string | null = null;
+  buscaAssessorPessoa = '';
 
-  // Modal Grupo
-  showAssessorModalGrupo = false;
-  grupoSelecionado: GrupoRow | null = null;
+  // ====== modal encaminhar GRUPO ======
+  showAssessorGrupoModal = false;
+  grupoSelecionado: GrupoSolidario | null = null;
   selectedAssessorUidGrupo: string | null = null;
-  assessorBuscaGrupo = '';
+  buscaAssessorGrupo = '';
 
-  // Detalhe Grupo
+  // ====== modal DETALHE GRUPO ======
   showGrupoDetalhe = false;
-  membrosPC: PreCadastroRow[] = [];
+  grupoDetalhe: GrupoSolidario | null = null;
 
-  // flags de carregamento duplo (pessoas + grupos)
-  private pcLoaded = false;
-  private gruposLoaded = false;
+  // ====================================================
+  // CICLO DE VIDA
+  // ====================================================
+  ngOnInit(): void {
+    this.subUser = user(this.auth).subscribe(async (u) => {
+      this.loading = true;
+      try {
+        if (!u) {
+          this.currentUserUid = null;
+          this.currentUserNome = null;
+          this.resetarListas();
+          return;
+        }
 
-  /* =========================
-     Ciclo de vida
-     ========================= */
-  async ngOnInit(): Promise<void> {
-    this.carregando.set(true);
-    await this.initMeAndBootstrap();
+        this.currentUserUid = u.uid;
+        this.currentUserNome = await this.resolveUserName(u.uid);
+
+        await this.carregarAssessoresDoMeuTime(u.uid);
+        await this.carregarPessoasDoAnalista(u.uid);
+        await this.carregarGruposDoAnalista(u.uid);
+        await this.mesclarPreCadastrosDeGrupos(); // garante membros de grupos na aba Pessoas
+
+        this.aplicarFiltrosPessoas();
+        this.aplicarFiltrosGrupos();
+      } catch (e) {
+        console.error('[TriagemSupervisao] erro ao iniciar:', e);
+        this.resetarListas();
+      } finally {
+        this.loading = false;
+      }
+    });
   }
 
   ngOnDestroy(): void {
-    this.unsubPC?.();
-    this.unsubGrupos?.();
+    this.subUser?.unsubscribe();
   }
 
-  private async initMeAndBootstrap() {
+  private resetarListas() {
+    this.pessoas = [];
+    this.pessoasView = [];
+    this.grupos = [];
+    this.gruposView = [];
+    this.assessores = [];
+    this.assessoresFiltrados = [];
+  }
+
+  // ====================================================
+  // RESOLVE NOME DO USUÁRIO (igual módulo Lista)
+  // ====================================================
+  private async resolveUserName(uid: string): Promise<string> {
+    if (this.nomeCache.has(uid)) return this.nomeCache.get(uid)!;
+
+    let nome: string | null = null;
+
     try {
-      // Descobre "me"
-      const auth = getAuth();
-      const authUser: User | null = auth.currentUser;
-
-      if (authUser?.uid) {
-        const meSnap = await getDoc(doc(db, 'colaboradores', authUser.uid));
-        if (meSnap.exists()) {
-          const x = meSnap.data() as any;
-          this.me = {
-            uid: authUser.uid,
-            papel: (x?.papel as Papel) || 'supervisor',
-            nome: x?.nome || authUser.displayName || '',
-          };
-        } else {
-          this.me = {
-            uid: authUser.uid,
-            papel: 'supervisor',
-            nome: authUser.displayName || '',
-          };
-        }
-      } else {
-        const lsUid = localStorage.getItem('meUid') || '';
-        const lsPapel =
-          (localStorage.getItem('mePapel') as Papel) || 'supervisor';
-        if (lsUid) {
-          this.me = {
-            uid: lsUid,
-            papel: lsPapel,
-            nome: localStorage.getItem('meNome') || '',
-          };
-        } else {
-          this.me = null;
-        }
+      const snap = await getDoc(doc(this.afs, 'colaboradores', uid));
+      if (snap.exists()) {
+        const data: any = snap.data();
+        if (data?.nome) nome = String(data.nome);
       }
-
-      await this.carregarAssessoresDoMeuTime();
-      this.carregarPreCadastros();
-      this.carregarGrupos();
     } catch (e) {
-      console.error('[Triagem-supervisao] falha ao inicializar:', e);
-      this.erro.set('Falha ao inicializar a central de triagem.');
-      this.carregando.set(false);
+      console.warn('[NomePerfil] doc direto falhou:', e);
     }
-  }
 
-  private checkLoaded() {
-    if (this.pcLoaded && this.gruposLoaded) {
-      this.carregando.set(false);
-    }
-  }
-
-  /* =========================
-     Assessores (meu time)
-     ========================= */
-  private async carregarAssessoresDoMeuTime(): Promise<void> {
-    try {
-      const meUid = this.me?.uid || null;
-      if (!meUid) {
-        this.assessores = [];
-        this.assessoresFiltrados = [];
-        this.assessoresFiltradosGrupo = [];
-        return;
+    if (!nome) {
+      try {
+        const q = fsQuery(
+          collection(this.afs, 'colaboradores'),
+          where('uid', '==', uid),
+          limit(1)
+        );
+        const qs = await getDocs(q);
+        qs.forEach((d) => {
+          const data: any = d.data();
+          if (!nome && data?.nome) nome = String(data.nome);
+        });
+      } catch (e) {
+        console.warn('[NomePerfil] query por uid falhou:', e);
       }
+    }
 
-      const col = collection(db, 'colaboradores');
+    if (!nome) nome = this.auth.currentUser?.displayName || null;
 
-      const qSup = query(
-        col,
+    if (!nome) {
+      const email = this.auth.currentUser?.email || '';
+      if (email) {
+        const local = email.split('@')[0].replace(/[._-]+/g, ' ');
+        nome = local.replace(/\b\w/g, (c) => c.toUpperCase());
+      }
+    }
+
+    if (!nome) nome = 'Usuário';
+
+    this.nomeCache.set(uid, nome);
+    return nome;
+  }
+
+  // ====================================================
+  // CARREGAR ASSESSORES DO MEU TIME
+  // ====================================================
+  private async carregarAssessoresDoMeuTime(meUid: string): Promise<void> {
+    try {
+      const ref = collection(this.afs, 'colaboradores');
+
+      const qSup = fsQuery(
+        ref,
         where('status', '==', 'ativo'),
         where('papel', '==', 'assessor'),
         where('supervisorId', '==', meUid)
       );
-      const supSnap = await getDocs(qSup);
-
-      const qAna = query(
-        col,
+      const qAna = fsQuery(
+        ref,
         where('status', '==', 'ativo'),
         where('papel', '==', 'assessor'),
         where('analistaId', '==', meUid)
       );
-      const anaSnap = await getDocs(qAna);
+
+      const [supSnap, anaSnap] = await Promise.all([
+        getDocs(qSup),
+        getDocs(qAna),
+      ]);
 
       const map = new Map<string, Assessor>();
       const pushDoc = (d: any) => {
-        const x = d.data() as any;
+        const data = d.data() as any;
         map.set(d.id, {
           uid: d.id,
-          nome: x?.nome ?? x?.displayName ?? '',
-          email: x?.email ?? '',
-          status: x?.status,
-          papel: x?.papel,
-          rota: x?.rota ?? '',
+          nome: data?.nome || data?.displayName || data?.email || 'Assessor',
+          email: data?.email || null,
+          rota: data?.rota || null,
         });
       };
 
@@ -485,697 +232,704 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
       anaSnap.docs.forEach(pushDoc);
 
       this.assessores = Array.from(map.values()).sort((a, b) =>
-        (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? '')
+        (a.nome || '').localeCompare(b.nome || '')
       );
-
       this.assessoresFiltrados = [...this.assessores];
-      this.assessoresFiltradosGrupo = [...this.assessores];
     } catch (e) {
-      console.error('[Triagem] Falha ao carregar assessores do meu time:', e);
+      console.error('[TriagemSupervisao] erro ao carregar assessores:', e);
       this.assessores = [];
       this.assessoresFiltrados = [];
-      this.assessoresFiltradosGrupo = [];
     }
   }
 
-  /* =========================
-     Helpers gerais
-     ========================= */
-  private toDate(x: unknown): Date | null {
-    if (!x) return null;
-    if (typeof (x as any)?.toDate === 'function') return (x as any).toDate();
-    if (x instanceof Date) return x;
-    if (typeof x === 'number') return new Date(x);
+  // ====================================================
+  // CARREGAR PESSOAS DO ANALISTA
+  // (igual lógica do módulo Lista: caixa + encaminhadosPorMim)
+  // ====================================================
+  private normalize(s: string): string {
+    return (s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  private toJSDate(v: any): Date | null {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+    if (typeof v?.toDate === 'function') {
+      try {
+        return v.toDate();
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 
-  private normalize(s: string): string {
-    return normalizeBasic(s);
+  private async carregarPessoasDoAnalista(uid: string): Promise<void> {
+    try {
+      let base: PreCadastro[] = [];
+      const svcAny = this.preSvc as any;
+
+      // mesma estratégia da Lista
+      if (typeof svcAny.listarParaCaixa === 'function') {
+        base = await svcAny.listarParaCaixa(uid);
+      } else {
+        base = await this.preSvc.listarDoAssessor(uid);
+      }
+
+      const encaminhados = await this.buscarPreCadastrosEncaminhadosPor(uid);
+
+      const mapRows = new Map<string, PreCadastro>();
+
+      for (const r of base || []) {
+        if (r?.id) mapRows.set(r.id, r);
+      }
+      for (const e of encaminhados || []) {
+        if (!e?.id) continue;
+        const atual = mapRows.get(e.id);
+        mapRows.set(e.id, { ...(atual as any), ...(e as any) } as PreCadastro);
+      }
+
+      const merged = Array.from(mapRows.values());
+
+      const norm = merged.map((r) => {
+        const formalizacao = (r as any).formalizacao || {};
+        const desistencia = (r as any).desistencia || {};
+
+        const rawGrupo: any = (r as any).grupo || null;
+        const grupoId =
+          (r as any).grupoId ??
+          (r as any).grupoSolidarioId ??
+          rawGrupo?.id ??
+          null;
+        const grupoNome =
+          (r as any).grupoNome ??
+          rawGrupo?.nome ??
+          null;
+        const papelNoGrupo =
+          (r as any).papelNoGrupo ??
+          (r as any).grupoPapel ??
+          rawGrupo?.papel ??
+          null;
+
+        return {
+          ...r,
+          agendamentoStatus: (r as any).agendamentoStatus || 'nao_agendado',
+          grupoId,
+          grupoNome,
+          papelNoGrupo,
+          formalizacao: {
+            status: (formalizacao.status as any) || 'nao_formalizado',
+            porUid: formalizacao.porUid,
+            porNome: formalizacao.porNome,
+            em: formalizacao.em,
+            observacao: formalizacao.observacao ?? null,
+          },
+          desistencia: {
+            status: (desistencia.status as any) || 'nao_desistiu',
+            porUid: desistencia.porUid,
+            porNome: desistencia.porNome,
+            em: desistencia.em,
+            observacao: desistencia.observacao ?? null,
+          },
+        } as PreCadastro;
+      });
+
+      this.pessoas = norm;
+      this.pessoasView = [...this.pessoas];
+    } catch (e) {
+      console.error('[TriagemSupervisao] erro ao carregar pessoas:', e);
+      this.pessoas = [];
+      this.pessoasView = [];
+    }
   }
 
+  // =========== busca extra: pré-cadastros que ESTE analista encaminhou ===========
+  private async buscarPreCadastrosEncaminhadosPor(
+    uid: string
+  ): Promise<PreCadastro[]> {
+    try {
+      const ref = collection(this.afs, 'pre_cadastros');
+      const q = fsQuery(ref, where('encaminhadoPorUid', '==', uid));
+      const snap = await getDocs(q);
+
+      const lista: PreCadastro[] = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        lista.push({ id: docSnap.id, ...data } as PreCadastro);
+      });
+
+      return lista;
+    } catch (e) {
+      console.error(
+        '[TriagemSupervisao] erro ao buscar pre_cadastros encaminhados:',
+        e
+      );
+      return [];
+    }
+  }
+
+  // ====================================================
+  // CARREGAR GRUPOS DO ANALISTA
+  // (igual Lista: caixa + grupos encaminhados por mim + joinGruposView)
+  // ====================================================
+  private async buscarGruposEncaminhadosPor(
+    uid: string
+  ): Promise<GrupoSolidario[]> {
+    try {
+      const ref = collection(this.afs, 'grupos_solidarios');
+      const q = fsQuery(ref, where('encaminhadoPorUid', '==', uid));
+      const snap = await getDocs(q);
+
+      const lista: GrupoSolidario[] = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        lista.push({ id: docSnap.id, ...data } as GrupoSolidario);
+      });
+
+      return lista;
+    } catch (e) {
+      console.error(
+        '[TriagemSupervisao] erro ao buscar grupos encaminhados:',
+        e
+      );
+      return [];
+    }
+  }
+
+  private async carregarGruposDoAnalista(uid: string): Promise<void> {
+    try {
+      const base = await this.gruposSvc.listarParaCaixaAssessor(uid);
+      const encaminhadosPorMim = await this.buscarGruposEncaminhadosPor(uid);
+
+      const map = new Map<string, GrupoSolidario>();
+
+      for (const g of base || []) {
+        const id = (g as any).id;
+        if (!id) continue;
+        map.set(id, g);
+      }
+
+      for (const g of encaminhadosPorMim || []) {
+        const id = (g as any).id;
+        if (!id) continue;
+        const atual = map.get(id);
+        map.set(id, { ...(atual as any), ...(g as any) } as GrupoSolidario);
+      }
+
+      const merged = Array.from(map.values());
+
+      // join para coordenadorView, membrosView etc. (igual Lista)
+      const join = await this.gruposSvc.joinGruposView(merged);
+      this.grupos = join || [];
+      this.gruposView = [...this.grupos];
+    } catch (e) {
+      console.error('[TriagemSupervisao] erro ao carregar grupos:', e);
+      this.grupos = [];
+      this.gruposView = [];
+    }
+  }
+
+  // ====================================================
+  // Mesclar pré-cadastros de GRUPOS na aba PESSOAS
+  // (cópia da lógica do módulo Lista, adaptada aqui)
+  // ====================================================
+  private async mesclarPreCadastrosDeGrupos() {
+    try {
+      const atuais = new Map<string, PreCadastro>();
+      for (const p of this.pessoas) {
+        if (p?.id) atuais.set(p.id, p);
+      }
+
+      const grupos = this.grupos || [];
+      const faltando = new Map<
+        string,
+        { grupoId: string; grupoNome: string | null }
+      >();
+
+      for (const g of grupos) {
+        const gid = (g as any).id;
+        const gnome = (g as any).nome || null;
+        const membrosIds: string[] = ((g as any).membrosIds || []) as string[];
+
+        if (!gid || !membrosIds?.length) continue;
+
+        for (const preId of membrosIds) {
+          if (!preId) continue;
+
+          if (atuais.has(preId)) {
+            const cur = atuais.get(preId)!;
+            atuais.set(preId, {
+              ...(cur as any),
+              grupoId: gid,
+              grupoNome: gnome,
+              papelNoGrupo: (cur as any).papelNoGrupo ?? 'membro',
+            } as PreCadastro);
+          } else {
+            if (!faltando.has(preId)) {
+              faltando.set(preId, { grupoId: gid, grupoNome: gnome });
+            }
+          }
+        }
+
+        // coordenadorView também entra como pessoa
+        const coord: any = (g as any).coordenadorView || null;
+        if (coord?.preCadastroId) {
+          const preId = coord.preCadastroId;
+          if (atuais.has(preId)) {
+            const cur = atuais.get(preId)!;
+            atuais.set(preId, {
+              ...(cur as any),
+              grupoId: gid,
+              grupoNome: gnome,
+              papelNoGrupo: (cur as any).papelNoGrupo ?? 'coordenador',
+            } as PreCadastro);
+          } else {
+            if (!faltando.has(preId)) {
+              faltando.set(preId, { grupoId: gid, grupoNome: gnome });
+            }
+          }
+        }
+      }
+
+      // busca no Firestore os pré-cadastros que não estavam em this.pessoas
+      for (const [preId, info] of faltando.entries()) {
+        try {
+          const snap = await getDoc(doc(this.afs, 'pre_cadastros', preId));
+          if (!snap.exists()) {
+            console.warn(
+              '[Grupos->Pessoas] pre_cadastro não encontrado para membroId =',
+              preId
+            );
+            continue;
+          }
+
+          const data = snap.data() as any;
+
+          const pre: PreCadastro = {
+            id: preId,
+            nomeCompleto: (data.nomeCompleto ?? data.nome ?? null) as any,
+            cpf: (data.cpf ?? null) as any,
+            telefone: (data.telefone ?? null) as any,
+            email: (data.email ?? null) as any,
+            endereco: (data.endereco ?? null) as any,
+            bairro: (data.bairro ?? null) as any,
+            cidade: (data.cidade ?? null) as any,
+            uf: (data.uf ?? null) as any,
+            agendamentoStatus: (data.agendamentoStatus || 'nao_agendado') as any,
+            formalizacao: data.formalizacao,
+            desistencia: data.desistencia,
+            grupoId: info.grupoId,
+            grupoNome: info.grupoNome,
+            papelNoGrupo: 'membro',
+            ...data,
+          } as PreCadastro;
+
+          atuais.set(preId, pre);
+        } catch (e) {
+          console.error(
+            '[Grupos->Pessoas] erro ao buscar pre_cadastro',
+            preId,
+            e
+          );
+        }
+      }
+
+      this.pessoas = Array.from(atuais.values());
+      this.pessoasView = [...this.pessoas];
+    } catch (e) {
+      console.error(
+        '[Grupos->Pessoas] erro geral ao mesclar membrosIds em TriagemSupervisao:',
+        e
+      );
+    }
+  }
+
+  // ====================================================
+  // FILTROS / BUSCA
+  // ====================================================
+  setAba(aba: Aba) {
+    this.aba = aba;
+    this.aplicarFiltrosPessoas();
+    this.aplicarFiltrosGrupos();
+  }
+
+  onSearchChange() {
+    if (this.aba === 'pessoas') this.aplicarFiltrosPessoas();
+    else this.aplicarFiltrosGrupos();
+  }
+
+  setEnvioFilter(f: FiltroEnvio) {
+    this.filtroEnvio = f;
+    this.aplicarFiltrosPessoas();
+  }
+
+  private aplicarFiltrosPessoas() {
+    let list = [...this.pessoas];
+
+    // filtro encaminhamento
+    if (this.filtroEnvio !== 'todos') {
+      list = list.filter((p) => {
+        const enc = !!(p as any).encaminhadoParaUid;
+        return this.filtroEnvio === 'encaminhado' ? enc : !enc;
+      });
+    }
+
+    const term = this.normalize(this.searchTerm);
+    if (term) {
+      list = list.filter((p) => {
+        const blob = this.normalize(
+          `${(p as any).nomeCompleto || (p as any).nome || ''} ${(p as any).cpf || ''
+          } ${(p as any).telefone || ''} ${(p as any).email || ''} ${(p as any).bairro || ''
+          } ${(p as any).cidade || ''} ${(p as any).uf || ''} ${(p as any).grupoNome || ''
+          }`
+        );
+        return blob.includes(term);
+      });
+    }
+
+    list.sort((a, b) => {
+      const da = this.toJSDate((a as any).createdAt)?.getTime() || 0;
+      const db = this.toJSDate((b as any).createdAt)?.getTime() || 0;
+      return db - da;
+    });
+
+    this.pessoasView = list;
+  }
+
+  private aplicarFiltrosGrupos() {
+    let list = [...this.grupos];
+    const term = this.normalize(this.searchTerm);
+
+    if (term) {
+      list = list.filter((g) => {
+        const coord: any = (g as any).coordenadorView || {};
+        const blob = this.normalize(
+          `${(g as any).nome || ''} ${(g as any).codigo || ''} ${coord?.nome || ''
+          } ${(g as any).cidade || ''} ${(g as any).estado || ''}`
+        );
+        return blob.includes(term);
+      });
+    }
+
+    this.gruposView = list;
+  }
+
+  // ====================================================
+  // UTILS VISUAIS
+  // ====================================================
   cpfMask(val?: string | null): string {
     const d = String(val ?? '').replace(/\D+/g, '');
     if (d.length !== 11) return val ?? '';
     return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
   }
 
-  statusLabel(s?: StatusAprovacao | null): string {
-    switch (s) {
-      case 'apto':
-        return 'Apto';
-      case 'inapto':
-        return 'Inapto';
-      default:
-        return 'Não verificado';
+  whatsHref(v?: string | null): string | null {
+    if (!v) return null;
+    let d = String(v).replace(/\D+/g, '');
+    if (d.startsWith('55')) d = d.slice(2);
+    d = d.replace(/^0+/, '');
+    if (d.length < 10 || d.length > 11) return null;
+    return `https://wa.me/55${d}`;
+  }
+
+  encaminhadoLabel(p: PreCadastro): string | null {
+    const encNome =
+      (p as any).encaminhadoParaNome ||
+      (p as any).encaminhamento?.assessorNome ||
+      null;
+    if (!encNome) return null;
+    return `Encaminhado para ${encNome}`;
+  }
+
+  // ====================================================
+  // MODAL — ENC. PESSOA
+  // ====================================================
+  abrirModalAssessorPessoa(p: PreCadastro) {
+    if (!this.assessores.length) {
+      alert('Não há assessores vinculados ao seu time.');
+      return;
     }
-  }
-
-  statusIcon(s?: StatusAprovacao | null): string {
-    switch (s) {
-      case 'apto':
-        return '✅';
-      case 'inapto':
-        return '⛔';
-      default:
-        return '🕑';
-    }
-  }
-
-  trackById(_i: number, r: { id?: string } | null): string | undefined {
-    return r?.id;
-  }
-
-  trackByGrupoId(_i: number, g: { id?: string } | null): string | undefined {
-    return g?.id;
-  }
-
-  grupoStatusChipClass(st?: StatusGrupo | null): string {
-    switch (st) {
-      case 'aprovado_basa':
-        return 'bg-success';
-      case 'reprovado_basa':
-        return 'bg-danger';
-      default:
-        return 'bg-secondary';
-    }
-  }
-
-  grupoStatusIcon(st?: StatusGrupo | null): string {
-    switch (st) {
-      case 'aprovado_basa':
-        return '✅';
-      case 'reprovado_basa':
-        return '⛔';
-      default:
-        return '🕑';
-    }
-  }
-
-  grupoStatusLabel(st?: StatusGrupo | null): string {
-    switch (st) {
-      case 'aprovado_basa':
-        return 'Aprovado BASA';
-      case 'reprovado_basa':
-        return 'Reprovado BASA';
-      default:
-        return 'Em QA';
-    }
-  }
-
-  /* =========================
-     Snapshot de PRÉ-CADASTROS
-     ========================= */
-  private carregarPreCadastros(): void {
-    this.unsubPC?.();
-
-    const base = collectionGroup(db, 'pre_cadastros');
-    const qy = query(base, limit(1500)); // limite de segurança
-
-    this.unsubPC = onSnapshot(
-      qy,
-      (snap) => {
-        try {
-          const rows: PreCadastroRow[] = snap.docs.map((d) => {
-            const data = d.data() as any;
-            const path = d.ref.path;
-
-            const origemRaw = String(data?.origem ?? '').trim();
-            const canon = canonicalizeOrigem(origemRaw);
-
-            // status UI igual TriagemPreCadastros
-            let uiStatus: StatusAprovacao = 'nao';
-            if (data?.aprovacao?.status) {
-              const novo = String(data.aprovacao.status);
-              const n = normalizeBasic(novo);
-              uiStatus = n === 'apto' ? 'apto' : n === 'inapto' ? 'inapto' : 'nao';
-            } else {
-              uiStatus = coerceStatusToUi(data?.statusAprovacao);
-            }
-
-            const designadoParaUid: string | null =
-              (data?.designadoParaUid ?? data?.designadoPara ?? null) || null;
-            const designadoParaNome: string | null =
-              data?.designadoParaNome ?? null;
-
-            return {
-              id: d.id,
-              data: this.toDate(data?.createdAt ?? data?.criadoEm),
-
-              nome: String(data?.nomeCompleto ?? data?.nome ?? '').trim(),
-              cpf: String(data?.cpf ?? '').trim(),
-              telefone: String(data?.telefone ?? data?.contato ?? '').trim(),
-              email: String(data?.email ?? '').trim(),
-              endereco: String(
-                data?.endereco ?? data?.enderecoCompleto ?? ''
-              ).trim(),
-              bairro: String(data?.bairro ?? '').trim(),
-              rota: String(data?.rota ?? '').trim(),
-              cidade: String(data?.cidade ?? '').trim(),
-              uf: String(data?.uf ?? data?.estado ?? '').trim(),
-
-              origem: canon.label,
-              origemKey: canon.key,
-              origemLabel: canon.label,
-
-              statusAprovacao: uiStatus,
-
-              designadoEm: this.toDate(data?.designadoEm) ?? null,
-              designadoParaUid,
-              designadoParaNome,
-
-              encaminhadoParaUid: data?.encaminhadoParaUid ?? null,
-              encaminhadoParaNome: data?.encaminhadoParaNome ?? null,
-              encaminhadoEm: this.toDate(data?.encaminhadoEm) ?? null,
-              encaminhadoPorUid: data?.encaminhadoPorUid ?? null,
-              encaminhadoPorNome: data?.encaminhadoPorNome ?? null,
-
-              caixaAtual: data?.caixaAtual ?? null,
-              caixaUid: data?.caixaUid ?? null,
-
-              _path: path,
-              _eDeAssessor: path.startsWith('colaboradores/'),
-
-              createdByUid: data?.createdByUid ?? null,
-              createdByNome: data?.createdByNome ?? null,
-            };
-          });
-
-          // índice global por ID, usado pelos grupos
-          this.pcById.clear();
-          for (const r of rows) {
-            this.pcById.set(String(r.id), r);
-          }
-
-          const meUid = this.me?.uid || null;
-
-          // basePessoas = só o que está na minha caixa OU que eu encaminhei
-          const baseList = rows
-            .filter((r) => {
-              if (!meUid) return false;
-              const emMinhaCaixa = r.caixaUid === meUid;
-              const encaminhadoPorMim = r.encaminhadoPorUid === meUid;
-              return emMinhaCaixa || encaminhadoPorMim;
-            })
-            .sort(
-              (a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0)
-            );
-
-          this.basePessoas = baseList;
-
-          // all = base + membros dos grupos (via membrosIds)
-          this.all = this.mergePessoasComGrupos(this.basePessoas);
-          this.aplicarFiltrosPessoas();
-
-          this.pcLoaded = true;
-          this.checkLoaded();
-        } catch (e) {
-          console.error('[Triagem] Falha ao processar pré-cadastros:', e);
-          this.erro.set('Falha ao processar pré-cadastros.');
-          this.carregando.set(false);
-        }
-      },
-      (err) => {
-        console.error('[Triagem] onSnapshot pré-cadastros error:', err);
-        this.erro.set(
-          err?.message ?? 'Falha ao carregar pré-cadastros da triagem.'
-        );
-        this.carregando.set(false);
-      }
-    );
-  }
-
-  /* =========================
-     Snapshot de GRUPOS
-     ========================= */
-  private carregarGrupos(): void {
-    this.unsubGrupos?.();
-
-    const colRef = collection(db, 'grupos_solidarios');
-    const qy = query(colRef, orderBy('criadoEm', 'desc'));
-
-    this.unsubGrupos = onSnapshot(
-      qy,
-      (snap) => {
-        try {
-          const arr: GrupoRow[] = snap.docs.map((d) => {
-            const x = d.data() as any;
-
-            // suporte a legado: se não houver membrosIds, tenta extrair de membros[].cadastroId
-            const ids: string[] = Array.isArray(x.membrosIds)
-              ? x.membrosIds
-              : Array.isArray(x.membros)
-              ? x.membros
-                  .map((m: any) => m?.cadastroId)
-                  .filter((v: any) => !!v)
-              : [];
-
-            return {
-              id: d.id,
-              codigo: x.codigo,
-              coordenadorCpf: x.coordenadorCpf,
-              coordenadorNome: x.coordenadorNome,
-
-              membrosIds: ids,
-
-              bairro: x.bairro || '',
-              cidade: x.cidade || '',
-              estado: x.estado || x.uf || '',
-              status: (x.status || 'em_qa') as StatusGrupo,
-              criadoEm: x.criadoEm?.toDate?.() || null,
-              criadoPorUid: x.criadoPorUid ?? null,
-              criadoPorNome: x.criadoPorNome ?? null,
-              totalSolicitado: x.totalSolicitado || 0,
-              observacoes: x.observacoes || '',
-
-              designadoEm: x.designadoEm?.toDate?.() || null,
-              designadoParaUid: x.designadoParaUid || null,
-              designadoParaNome: x.designadoParaNome || null,
-
-              encaminhadoParaUid: x.encaminhadoParaUid ?? null,
-              encaminhadoParaNome: x.encaminhadoParaNome ?? null,
-              encaminhadoEm: x.encaminhadoEm?.toDate?.() || null,
-              encaminhadoPorUid: x.encaminhadoPorUid ?? null,
-              encaminhadoPorNome: x.encaminhadoPorNome ?? null,
-
-              caixaAtual: x.caixaAtual ?? null,
-              caixaUid: x.caixaUid ?? null,
-            };
-          });
-
-          // Filtra para mostrar só grupos relacionados ao "me"
-          const meUid = this.me?.uid || null;
-          let list = arr;
-          if (meUid) {
-            list = arr.filter((g) => {
-              const emMinhaCaixa = g.caixaUid === meUid;
-              const encaminhadoPorMim = g.encaminhadoPorUid === meUid;
-              return emMinhaCaixa || encaminhadoPorMim;
-            });
-          } else {
-            list = [];
-          }
-
-          list.sort(
-            (a, b) =>
-              (b.criadoEm?.getTime?.() || 0) - (a.criadoEm?.getTime?.() || 0)
-          );
-
-          this.allGrupos = list;
-          this.filtrarGrupos();
-
-          // Re-monta all (pessoas + membros dos grupos)
-          this.all = this.mergePessoasComGrupos(this.basePessoas);
-          this.aplicarFiltrosPessoas();
-
-          this.gruposLoaded = true;
-          this.checkLoaded();
-        } catch (e) {
-          console.error('[Triagem] Falha ao processar grupos:', e);
-          this.erro.set('Falha ao processar grupos.');
-          this.carregando.set(false);
-        }
-      },
-      (err) => {
-        console.error('[Triagem] Snapshot grupos error:', err);
-        this.erro.set(err?.message ?? 'Falha ao carregar grupos.');
-        this.carregando.set(false);
-      }
-    );
-  }
-
-  /* =========================
-     Merge Pessoas + Membros de Grupos
-     ========================= */
-  private getPCById(id?: string | null): PreCadastroRow | null {
-    if (!id) return null;
-    return this.pcById.get(String(id)) || null;
-  }
-
-  private montarMembrosPorIds(g: GrupoRow): PreCadastroRow[] {
-    const ids = g.membrosIds || [];
-    const itens: PreCadastroRow[] = [];
-    for (const id of ids) {
-      const pc = this.getPCById(id);
-      if (pc) itens.push(pc);
-    }
-    return itens;
-  }
-
-  private mergePessoasComGrupos(baseList: PreCadastroRow[]): PreCadastroRow[] {
-    const result = [...baseList];
-    const indexById = new Map<string, number>();
-
-    result.forEach((p, idx) => {
-      if (p.id) indexById.set(p.id, idx);
-    });
-
-    const meUid = this.me?.uid || null;
-
-    const gruposRelevantes = this.allGrupos.filter((g) => {
-      if (!meUid) return false;
-      const emMinhaCaixa = g.caixaUid === meUid;
-      const encaminhadoPorMim = g.encaminhadoPorUid === meUid;
-      return emMinhaCaixa || encaminhadoPorMim;
-    });
-
-    for (const g of gruposRelevantes) {
-      const membros = this.montarMembrosPorIds(g);
-      for (const pc of membros) {
-        if (!pc?.id) continue;
-
-        const idx = indexById.get(pc.id);
-        if (idx != null) {
-          // se já existe na lista, posso só garantir que a "caixa" não fique vazia
-          const current = result[idx];
-          const merged: PreCadastroRow = {
-            ...current,
-            caixaAtual: current.caixaAtual ?? g.caixaAtual ?? null,
-            caixaUid: current.caixaUid ?? g.caixaUid ?? null,
-          };
-          result[idx] = merged;
-        } else {
-          const clone: PreCadastroRow = {
-            ...pc,
-            caixaAtual: pc.caixaAtual ?? g.caixaAtual ?? null,
-            caixaUid: pc.caixaUid ?? g.caixaUid ?? null,
-          };
-          indexById.set(clone.id, result.length);
-          result.push(clone);
-        }
-      }
-    }
-
-    result.sort(
-      (a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0)
-    );
-    return result;
-  }
-
-  /* =========================
-     Filtros PESSOAS
-     ========================= */
-  onBusca(v: string) {
-    this.busca = (v ?? '').trim();
-    if (this.activeTab === 'pessoas') this.aplicarFiltrosPessoas();
-    else this.filtrarGrupos();
-  }
-
-  aplicarFiltrosPessoas() {
-    let list = [...this.all];
-
-    if (this.envioFilter !== 'todos') {
-      list = list.filter((p) => {
-        const enc = !!p.encaminhadoParaUid;
-        return this.envioFilter === 'encaminhado' ? enc : !enc;
-      });
-    }
-
-    if (this.statusFilter !== 'todos') {
-      list = list.filter(
-        (p) => (p.statusAprovacao || 'nao') === this.statusFilter
-      );
-    }
-
-    const term = this.normalize(this.busca);
-    if (term) {
-      list = list.filter((p) => {
-        const blob = this.normalize(
-          `${p.nome} ${p.cpf} ${p.telefone} ${p.email} ${p.endereco} ${p.bairro} ${p.rota} ${p.cidade} ${p.uf} ${p.origemLabel}`
-        );
-        return blob.includes(term);
-      });
-    }
-
-    list.sort(
-      (a, b) => (b.data?.getTime() || 0) - (a.data?.getTime() || 0)
-    );
-    this.view = list;
-    this.currentPage = 1;
-  }
-
-  /* =========================
-     Filtros GRUPOS
-     ========================= */
-  filtrarGrupos() {
-    let list = [...this.allGrupos];
-    const term = this.normalize(this.busca);
-
-    if (term) {
-      list = list.filter((g) => {
-        const blob = this.normalize(
-          `${g.codigo || ''} ${g.coordenadorNome || ''} ${g.bairro || ''} ${g.cidade || ''} ${g.estado || ''}`
-        );
-        return blob.includes(term);
-      });
-    }
-
-    this.viewGrupos = list;
-    this.currentPageG = 1;
-  }
-
-  /* =========================
-     MODAL Pessoas – Escolher Assessor
-     ========================= */
-  abrirModalAssessor(row: PreCadastroRow) {
-    this.rowSelecionado = row;
-    this.selectedAssessorUid = row.encaminhadoParaUid || row.designadoParaUid || null;
-    this.assessorBusca = '';
+    this.pessoaSelecionada = p;
+    this.selectedAssessorUidPessoa =
+      ((p as any).encaminhadoParaUid as string) ||
+      ((p as any).designadoParaUid as string) ||
+      null;
+    this.buscaAssessorPessoa = '';
     this.assessoresFiltrados = [...this.assessores];
-    this.showAssessorModal = true;
+    this.showAssessorPessoaModal = true;
   }
 
-  fecharModalAssessor() {
-    this.showAssessorModal = false;
-    this.rowSelecionado = null;
-    this.selectedAssessorUid = null;
+  fecharModalAssessorPessoa() {
+    this.showAssessorPessoaModal = false;
+    this.pessoaSelecionada = null;
+    this.selectedAssessorUidPessoa = null;
+    this.buscaAssessorPessoa = '';
   }
 
-  /* =========================
-     MODAL Grupo – Escolher Assessor
-     ========================= */
-  abrirModalAssessorGrupo(g: GrupoRow) {
+  filtrarAssessoresPessoa() {
+    const term = this.normalize(this.buscaAssessorPessoa);
+    if (!term) {
+      this.assessoresFiltrados = [...this.assessores];
+      return;
+    }
+    this.assessoresFiltrados = this.assessores.filter((a) =>
+      this
+        .normalize(`${a.nome || ''} ${a.email || ''} ${a.rota || ''}`)
+        .includes(term)
+    );
+  }
+
+  async confirmarEncaminharPessoa() {
+    if (!this.pessoaSelecionada || !this.selectedAssessorUidPessoa) return;
+    await this.encaminharPreCadastro(
+      this.pessoaSelecionada,
+      this.selectedAssessorUidPessoa
+    );
+    this.fecharModalAssessorPessoa();
+  }
+
+  private async encaminharPreCadastro(
+    pre: PreCadastro,
+    assessorUid: string
+  ): Promise<void> {
+    if (!pre?.id) return;
+
+    try {
+      const colabRef = doc(this.afs, 'colaboradores', assessorUid);
+      const colabSnap = await getDoc(colabRef);
+      const colabData: any = colabSnap.data() || {};
+      const assessorNome =
+        colabData?.nome || colabData?.displayName || colabData?.email || null;
+
+      const meUid = this.currentUserUid;
+      const meNome = this.currentUserNome;
+
+      const ref = doc(this.afs, 'pre_cadastros', pre.id);
+      await setDoc(
+        ref,
+        {
+          designadoParaUid: assessorUid,
+          designadoPara: assessorUid,
+          designadoParaNome: assessorNome,
+          designadoEm: serverTimestamp(),
+
+          encaminhadoParaUid: assessorUid,
+          encaminhadoParaNome: assessorNome,
+          encaminhadoEm: serverTimestamp(),
+          encaminhadoPorUid: meUid,
+          encaminhadoPorNome: meNome ?? null,
+
+          caixaAtual: 'assessor',
+          caixaUid: assessorUid,
+        },
+        { merge: true }
+      );
+
+      const patch: any = {
+        designadoParaUid: assessorUid,
+        designadoParaNome: assessorNome,
+        encaminhadoParaUid: assessorUid,
+        encaminhadoParaNome: assessorNome,
+        encaminhadoPorUid: meUid,
+        encaminhadoPorNome: meNome ?? null,
+        caixaAtual: 'assessor',
+        caixaUid: assessorUid,
+      };
+
+      this.pessoas = this.pessoas.map((p) =>
+        p.id === pre.id ? ({ ...(p as any), ...patch } as PreCadastro) : p
+      );
+      this.aplicarFiltrosPessoas();
+    } catch (e) {
+      console.error('[TriagemSupervisao] erro ao encaminhar pessoa:', e);
+      alert('Não foi possível encaminhar o pré-cadastro. Tente novamente.');
+    }
+  }
+
+  // ====================================================
+  // MODAL — ENC. GRUPO
+  // ====================================================
+  abrirModalAssessorGrupo(g: GrupoSolidario) {
+    if (!this.assessores.length) {
+      alert('Não há assessores vinculados ao seu time.');
+      return;
+    }
     this.grupoSelecionado = g;
     this.selectedAssessorUidGrupo =
-      g.encaminhadoParaUid || g.designadoParaUid || null;
-    this.assessorBuscaGrupo = '';
-    this.assessoresFiltradosGrupo = [...this.assessores];
-    this.showAssessorModalGrupo = true;
+      ((g as any).encaminhadoParaUid as string) ||
+      ((g as any).designadoParaUid as string) ||
+      null;
+    this.buscaAssessorGrupo = '';
+    this.assessoresFiltrados = [...this.assessores];
+    this.showAssessorGrupoModal = true;
   }
 
   fecharModalAssessorGrupo() {
-    this.showAssessorModalGrupo = false;
+    this.showAssessorGrupoModal = false;
     this.grupoSelecionado = null;
     this.selectedAssessorUidGrupo = null;
+    this.buscaAssessorGrupo = '';
   }
 
-  /* =========================
-     Detalhe Grupo – membrosPC
-     ========================= */
-  abrirDetalheGrupo(g: GrupoRow) {
-    this.grupoSelecionado = g;
-    this.membrosPC = this.montarMembrosPorIds(g);
+  filtrarAssessoresGrupo() {
+    const term = this.normalize(this.buscaAssessorGrupo);
+    if (!term) {
+      this.assessoresFiltrados = [...this.assessores];
+      return;
+    }
+    this.assessoresFiltrados = this.assessores.filter((a) =>
+      this
+        .normalize(`${a.nome || ''} ${a.email || ''} ${a.rota || ''}`)
+        .includes(term)
+    );
+  }
+
+  async confirmarEncaminharGrupo() {
+    if (!this.grupoSelecionado || !this.selectedAssessorUidGrupo) return;
+    await this.encaminharGrupo(
+      this.grupoSelecionado,
+      this.selectedAssessorUidGrupo
+    );
+    this.fecharModalAssessorGrupo();
+  }
+
+  private async encaminharGrupo(
+    g: GrupoSolidario,
+    assessorUid: string
+  ): Promise<void> {
+    const gid = (g as any).id;
+    if (!gid) return;
+
+    try {
+      const colabRef = doc(this.afs, 'colaboradores', assessorUid);
+      const colabSnap = await getDoc(colabRef);
+      const colabData: any = colabSnap.data() || {};
+      const assessorNome =
+        colabData?.nome || colabData?.displayName || colabData?.email || null;
+
+      const meUid = this.currentUserUid;
+      const meNome = this.currentUserNome;
+
+      const batch = writeBatch(this.afs);
+
+      // grupo
+      const refGrupo = doc(this.afs, 'grupos_solidarios', gid);
+      batch.set(
+        refGrupo,
+        {
+          designadoParaUid: assessorUid,
+          designadoParaNome: assessorNome,
+          designadoEm: serverTimestamp(),
+
+          encaminhadoParaUid: assessorUid,
+          encaminhadoParaNome: assessorNome,
+          encaminhadoEm: serverTimestamp(),
+          encaminhadoPorUid: meUid,
+          encaminhadoPorNome: meNome ?? null,
+
+          caixaAtual: 'assessor',
+          caixaUid: assessorUid,
+        },
+        { merge: true }
+      );
+
+      // coordenador + membros (usando joinGruposView: coordenadorView / membrosView)
+      const coord: any = (g as any).coordenadorView || null;
+      const membros: any[] = ((g as any).membrosView || []) as MembroGrupoView[];
+
+      const ids = new Set<string>();
+      if (coord?.preCadastroId) ids.add(coord.preCadastroId);
+      for (const m of membros) {
+        if (m?.preCadastroId) ids.add(m.preCadastroId);
+      }
+
+      ids.forEach((id) => {
+        const refPre = doc(this.afs, 'pre_cadastros', id);
+        batch.set(
+          refPre,
+          {
+            designadoParaUid: assessorUid,
+            designadoPara: assessorUid,
+            designadoParaNome: assessorNome,
+            designadoEm: serverTimestamp(),
+
+            encaminhadoParaUid: assessorUid,
+            encaminhadoParaNome: assessorNome,
+            encaminhadoEm: serverTimestamp(),
+            encaminhadoPorUid: meUid,
+            encaminhadoPorNome: meNome ?? null,
+
+            caixaAtual: 'assessor',
+            caixaUid: assessorUid,
+          },
+          { merge: true }
+        );
+      });
+
+      await batch.commit();
+
+      // atualiza localmente o grupo
+      const patchGrupo: any = {
+        designadoParaUid: assessorUid,
+        designadoParaNome: assessorNome,
+        encaminhadoParaUid: assessorUid,
+        encaminhadoParaNome: assessorNome,
+        encaminhadoPorUid: meUid,
+        encaminhadoPorNome: meNome ?? null,
+        caixaAtual: 'assessor',
+        caixaUid: assessorUid,
+      };
+
+      this.grupos = this.grupos.map((gg) =>
+        (gg as any).id === gid
+          ? ({ ...(gg as any), ...patchGrupo } as GrupoSolidario)
+          : gg
+      );
+      this.aplicarFiltrosGrupos();
+
+      // e atualiza localmente as pessoas (membros + coordenador)
+      const idsArr = Array.from(ids);
+      const patchPessoa: any = { ...patchGrupo };
+      this.pessoas = this.pessoas.map((p) =>
+        p.id && idsArr.includes(p.id)
+          ? ({ ...(p as any), ...patchPessoa } as PreCadastro)
+          : p
+      );
+      this.aplicarFiltrosPessoas();
+    } catch (e) {
+      console.error('[TriagemSupervisao] erro ao encaminhar grupo:', e);
+      alert('Não foi possível encaminhar o grupo. Tente novamente.');
+    }
+  }
+
+  // ====================================================
+  // DETALHE DO GRUPO (coordenador + membros)
+  // ====================================================
+  abrirDetalheGrupo(g: GrupoSolidario) {
+    this.grupoDetalhe = g;
     this.showGrupoDetalhe = true;
   }
 
   fecharDetalheGrupo() {
     this.showGrupoDetalhe = false;
-    this.grupoSelecionado = null;
-    this.membrosPC = [];
+    this.grupoDetalhe = null;
   }
 
-  /* =========================
-     Designar / Encaminhar PESSOA
-     ========================= */
-  async designarParaAssessor(
-    r: PreCadastroRow,
-    uid?: string | null
-  ): Promise<void> {
-    const aUid = uid || this.selectedAssessorUid;
-    if (!r || !aUid) return;
+  qtdMembrosGrupo(g: GrupoSolidario): number {
+    const membros = (g as any).membrosView || [];
+    const coord = (g as any).coordenadorView || null;
 
-    try {
-      const colabRef = doc(db, 'colaboradores', aUid);
-      const colabSnap = await getDoc(colabRef);
-      if (!colabSnap.exists()) throw new Error('Colaborador não encontrado.');
-      const colab = colabSnap.data() as any;
-      const assessorNome = colab?.nome ?? colab?.displayName ?? null;
+    if (!coord) return membros.length;
 
-      const meUid = this.me?.uid ?? null;
-      const meNome = this.me?.nome ?? null;
+    // Remove o coordenador se estiver dentro dos membros
+    const membrosUnicos = membros.filter(
+      (m: any) => m.preCadastroId !== coord.preCadastroId
+    );
 
-      const srcRef = doc(db, r._path);
-      await setDoc(
-        srcRef,
-        {
-          designadoParaUid: aUid,
-          designadoPara: aUid,
-          designadoParaNome: assessorNome || null,
-          designadoEm: serverTimestamp(),
-
-          encaminhadoParaUid: aUid,
-          encaminhadoParaNome: assessorNome || null,
-          encaminhadoEm: serverTimestamp(),
-          encaminhadoPorUid: meUid,
-          encaminhadoPorNome: meNome,
-
-          caixaAtual: 'assessor',
-          caixaUid: aUid,
-        },
-        { merge: true }
-      );
-
-      // Atualiza local
-      const patch: Partial<PreCadastroRow> = {
-        designadoParaUid: aUid,
-        designadoParaNome: assessorNome || '',
-        designadoEm: new Date(),
-        encaminhadoParaUid: aUid,
-        encaminhadoParaNome: assessorNome || '',
-        encaminhadoEm: new Date(),
-        encaminhadoPorUid: meUid,
-        encaminhadoPorNome: meNome || undefined,
-        caixaAtual: 'assessor',
-        caixaUid: aUid,
-      };
-
-      this.all = this.all.map((x) => (x.id === r.id ? { ...x, ...patch } : x));
-      this.view = this.view.map((x) => (x.id === r.id ? { ...x, ...patch } : x));
-      this.pcById.set(r.id, { ...(this.pcById.get(r.id) || r), ...patch });
-
-      this.aplicarFiltrosPessoas();
-    } catch (e) {
-      console.error('[Triagem] Falha ao designar pessoa:', e);
-      alert('Não foi possível encaminhar. Tente novamente.');
-    }
+    return membrosUnicos.length + 1; // soma apenas se for realmente diferente
   }
 
-  /* =========================
-     Designar / Encaminhar GRUPO
-     ========================= */
-  async designarGrupo(g: GrupoRow, uid?: string | null): Promise<void> {
-    const aUid = uid || this.selectedAssessorUidGrupo;
-    if (!g || !aUid) return;
-
-    try {
-      const colabRef = doc(db, 'colaboradores', aUid);
-      const colabSnap = await getDoc(colabRef);
-      if (!colabSnap.exists()) throw new Error('Colaborador não encontrado.');
-      const colab = colabSnap.data() as any;
-      const assessorNome = colab?.nome ?? colab?.displayName ?? null;
-
-      const meUid = this.me?.uid ?? null;
-      const meNome = this.me?.nome ?? null;
-
-      const batch = writeBatch(db);
-
-      // grupo
-      const refGrupo = doc(db, 'grupos_solidarios', g.id);
-      batch.set(
-        refGrupo,
-        {
-          designadoParaUid: aUid,
-          designadoParaNome: assessorNome || null,
-          designadoEm: serverTimestamp(),
-
-          encaminhadoParaUid: aUid,
-          encaminhadoParaNome: assessorNome || null,
-          encaminhadoEm: serverTimestamp(),
-          encaminhadoPorUid: meUid,
-          encaminhadoPorNome: meNome,
-
-          caixaAtual: 'assessor',
-          caixaUid: aUid,
-        },
-        { merge: true }
-      );
-
-      // membros (pré-cadastros)
-      const ids = g.membrosIds || [];
-      for (const id of ids) {
-        const pc = this.getPCById(id);
-        if (!pc) continue;
-
-        const refPc = doc(db, pc._path);
-        batch.set(
-          refPc,
-          {
-            designadoParaUid: aUid,
-            designadoPara: aUid,
-            designadoParaNome: assessorNome || null,
-            designadoEm: serverTimestamp(),
-
-            encaminhadoParaUid: aUid,
-            encaminhadoParaNome: assessorNome || null,
-            encaminhadoEm: serverTimestamp(),
-            encaminhadoPorUid: meUid,
-            encaminhadoPorNome: meNome,
-
-            caixaAtual: 'assessor',
-            caixaUid: aUid,
-          },
-          { merge: true }
-        );
-      }
-
-      await batch.commit();
-
-      // Atualiza localmente grupo
-      const patchGrupo: Partial<GrupoRow> = {
-        designadoParaUid: aUid,
-        designadoParaNome: assessorNome || '',
-        designadoEm: new Date(),
-        encaminhadoParaUid: aUid,
-        encaminhadoParaNome: assessorNome || '',
-        encaminhadoEm: new Date(),
-        encaminhadoPorUid: meUid,
-        encaminhadoPorNome: meNome || undefined,
-        caixaAtual: 'assessor',
-        caixaUid: aUid,
-      };
-
-      this.allGrupos = this.allGrupos.map((x) =>
-        x.id === g.id ? { ...x, ...patchGrupo } : x
-      );
-      this.viewGrupos = this.viewGrupos.map((x) =>
-        x.id === g.id ? { ...x, ...patchGrupo } : x
-      );
-
-      // Atualiza localmente os pré-cadastros (pessoas)
-      const now = new Date();
-      const patchPC: Partial<PreCadastroRow> = {
-        designadoParaUid: aUid,
-        designadoParaNome: assessorNome || '',
-        designadoEm: now,
-        encaminhadoParaUid: aUid,
-        encaminhadoParaNome: assessorNome || '',
-        encaminhadoEm: now,
-        encaminhadoPorUid: meUid,
-        encaminhadoPorNome: meNome || undefined,
-        caixaAtual: 'assessor',
-        caixaUid: aUid,
-      };
-
-      const idSet = new Set(g.membrosIds || []);
-
-      this.all = this.all.map((pc) =>
-        idSet.has(pc.id) ? { ...pc, ...patchPC } : pc
-      );
-      this.view = this.view.map((pc) =>
-        idSet.has(pc.id) ? { ...pc, ...patchPC } : pc
-      );
-
-      for (const id of idSet) {
-        const old = this.pcById.get(id);
-        if (old) this.pcById.set(id, { ...old, ...patchPC });
-      }
-
-      // Recalcula merge para garantir consistência
-      this.all = this.mergePessoasComGrupos(this.basePessoas);
-      this.aplicarFiltrosPessoas();
-      this.filtrarGrupos();
-    } catch (e) {
-      console.error('[Triagem] Falha ao designar grupo:', e);
-      alert('Não foi possível encaminhar o grupo. Tente novamente.');
-    }
-  }
 }
