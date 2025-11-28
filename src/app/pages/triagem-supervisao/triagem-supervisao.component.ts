@@ -31,6 +31,7 @@ type Aba = 'pessoas' | 'grupos';
 
 type FiltroEnvio = 'todos' | 'encaminhado' | 'nao_encaminhado';
 
+
 type Assessor = {
   uid: string;
   nome: string;
@@ -66,6 +67,9 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
 
   searchTerm = '';
   filtroEnvio: FiltroEnvio = 'todos';
+
+  filtroAssessor: string | 'todos' = 'todos';
+
 
   // ====== pessoas ======
   pessoas: PreCadastro[] = [];      // base completa (caixa + encaminhados + membros de grupos)
@@ -140,6 +144,12 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
     this.assessores = [];
     this.assessoresFiltrados = [];
   }
+
+  setAssessorFilter(uid: string | 'todos') {
+    this.filtroAssessor = uid;
+    this.aplicarFiltrosPessoas();
+  }
+
 
   // ====================================================
   // RESOLVE NOME DO USUÁRIO (igual módulo Lista)
@@ -576,6 +586,14 @@ export class TriagemSupervisaoComponent implements OnInit, OnDestroy {
         return this.filtroEnvio === 'encaminhado' ? enc : !enc;
       });
     }
+
+    // filtro por assessor (somente quando encaminhado)
+    if (this.filtroAssessor !== 'todos') {
+      list = list.filter((p) =>
+        (p as any).encaminhadoParaUid === this.filtroAssessor
+      );
+    }
+
 
     const term = this.normalize(this.searchTerm);
     if (term) {

@@ -64,6 +64,17 @@
             Não encaminhados
           </button>
         </div>
+        <br>
+        <!-- Filtro por assessor -->
+        <select class="form-select form-select-sm w-auto" [(ngModel)]="filtroAssessor"
+          (ngModelChange)="setAssessorFilter($event)">
+
+          <option value="todos">Todos os assessores</option>
+
+          <option *ngFor="let a of assessores" [value]="a.uid">
+            {{ a.nome }}
+          </option>
+        </select>
 
         <button type="button" class="btn btn-sm btn-outline-dark"
           (click)="searchTerm = ''; setEnvioFilter('todos'); onSearchChange()">
