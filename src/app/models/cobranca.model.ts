@@ -5,16 +5,30 @@ export type Alerta = 'D15' | 'D7' | 'D0' | 'ATRASO' | 'OK';
 export type FireTime = Timestamp | FieldValue | null;
 
 export interface GrupoDoc {
-  id: string;                 // ex: "232"
-  numeroContrato: string;     // ex: "232"
+  id: string;
+  numeroContrato: string;
   nomeGrupo?: string | null;
   dataLiberacao?: Timestamp | null;
   operador?: string | null;
-  cidade?: string | null;     // ✅ novo
-  uf?: string | null;         // ✅ novo
+  cidade?: string | null;
+  uf?: string | null;
+
+  // 🔽 NOVOS CAMPOS
+  numeroProposta?: string | null;
+  unidade?: string | null;
+  nomesMembros?: string | null;     // ex.: "João, Maria, José"
+  numeroMembros?: number | null;
+  dataVencimentoProposta?: Timestamp | null;
+  dataConclusaoProposta?: Timestamp | null;
+  valorParcelaIndividual?: number | null;
+  valorParcelaGrupo?: number | null;
+  valorTotalProposta?: number | null;
+  situacao?: string | null;         // "Pago", "Não Pago", "Atrasado", "Quitado"
+
   createdAt?: FireTime;
   updatedAt?: FireTime;
 }
+
 
 export interface IntegranteDoc {
   id: string;

@@ -116,7 +116,6 @@
               </div>
 
               <div class="text-muted small">
-
                 <span *ngIf="p.cpf">
                   CPF: {{ cpfMask(p.cpf) }}
                 </span>
@@ -129,20 +128,21 @@
                 </span>
               </div>
 
+              <!-- Informação de grupo (somente se tiver grupo) -->
               <div class="text-muted small" *ngIf="p.grupoNome">
                 Grupo solidário:
                 {{ p.grupoNome }}
                 <span class="text-muted">
                   ({{ p.papelNoGrupo || 'membro' }})
                 </span>
+              </div>
 
-                <div *ngIf="encaminhadoLabel(p) as encLab">
-
-                  {{ encLab }}
-                </div>
-
+              <!-- Informação de encaminhamento (sempre que tiver encaminhado, com ou sem grupo) -->
+              <div class="text-muted small" *ngIf="encaminhadoLabel(p) as encLab">
+                {{ encLab }}
               </div>
             </div>
+
 
             <!-- DIREITA: status de encaminhamento + ação -->
             <div class="d-flex align-items-center justify-content-end gap-3">

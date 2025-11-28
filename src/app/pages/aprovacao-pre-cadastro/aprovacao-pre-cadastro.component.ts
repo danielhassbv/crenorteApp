@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HeaderComponent } from '../shared/header/header.component';
 
 import {
   Firestore, collection, query, where, onSnapshot, updateDoc, doc,
@@ -29,7 +30,7 @@ type Colaborador = {
 @Component({
   selector: 'app-aprovacao-pre-cadastro',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, HeaderComponent],
   templateUrl: './aprovacao-pre-cadastro.component.html',
   styleUrls: ['./aprovacao-pre-cadastro.component.css']
 })

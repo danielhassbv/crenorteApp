@@ -36,6 +36,7 @@ function normalizeBasic(s: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
 function titleCase(s: string): string {
   return (s || '').toLowerCase().replace(/(^|\s)\S/g, (t) => t.toUpperCase());
 }
